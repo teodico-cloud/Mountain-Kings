@@ -1,0 +1,109 @@
+{
+  "army": {
+    "archer": 0,
+    "belier": 0,
+    "fantassin": 0
+  },
+  "b": [
+    {
+      "gx": 10,
+      "gz": 10,
+      "id": 1,
+      "lvl": 1,
+      "type": "mairie",
+      "up": null
+    },
+    {
+      "gx": 14,
+      "gz": 10,
+      "id": 2,
+      "lvl": 1,
+      "type": "tour",
+      "up": null
+    },
+    {
+      "gx": 6,
+      "gz": 8,
+      "id": 3,
+      "lvl": 1,
+      "type": "scierie",
+      "up": null
+    },
+    {
+      "gx": 6,
+      "gz": 12,
+      "id": 4,
+      "lvl": 1,
+      "type": "ferme",
+      "up": null
+    },
+    {
+      "gx": 10,
+      "gz": 14,
+      "id": 5,
+      "lvl": 1,
+      "type": "caserne",
+      "up": null
+    },
+    {
+      "gx": 14,
+      "gz": 14,
+      "id": 6,
+      "lvl": 2,
+      "type": "camp",
+      "up": null
+    }
+  ],
+  "born": 1791661691044,
+  "buff": 0,
+  "c": "#4A78C2",
+  "chest": null,
+  "cid": "tlx5zgvla-1",
+  "claimed": [],
+  "ep": 0,
+  "key": "u_rIhQecubOgFR8X0Xp2FCoA",
+  "lastActive": 1791663378084,
+  "lastDuo": 0,
+  "log": [
+    {
+      "m": "Fondation de Village de Téo.",
+      "t": 1791661691044
+    },
+    {
+      "m": "Amélioration lancée : camp militaire niveau 2.",
+      "t": 1791661705762
+    },
+    {
+      "m": "Raid solo sur Fort des Crânes Rouges : 0 sabre, 13 %, butin 63 bois, 61 pierre, 63 vivres.",
+      "t": 1791661759323
+    },
+    {
+      "m": "Travaux terminés : taverne niveau 2.",
+      "t": 1791662017762
+    }
+  ],
+  "medals": 0,
+  "name": "Village de Téo",
+  "nextRaid": 1791704891044,
+  "nid": 7,
+  "played": 0,
+  "pname": "Téo",
+  "r": {
+    "bois": 224.27633333333333,
+    "pierre": 231,
+    "vivres": 169.2763333333333
+  },
+  "raids": 0,
+  "reports": [],
+  "seed": 873299962,
+  "shield": 0,
+  "t": 1791663379334,
+  "train": [
+    {
+      "n": 10,
+      "u": "fantassin"
+    }
+  ],
+  "trainP": 0,
+  "v": 2
+}
