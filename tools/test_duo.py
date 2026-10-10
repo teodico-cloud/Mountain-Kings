@@ -27,7 +27,7 @@ async def text(pg, sel):
 async def main():
     logs = []
     async with async_playwright() as p:
-        b = await p.chromium.launch(args=['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist'])
+        b = await p.chromium.launch(args=['--use-gl=swiftshader', '--enable-webgl', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader'])
         ca, A = await page(b, 'alice', logs)
         await A.wait_for_timeout(2500)
         print('A modal:', await text(A, '#mcard'))
@@ -49,7 +49,23 @@ async def main():
         print('B gate has import?', 'Reprendre' in g, '| mentions Alice village?', 'Téo' in g)
         await B.fill('#fVname', 'Forge-Basse'); await B.fill('#fPname', 'Léa')
         await B.click('#foundForm button[type=submit]')
-        await B.wait_for_timeout(12000)  # modèles 3D
+        await B.wait_for_timeout(2500)
+        print('B tutorial shown:', await B.is_visible('#tuto'))
+        await B.click('[data-act="tutoSkip"]')
+        # Héros et troupes pour les deux
+        t = tree()
+        arr = lambda x: [x[k] for k in sorted(x, key=int)] if isinstance(x, dict) else (x or [])
+        for uid, hk in (('uid_alice', 'roi'), ('uid_bob', 'berserker')):
+            v = t['villages'][uid]; v['b'] = arr(v['b'])
+            for bb in v['b']:
+                if bb['type'] == 'mairie': bb['lvl'] = 3
+            v['b'].append({'id': v['nid'], 'type': 'heros', 'lvl': 3, 'gx': 17, 'gz': 3}); v['nid'] += 1
+            v['heroes'] = {hk: {'lvl': 2, 'rest': 0}}
+            v['army'] = {'fantassin': 20, 'archer': 5, 'belier': 0}
+            v['t'] = int(time.time() * 1000); v['lastActive'] = v['t']; v['cid'] = 'inj'
+            req = urllib.request.Request(URL + 'fb/op?cid=test', data=json.dumps({'path': 'villages/' + uid, 'v': v}).encode(), headers={'content-type': 'application/json'})
+            urllib.request.urlopen(req).read()
+        await B.wait_for_timeout(10000)  # modèles 3D
         print('presence:', list(tree().get('presence', {}).keys()))
         print('A top:', (await text(A, '#hudTop'))[:200])
         await A.screenshot(path=S + 't_home_A.png')
@@ -67,11 +83,29 @@ async def main():
         await A.click('[data-act="duoInvite"]'); await A.wait_for_timeout(2000)
         print('B invite:', (await text(B, '#hudTop'))[-200:])
         await B.click('[data-act="duoAccept"]'); await B.wait_for_timeout(3000)
-        for (x, y) in [(120, 200), (720, 200), (422, 330)]:
-            await A.mouse.click(x, y); await A.wait_for_timeout(200)
-        for (x, y) in [(300, 120), (560, 300), (720, 120)]:
-            await B.mouse.click(x, y); await B.wait_for_timeout(200)
-        await A.wait_for_timeout(8000)
+        async def spots(pg, n, side):
+            # points de déploiement valides, visibles entre les deux barres de l'écran
+            js = '''(side) => { const out = []; for (let i = 0; i <= 96; i++) { const t = i / 96 * 24;
+              const cand = side ? [[t, 0.7], [23.3, t]] : [[0.7, t], [t, 23.3]];
+              for (const [x, z] of cand) { if (!window.__mk.canDeploy(x, z)) continue; const p = window.__mk.toScreen(x, z); if (p[1] > 90 && p[1] < 255 && p[0] > 30 && p[0] < 814) out.push([x, z, p[0], p[1]]); } } return out; }'''
+            pts = await pg.evaluate(js, side)
+            return pts[len(pts) // 3: len(pts) // 3 + n] if len(pts) > n else pts
+        async def tapxy(pg, p): await pg.mouse.click(p[2], p[3]); await pg.wait_for_timeout(250)
+        pa, pb = await spots(A, 3, 0), await spots(B, 3, 1)
+        print('deploy spots A/B:', [p[:2] for p in pa], [p[:2] for p in pb])
+        await tapxy(A, pa[0]); await tapxy(A, pa[1])
+        await A.click('[data-act="troop"][data-u="h:roi"]'); await tapxy(A, pa[2])
+        await tapxy(B, pb[0]); await tapxy(B, pb[1])
+        await B.click('[data-act="troop"][data-u="h:berserker"]'); await tapxy(B, pb[2])
+        await A.wait_for_timeout(3000)
+        hu = await A.evaluate("window.__mk.fight.B.units.filter(u => u.hero).map(u => [u.type, u.owner, u.lvl, Math.round(u.max)])")
+        print('host sees heroes:', hu)
+        print('guest bar:', (await text(B, '#hudBottom'))[:160])
+        await B.click('[data-act="power"]'); await A.click('[data-act="power"]')
+        await A.wait_for_timeout(2500)
+        pw = await A.evaluate("window.__mk.fight.B.units.filter(u => u.hero).map(u => [u.type, u.pw, u.bT])")
+        print('powers used (host view):', pw)
+        await A.wait_for_timeout(4000)
         await A.screenshot(path=S + 't_fight_A.png'); await B.screenshot(path=S + 't_fight_B.png')
         print('A fight HUD:', (await text(A, '#hudTop'))[:160])
         print('B fight HUD:', (await text(B, '#hudTop'))[:160])
@@ -79,9 +113,11 @@ async def main():
         st = [x for x in w if x['path'].endswith('/st')]
         print('st writes:', len(st), 'avg size', sum(x['size'] for x in st) // max(1, len(st)))
         print('ev writes:', [x['path'].split('/')[-2] for x in w if '/ev/' in x['path']][:12])
-        # Fin : chacun arrête de déployer, on attend la fin
+        # Fin : chacun arrête de déployer, puis on termine la bataille côté hôte (sinon trop long avec le rendu logiciel)
         await A.click('[data-act="endFight"]'); await B.click('[data-act="endFight"]')
-        for i in range(130):
+        await A.wait_for_timeout(3000)
+        await A.evaluate('window.__mk.fight.B.over = true')
+        for i in range(60):
             await A.wait_for_timeout(2000)
             if i % 10 == 0: print('  ...', (await text(A, '#hudTop'))[-30:], '/', (await text(B, '#hudTop'))[-30:])
             if i == 6: await A.screenshot(path=S + 't_fight_A2.png'); await B.screenshot(path=S + 't_fight_B2.png')
@@ -95,6 +131,7 @@ async def main():
         print('live nodes left:', list(t.get('duo', {}).get('live', {}).keys()))
         va, vb = t['villages']['uid_alice'], t['villages']['uid_bob']
         print('medals A/B:', va.get('medals'), vb.get('medals'), '| played', va.get('played'), vb.get('played'))
+        print('hero rest A/B:', va.get('heroes'), vb.get('heroes'))
         # Léa ferme le jeu : Alice doit la voir hors ligne
         await cb.close(); await A.wait_for_timeout(4000)
         print('presence after B closed:', list(tree().get('presence', {}).keys()))

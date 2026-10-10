@@ -22,6 +22,8 @@ function normVillage(v) {
   v.army = Object.assign({ fantassin: 0, archer: 0, belier: 0 }, v.army);
   v.r = Object.assign({ bois: 0, pierre: 0, vivres: 0 }, v.r);
   if (v.chest === undefined) v.chest = null;
+  v.heroes = v.heroes && typeof v.heroes === 'object' && !Array.isArray(v.heroes) ? v.heroes : {};
+  for (const k of Object.keys(v.heroes)) v.heroes[k] = Object.assign({ lvl: 1, rest: 0, up: null }, v.heroes[k]);
   return v;
 }
 const fbFix = (path, v) => path.indexOf('villages/') === 0 ? normVillage(v) : v;

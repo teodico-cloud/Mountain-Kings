@@ -24,6 +24,8 @@ function normVillage(v) {
   v.army = Object.assign({ fantassin: 0, archer: 0, belier: 0 }, v.army);
   v.r = Object.assign({ bois: 0, pierre: 0, vivres: 0 }, v.r);
   if (v.chest === undefined) v.chest = null;
+  v.heroes = v.heroes && typeof v.heroes === 'object' && !Array.isArray(v.heroes) ? v.heroes : {};
+  for (const k of Object.keys(v.heroes)) v.heroes[k] = Object.assign({ lvl: 1, rest: 0, up: null }, v.heroes[k]);
   return v;
 }
 const fbFix = (path, v) => path.indexOf('villages/') === 0 ? normVillage(v) : v;
@@ -152,6 +154,7 @@ const FB = {
 
 /* ===================== RÈGLES (pur, sans DOM) ===================== */
 const VERSION = 2;
+const APP_PV = 3; // version du protocole de combat : les deux joueurs d'un raid à deux doivent avoir la même
 const GRID = 24, EDGE = 2;
 const RES = ['bois', 'pierre', 'vivres'];
 const RES_LABEL = { bois: 'Bois', pierre: 'Pierre', vivres: 'Vivres' };
@@ -169,20 +172,42 @@ const BLD = {
   tour: { name: 'Tour d’arbalétriers', size: 2, max: 5, cost: { bois: 200, pierre: 120 }, mul: 2.1, time: 2, tmul: 2.6, hp: 900, def: { range: 6.5, dmg: 28, rate: 1, speed: 14, kind: 'arrow' }, desc: 'Défense rapide qui tire sur tout ce qui approche.' },
   baliste: { name: 'Tour de garde', size: 2, max: 5, cost: { bois: 350, pierre: 350 }, mul: 2.1, time: 6, tmul: 2.6, hp: 1080, def: { range: 5.2, dmg: 110, rate: 2.2, speed: 18, kind: 'bolt' }, desc: 'Grosse arbalète de rempart : gros dégâts, une cible à la fois.' },
   mangonneau: { name: 'Catapulte', size: 2, max: 5, cost: { bois: 700, pierre: 800 }, mul: 2.1, time: 15, tmul: 2.6, hp: 1170, def: { range: 8, min: 2.5, dmg: 60, rate: 3.6, speed: 7, splash: 1.4, kind: 'stone' }, desc: 'Lance des pierres sur les groupes, mais ne peut pas viser au pied des murs.' },
+  heros: { name: 'Salle des Héros', size: 3, max: 5, cost: { bois: 1200, pierre: 1500 }, mul: 2.1, time: 20, tmul: 2.5, hp: 1500, desc: 'Abrite les héros nains. Son niveau fixe le niveau maximum de tes héros.' },
+  rempart: { name: 'Rempart', size: 1, max: 5, cost: { pierre: 40 }, mul: 2.5, time: 0, tmul: 1, hp: 800, wall: true, desc: 'Bloque le passage : les ennemis doivent le casser ou faire le tour. Se pose et s’améliore tout de suite, sans ouvrier.' },
 };
-const SHOP = ['scierie', 'carriere', 'ferme', 'entrepot', 'caserne', 'camp', 'tour', 'baliste', 'mangonneau'];
+const SHOP = ['scierie', 'carriere', 'ferme', 'entrepot', 'caserne', 'camp', 'heros', 'tour', 'baliste', 'mangonneau', 'rempart'];
 const LIMITS = {
   mairie: [1, 1, 1, 1, 1],
   scierie: [1, 2, 2, 3, 3], carriere: [1, 1, 2, 2, 3], ferme: [1, 2, 2, 3, 3], entrepot: [1, 1, 2, 2, 3],
   caserne: [1, 1, 1, 2, 2], camp: [1, 1, 2, 2, 3],
   tour: [1, 2, 2, 3, 4], baliste: [0, 1, 1, 2, 2], mangonneau: [0, 0, 1, 1, 2],
+  heros: [0, 1, 1, 1, 1], rempart: [20, 40, 60, 80, 100],
 };
 const TROOPS = {
   fantassin: { name: 'Guerrier', plural: 'Guerriers', foe: 'Orque', space: 1, cost: 25, time: 12, hp: 80, dmg: 11, hit: 1, range: 0.6, speed: 1.6, pref: 'any', cas: 1, desc: 'Nain à la hache, solide et pas cher. Frappe le bâtiment le plus proche.' },
   archer: { name: 'Arbalétrier', plural: 'Arbalétriers', foe: 'Archer orque', space: 1, cost: 50, time: 18, hp: 36, dmg: 9, hit: 1, range: 3.4, speed: 1.9, pref: 'any', cas: 2, desc: 'Tire de loin à l’arbalète, mais tombe vite.' },
-  belier: { name: 'Bélier', plural: 'Béliers', foe: 'Troll', space: 5, cost: 300, time: 80, hp: 700, dmg: 50, hit: 2, range: 0.6, speed: 0.8, pref: 'def', cas: 3, desc: 'Poussé par quatre nains, très résistant. Fonce sur les défenses.' },
+  belier: { name: 'Bélier', plural: 'Béliers', foe: 'Troll', space: 5, cost: 300, time: 80, hp: 700, dmg: 50, hit: 2, range: 0.6, speed: 0.8, pref: 'def', cas: 3, wallMul: 4, desc: 'Poussé par quatre nains, très résistant. Fonce sur les défenses et enfonce les remparts (4 fois plus de dégâts).' },
 };
 const TROOP_KEYS = ['fantassin', 'archer', 'belier'];
+/* Héros : un seul par bataille, payés en vivres, améliorés à la Salle des Héros. */
+const HEROES = {
+  roi: { name: 'Brokk', title: 'Roi de la Montagne', hall: 1, cost: 1500, hp: 1500, dmg: 38, hit: 1, range: 0.7, speed: 1.3, pref: 'any', wallMul: 1,
+    power: 'Cri de guerre', pdesc: 'Les troupes autour de lui frappent 60 % plus fort et vont plus vite pendant 10 s, et il regagne 30 % de sa vie.',
+    plus: 'Très résistant, il encaisse les tirs et renforce l’armée.', minus: 'Lent, et il frappe moins fort que les autres héros.' },
+  chasseresse: { name: 'Hilda', title: 'la Chasseresse', hall: 2, cost: 3000, hp: 520, dmg: 34, hit: 0.7, range: 5, speed: 1.9, pref: 'def', wallMul: 0.5,
+    power: 'Pluie de carreaux', pdesc: 'Trois volées qui frappent tous les bâtiments autour de sa cible, remparts compris.',
+    plus: 'Tire de très loin et vise d’abord les défenses.', minus: 'Fragile, et presque inutile contre les remparts.' },
+  berserker: { name: 'Grimnir', title: 'le Berserker', hall: 3, cost: 4500, hp: 1000, dmg: 72, hit: 0.9, range: 0.7, speed: 2.3, pref: 'any', wallMul: 2.5,
+    power: 'Furie', pdesc: 'Il regagne 50 % de sa vie et frappe deux fois plus vite pendant 8 s.',
+    plus: 'Dégâts énormes, rapide, il brise les remparts.', minus: 'Il fonce seul devant et tombe vite sous les tirs.' },
+};
+const HERO_KEYS = ['roi', 'chasseresse', 'berserker'];
+const UNIT_KEYS = TROOP_KEYS.concat(HERO_KEYS); // ordre fixe : sert d'index dans les messages du raid à deux
+const unitDef = k => HEROES[k] || TROOPS[k];
+const heroScale = lvl => 1 + 0.2 * (Math.max(1, lvl | 0) - 1);
+const heroUpCost = (k, to) => ({ vivres: Math.round(HEROES[k].cost * 0.6 * Math.pow(1.7, to - 1) / 50) * 50 });
+const heroUpTime = to => Math.round(15 * 60000 * Math.pow(2.5, to - 2));
+const heroRestTime = (lvl, frac, dead) => Math.round((dead ? 1 : Math.max(0, Math.min(1, 1 - frac))) * Math.max(1, lvl) * 8 * 60000 + (dead ? 4 * 60000 : 0));
 const LEAGUES = [
   { name: 'Paysans', min: 0, reward: 150, loss: 0 },
   { name: 'Écuyers', min: 60, reward: 350, loss: 5 },
@@ -212,7 +237,7 @@ function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h
 const clone = o => JSON.parse(JSON.stringify(o));
 
 /* ---------- bâtiments ---------- */
-const hpOf = (type, lvl) => Math.round(BLD[type].hp * (1 + 0.35 * (lvl - 1)));
+const hpOf = (type, lvl) => Math.round(BLD[type].hp * (1 + (BLD[type].wall ? 0.6 : 0.35) * (lvl - 1)));
 function defOf(type, lvl) { const d = BLD[type].def; if (!d) return null; return Object.assign({}, d, { dmg: d.dmg * (1 + 0.3 * (lvl - 1)) }); }
 function costOf(type, toLvl) { const d = BLD[type], c = {}; for (const k in d.cost) c[k] = Math.round(d.cost[k] * Math.pow(d.mul, toLvl - 1) / 5) * 5; return c; }
 function timeOf(type, toLvl) { return Math.round(BLD[type].time * Math.pow(BLD[type].tmul, toLvl - 1) * 60000); }
@@ -232,6 +257,9 @@ const casernes = v => v.b.filter(b => b.type === 'caserne' && b.lvl > 0).length;
 const casLvl = v => v.b.reduce((a, b) => b.type === 'caserne' ? Math.max(a, b.lvl) : a, 0);
 const buildersOf = v => 1 + (thOf(v) >= 2 ? 1 : 0) + (thOf(v) >= 4 ? 1 : 0);
 const busyBuilders = v => v.b.filter(b => b.up).length;
+const hallLvl = v => v.b.reduce((a, b) => b.type === 'heros' ? Math.max(a, b.lvl) : a, 0);
+const heroesOf = v => v.heroes || (v.heroes = {});
+const heroReady = (v, k, t) => { const h = (v.heroes || {})[k]; return !!h && !h.up && (h.rest || 0) <= t; };
 const countOf = (v, type) => v.b.filter(b => b.type === type).length;
 function prodOf(v, t) {
   const out = { bois: 0, pierre: 0, vivres: 0 }, m = v.buff > t ? 1.25 : 1;
@@ -275,7 +303,7 @@ function newVillage(key, name, c, t) {
     r: { bois: 500, pierre: 300, vivres: 300 }, b: [], nid: 1,
     army: { fantassin: 15, archer: 0, belier: 0 }, train: [], trainP: 0,
     medals: 0, ep: epochAt(t), played: 0, chest: null, lastDuo: 0, nextRaid: t + 12 * 3600000, shield: 0, raids: 0, lastActive: t, buff: 0,
-    log: [], reports: [], claimed: [],
+    log: [], reports: [], claimed: [], heroes: {},
   };
   const add = (type, gx, gz) => v.b.push({ id: v.nid++, type, lvl: 1, gx, gz, up: null });
   add('mairie', 10, 10); add('tour', 14, 10); add('scierie', 6, 8); add('ferme', 6, 12); add('caserne', 10, 14); add('camp', 14, 14);
@@ -291,6 +319,10 @@ function stepVillage(v, dt) {
       const at = b.up.t1; b.lvl += 1; b.up = null;
       addLog(v, at, 'Travaux terminés : ' + BLD[b.type].name.toLowerCase() + (b.lvl > 1 ? ' niveau ' + b.lvl : '') + '.');
     }
+  }
+  for (const k in (v.heroes || {})) {
+    const h = v.heroes[k];
+    if (h.up && h.up.t1 <= t + dt) { const at = h.up.t1; h.lvl += 1; h.up = null; addLog(v, at, (HEROES[k] ? HEROES[k].name : 'Ton héros') + ' passe au niveau ' + h.lvl + '.'); }
   }
   const nc = casernes(v);
   if (v.train.length && nc) {
@@ -357,8 +389,67 @@ function applyV(v, a, t) {
   const th = thOf(v);
   let out = { ok: true };
   switch (a.type) {
+    case 'walls': {
+      /* Pose d'une ou plusieurs cases de rempart, tout de suite. */
+      const tiles = Array.isArray(a.tiles) ? a.tiles.slice(0, 40) : [];
+      let n = 0, why = '';
+      for (const tl of tiles) {
+        const gx = tl && tl[0], gz = tl && tl[1];
+        if (countOf(v, 'rempart') >= limitOf('rempart', th)) { why = why || 'Plus de remparts disponibles : agrandis la halle du clan.'; break; }
+        if (!fits(v, 'rempart', gx, gz)) { why = why || 'Case occupée ou trop près du bord.'; continue; }
+        const c = costOf('rempart', 1), m = missingTxt(v, c); if (m) { why = why || m; break; }
+        pay(v, c); v.b.push({ id: v.nid++, type: 'rempart', lvl: 1, gx, gz, up: null }); n++;
+      }
+      if (!n) return fail(why || 'Aucun rempart posé.');
+      out.n = n; out.why = why;
+      break;
+    }
+    case 'upwalls': {
+      /* Améliore tous les remparts d'un niveau, tant qu'il y a de quoi payer. */
+      const L = a.lvl | 0, to = L + 1;
+      if (to > maxLvlOf('rempart', th)) return fail(to > BLD.rempart.max ? 'Niveau maximum atteint.' : 'Agrandis d’abord la halle du clan.');
+      const c = costOf('rempart', to); let n = 0;
+      for (const b of v.b) {
+        if (b.type !== 'rempart' || b.lvl !== L) continue;
+        if (missingTxt(v, c)) break;
+        pay(v, c); b.lvl = to; n++;
+      }
+      if (!n) return fail(missingTxt(v, c) || 'Aucun rempart de ce niveau.');
+      out.n = n; addLog(v, t, n + ' rempart' + (n > 1 ? 's' : '') + ' renforcé' + (n > 1 ? 's' : '') + ' au niveau ' + to + '.');
+      break;
+    }
+    case 'remove': {
+      const i = v.b.findIndex(x => x.id === a.id);
+      if (i < 0 || v.b[i].type !== 'rempart') return fail('Seuls les remparts peuvent être retirés.');
+      v.b.splice(i, 1);
+      break;
+    }
+    case 'heroBuy': {
+      const H = HEROES[a.k]; if (!H) return fail('Héros inconnu.');
+      const hs = heroesOf(v);
+      if (hs[a.k]) return fail('Ce héros est déjà dans ta salle.');
+      if (hallLvl(v) < H.hall) return fail(hallLvl(v) ? 'Il faut une Salle des Héros de niveau ' + H.hall + '.' : 'Construis d’abord la Salle des Héros.');
+      const c = { vivres: H.cost }, m = missingTxt(v, c); if (m) return fail(m);
+      if (H.cost > capOf(v)) return fail('Tes entrepôts sont trop petits pour réunir ce coût.');
+      pay(v, c); hs[a.k] = { lvl: 1, rest: 0, up: null };
+      addLog(v, t, H.name + ', ' + H.title + ', rejoint ton clan.');
+      break;
+    }
+    case 'heroUp': {
+      const H = HEROES[a.k], h = H && heroesOf(v)[a.k]; if (!h) return fail('Héros introuvable.');
+      if (h.up) return fail('Ce héros est déjà à l’entraînement.');
+      const to = h.lvl + 1;
+      if (to > 5) return fail('Niveau maximum atteint.');
+      if (to > hallLvl(v)) return fail('Améliore d’abord la Salle des Héros (niveau ' + to + ').');
+      const c = heroUpCost(a.k, to), m = missingTxt(v, c); if (m) return fail(m);
+      if (c.vivres > capOf(v)) return fail('Tes entrepôts sont trop petits pour réunir ce coût.');
+      pay(v, c); h.up = { t0: t, t1: t + heroUpTime(to) }; h.rest = 0;
+      addLog(v, t, H.name + ' s’entraîne pour le niveau ' + to + '.');
+      break;
+    }
     case 'build': {
       const d = BLD[a.b]; if (!d || a.b === 'mairie') return fail('Bâtiment inconnu.');
+      if (d.wall) return applyV(v, { type: 'walls', tiles: [[a.gx, a.gz]] }, t);
       if (countOf(v, a.b) >= limitOf(a.b, th)) return fail(limitOf(a.b, th) === 0 ? 'Débloqué avec une maison commune plus grande.' : 'Nombre maximum atteint. Améliorez la maison commune pour en construire plus.');
       if (busyBuilders(v) >= buildersOf(v)) return fail('Tous les ouvriers sont occupés.');
       if (!fits(v, a.b, a.gx, a.gz)) return fail('Emplacement occupé ou trop près du bord.');
@@ -373,6 +464,10 @@ function applyV(v, a, t) {
       if (b.up) return fail('Ce bâtiment est déjà en travaux.');
       const to = b.lvl + 1;
       if (to > maxLvlOf(b.type, th)) return fail(to > BLD[b.type].max || b.type === 'mairie' ? 'Niveau maximum atteint.' : 'Améliorez d’abord la maison commune.');
+      if (BLD[b.type].wall) {
+        const c = costOf(b.type, to), m = missingTxt(v, c); if (m) return fail(m);
+        pay(v, c); b.lvl = to; break;
+      }
       if (busyBuilders(v) >= buildersOf(v)) return fail('Tous les ouvriers sont occupés.');
       const c = costOf(b.type, to), m = missingTxt(v, c); if (m) return fail(m);
       if (RES.some(k => (c[k] || 0) > capOf(v))) return fail('Vos entrepôts sont trop petits pour réunir ce coût.');
@@ -410,6 +505,10 @@ function applyV(v, a, t) {
     }
     case 'battle': {
       for (const k of TROOP_KEYS) v.army[k] = Math.max(0, (v.army[k] || 0) - ((a.used && a.used[k]) | 0));
+      if (a.hero && HEROES[a.hero.k] && heroesOf(v)[a.hero.k]) {
+        const h = v.heroes[a.hero.k];
+        h.rest = Math.round(t + heroRestTime(h.lvl, +a.hero.frac || 0, !!a.hero.dead));
+      }
       const cap = capOf(v), got = {};
       for (const k of RES) { const g = Math.max(0, (a.loot && a.loot[k]) | 0); got[k] = Math.max(0, Math.min(g, cap - v.r[k])); v.r[k] += got[k]; }
       let dM = 0;
@@ -462,72 +561,235 @@ function applyV(v, a, t) {
 
 /* ===================== BATAILLE ===================== */
 const DT = 0.1;
+const WALL_TILE_HP = 80;   // un rempart de 800 PV « vaut » un détour de 10 cases
+const NB8 = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
 function makeBattle(layout, limit) {
-  const B = { t: 0, tk: 0, units: [], blds: [], proj: [], shots: [], uid: 1, over: false, limit: limit || 180, destroyed: 0, stars: 0, pct: 0, noMore: false, thDown: false, events: [] };
+  const B = { t: 0, tk: 0, units: [], blds: [], proj: [], shots: [], volleys: [], uid: 1, over: false, limit: limit || 180, destroyed: 0, stars: 0, pct: 0, noMore: false, thDown: false, events: [], gen: 0 };
   layout.forEach(([type, lvl, gx, gz], i) => {
     const s = BLD[type].size, d = defOf(type, lvl), hp = hpOf(type, lvl);
-    B.blds.push({ i, type, lvl, gx, gz, s, x: gx + s / 2, z: gz + s / 2, h: s / 2, hp, max: hp, def: d, cd: d ? 0.5 : 0, dead: false, tx: 0, tz: 0, fired: -9 });
+    B.blds.push({ i, type, lvl, gx, gz, s, x: gx + s / 2, z: gz + s / 2, h: s / 2, hp, max: hp, def: d, cd: d ? 0.5 : 0, dead: false, tx: 0, tz: 0, fired: -9, wall: !!BLD[type].wall });
   });
-  B.total = B.blds.length || 1;
+  B.total = B.blds.filter(b => !b.wall).length || 1;
+  B.occ = new Int16Array(GRID * GRID);
+  for (const b of B.blds) markOcc(B, b, b.i + 1);
+  B.ff = new Map();
+  computeInside(B);
   return B;
+}
+function markOcc(B, b, val) {
+  for (let x = b.gx; x < b.gx + b.s; x++) for (let z = b.gz; z < b.gz + b.s; z++) if (x >= 0 && z >= 0 && x < GRID && z < GRID) B.occ[z * GRID + x] = val;
+}
+const occAt = (B, x, z) => (x < 0 || z < 0 || x >= GRID || z >= GRID) ? -2 : B.occ[z * GRID + x] - 1;
+/* Cases enfermées par des remparts (on ne peut pas y déployer). */
+function computeInside(B) {
+  const seen = new Uint8Array(GRID * GRID), st = [];
+  const wallAt = i => { const o = B.occ[i] - 1; return o >= 0 && B.blds[o].wall; };
+  for (let k = 0; k < GRID; k++) for (const [x, z] of [[k, 0], [k, GRID - 1], [0, k], [GRID - 1, k]]) { const i = z * GRID + x; if (!seen[i] && !wallAt(i)) { seen[i] = 1; st.push(i); } }
+  while (st.length) {
+    const i = st.pop(), x = i % GRID, z = (i / GRID) | 0;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = x + dx, nz = z + dz; if (nx < 0 || nz < 0 || nx >= GRID || nz >= GRID) continue;
+      const ni = nz * GRID + nx; if (seen[ni] || wallAt(ni)) continue;
+      seen[ni] = 1; st.push(ni);
+    }
+  }
+  B.inside = new Uint8Array(GRID * GRID);
+  for (let i = 0; i < GRID * GRID; i++) if (!seen[i] && !wallAt(i)) B.inside[i] = 1;
 }
 function distRect(x, z, b) { const dx = Math.max(Math.abs(x - b.x) - b.h, 0), dz = Math.max(Math.abs(z - b.z) - b.h, 0); return Math.sqrt(dx * dx + dz * dz); }
 function canDeploy(B, x, z) {
   if (x < 0.2 || z < 0.2 || x > GRID - 0.2 || z > GRID - 0.2) return false;
-  for (const b of B.blds) if (distRect(x, z, b) < 1) return false;
+  const tx = Math.min(GRID - 1, Math.floor(x)), tz = Math.min(GRID - 1, Math.floor(z));
+  if (B.inside && B.inside[tz * GRID + tx]) return false;
+  for (const b of B.blds) {
+    if (b.wall) { if (!b.dead && distRect(x, z, b) < 0.3) return false; continue; }
+    if (distRect(x, z, b) < 1) return false;
+  }
   return true;
 }
-function deploy(B, type, x, z, owner, force) {
-  if (B.over || !TROOPS[type]) return null;
+function deploy(B, type, x, z, owner, force, lvl) {
+  const T = unitDef(type);
+  if (B.over || !T) return null;
   if (!force && !canDeploy(B, x, z)) return null;
-  const T = TROOPS[type];
-  const u = { id: B.uid++, type, x, z, px: x, pz: z, hp: T.hp, max: T.hp, owner: owner || 0, tgt: -1, cd: 0.4, dead: false, mv: 0, atk: -9 };
+  const hero = !!HEROES[type];
+  if (hero && B.units.some(u => u.hero && u.owner === (owner || 0))) return null; // un seul héros par joueur
+  const k = hero ? heroScale(lvl) : 1;
+  const S = { dmg: T.dmg * k, hit: T.hit, range: T.range, speed: T.speed, pref: T.pref, wallMul: T.wallMul || 1 };
+  const hp = Math.round(T.hp * k);
+  const u = { id: B.uid++, type, x, z, px: x, pz: z, hp, max: hp, owner: owner || 0, tgt: -1, cd: 0.4, dead: false, mv: 0, atk: -9, S, hero, lvl: lvl || 1, hit: -1, bD: 1, bS: 1, bH: 1, bT: 0, pw: 0, los: null };
   B.units.push(u);
   return u;
 }
 function pickTarget(B, u) {
-  const pref = TROOPS[u.type].pref;
+  const pref = u.S.pref;
   const onlyDef = pref === 'def' && B.blds.some(b => !b.dead && b.def);
   let best = -1, bd = 1e9;
   for (const b of B.blds) {
-    if (b.dead || (onlyDef && !b.def)) continue;
+    if (b.dead || b.wall || (onlyDef && !b.def)) continue;
     const d = distRect(u.x, u.z, b);
     if (d < bd) { bd = d; best = b.i; }
   }
   return best;
 }
+/* File de priorité (tas binaire) sur tableaux typés, réutilisée pour chaque calcul de chemin. */
+const HQ = { i: new Int32Array(GRID * GRID * 9), d: new Float32Array(GRID * GRID * 9), n: 0 };
+function heapPush(i, d) {
+  let k = HQ.n++;
+  while (k > 0) { const p = (k - 1) >> 1; if (HQ.d[p] <= d) break; HQ.i[k] = HQ.i[p]; HQ.d[k] = HQ.d[p]; k = p; }
+  HQ.i[k] = i; HQ.d[k] = d;
+}
+function heapPop() {           // renvoie l'index ; la distance est dans HQ.top
+  const ri = HQ.i[0]; HQ.top = HQ.d[0];
+  const n = --HQ.n; if (n <= 0) return ri;
+  const li = HQ.i[n], ld = HQ.d[n]; let k = 0;
+  for (;;) {
+    const l = 2 * k + 1; if (l >= n) break;
+    const r = l + 1, m = r < n && HQ.d[r] < HQ.d[l] ? r : l;
+    if (HQ.d[m] >= ld) break;
+    HQ.i[k] = HQ.i[m]; HQ.d[k] = HQ.d[m]; k = m;
+  }
+  HQ.i[k] = li; HQ.d[k] = ld;
+  return ri;
+}
+const enterCost = (B, i, ti) => { const o = B.occ[i] - 1; return o < 0 || o === ti ? 1 : 1 + B.blds[o].hp / WALL_TILE_HP; };
+const blocksSqueeze = (B, x, z) => occAt(B, x, z) !== -1; // on ne coupe pas les coins des bâtiments ni des remparts
+/* Carte des distances jusqu'à une cible : passer par un rempart ou un bâtiment coûte cher (il faut le casser). */
+function fieldFor(B, b, range) {
+  const key = b.i * 100 + Math.round(range * 10);
+  let f = B.ff.get(key); if (f) return f;
+  if (B.ffBudget <= 0) return null; // trop de calculs ce tour-ci : on attend le suivant
+  B.ffBudget--;
+  f = new Float32Array(GRID * GRID).fill(1e9);
+  HQ.n = 0;
+  const tol = Math.max(range, 0.5) + 0.3, x0 = Math.max(0, Math.floor(b.gx - tol - 1)), x1 = Math.min(GRID - 1, Math.ceil(b.gx + b.s + tol)), z0 = Math.max(0, Math.floor(b.gz - tol - 1)), z1 = Math.min(GRID - 1, Math.ceil(b.gz + b.s + tol));
+  for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) {
+    const i = z * GRID + x; if (B.occ[i] - 1 === b.i) continue;
+    if (distRect(x + 0.5, z + 0.5, b) <= tol) { f[i] = 0; heapPush(i, 0); }
+  }
+  while (HQ.n > 0) {
+    const i = heapPop(), d = HQ.top; if (d > f[i]) continue;
+    const x = i % GRID, z = (i / GRID) | 0, ec = enterCost(B, i, b.i);
+    for (let k = 0; k < 8; k++) {
+      const dx = NB8[k][0], dz = NB8[k][1], nx = x + dx, nz = z + dz;
+      if (nx < 0 || nz < 0 || nx >= GRID || nz >= GRID) continue;
+      const ni = nz * GRID + nx; if (B.occ[ni] - 1 === b.i) continue;
+      if (dx && dz && (B.occ[z * GRID + nx] || B.occ[nz * GRID + x])) continue;
+      const nd = d + ec * NB8[k][2];
+      if (nd < f[ni]) { f[ni] = nd; heapPush(ni, nd); }
+    }
+  }
+  B.ff.set(key, f);
+  return f;
+}
+function lineClear(B, x0, z0, x1, z1, ti) {
+  const dx = x1 - x0, dz = z1 - z0, L = Math.sqrt(dx * dx + dz * dz);
+  if (L < 0.05) return true;
+  const ex = x1 - dx / L * 0.06, ez = z1 - dz / L * 0.06, n = Math.ceil(L / 0.25);
+  for (let k = 1; k <= n; k++) {
+    const t = k / n, x = x0 + (ex - x0) * t, z = z0 + (ez - z0) * t;
+    const o = occAt(B, Math.floor(x), Math.floor(z));
+    if (o >= 0 && o !== ti) return false;
+  }
+  return true;
+}
+/* Prochaine étape d'une unité vers sa cible : en ligne droite si rien ne gêne, sinon par la carte des distances. */
+function navStep(B, u, b) {
+  const px = Math.max(b.x - b.h, Math.min(u.x, b.x + b.h)), pz = Math.max(b.z - b.h, Math.min(u.z, b.z + b.h));
+  const cx = Math.max(0, Math.min(GRID - 1, Math.floor(u.x))), cz = Math.max(0, Math.min(GRID - 1, Math.floor(u.z))), ci = cz * GRID + cx;
+  const L = u.los;
+  let clear;
+  if (L && L.ci === ci && L.t === b.i && L.g === B.gen) clear = L.ok;
+  else { clear = lineClear(B, u.x, u.z, px, pz, b.i); u.los = { ci, t: b.i, g: B.gen, ok: clear }; }
+  if (clear) return { x: px, z: pz };
+  const f = fieldFor(B, b, u.S.range);
+  if (!f) return { wait: true };
+  if (f[ci] <= 0.001) return { x: px, z: pz };
+  let best = -1, bv = Infinity;
+  for (const [dx, dz, c] of NB8) {
+    const nx = cx + dx, nz = cz + dz; if (nx < 0 || nz < 0 || nx >= GRID || nz >= GRID) continue;
+    const ni = nz * GRID + nx; if (B.occ[ni] - 1 === b.i) continue;
+    if (dx && dz && (B.occ[cz * GRID + nx] || B.occ[nz * GRID + cx])) continue;
+    const v = f[ni] + enterCost(B, ni, b.i) * c;
+    if (v < bv) { bv = v; best = ni; }
+  }
+  if (best < 0 || bv >= 1e8) return { x: px, z: pz };
+  const o = B.occ[best] - 1;
+  if (o >= 0 && o !== b.i) return { blk: o };
+  return { x: (best % GRID) + 0.5, z: ((best / GRID) | 0) + 0.5, path: true };
+}
 function hurt(u, dmg) { u.hp -= dmg; if (u.hp <= 0) { u.hp = 0; u.dead = true; } }
 function destroyBld(B, b) {
-  b.dead = true; b.hp = 0; B.destroyed++;
+  b.dead = true; b.hp = 0;
+  markOcc(B, b, 0); B.ff.clear(); B.gen++;
+  if (b.wall) { computeInside(B); B.events.push({ k: 'wall', i: b.i }); return; }
+  B.destroyed++;
   if (b.type === 'mairie') B.thDown = true;
   B.pct = B.destroyed / B.total;
   B.stars = (B.pct >= 0.5 ? 1 : 0) + (B.thDown ? 1 : 0) + (B.destroyed >= B.total ? 1 : 0);
   B.events.push({ k: 'down', i: b.i });
 }
+function damageBld(B, b, dmg) { if (b.dead) return; b.hp -= dmg; if (b.hp <= 0) destroyBld(B, b); }
+/* Pouvoir du héros d'un joueur (une fois par bataille). */
+function heroPower(B, owner) {
+  const u = B.units.find(q => q.hero && q.owner === owner && !q.dead && !q.pw);
+  if (!u || B.over) return false;
+  u.pw = 1;
+  if (u.type === 'roi') {
+    u.hp = Math.min(u.max, u.hp + u.max * 0.3);
+    for (const q of B.units) if (!q.dead && q.owner === u.owner) { const dx = q.x - u.x, dz = q.z - u.z; if (dx * dx + dz * dz <= 25) { q.bD = 1.6; q.bS = 1.3; q.bH = 1; q.bT = B.t + 10; } }
+  } else if (u.type === 'chasseresse') {
+    const t = u.tgt >= 0 ? B.blds[u.tgt] : null;
+    B.volleys.push({ x: t ? t.x : u.x, z: t ? t.z : u.z, n: 3, next: B.t + 0.4, dmg: 150 * heroScale(u.lvl), fx: u.x, fz: u.z });
+  } else if (u.type === 'berserker') {
+    u.hp = Math.min(u.max, u.hp + u.max * 0.5); u.bH = 2; u.bD = 1; u.bS = 1.15; u.bT = B.t + 8;
+  }
+  B.events.push({ k: 'power', type: u.type, x: u.x, z: u.z, uid: u.id });
+  return true;
+}
 function stepBattle(B) {
   if (B.over) return;
+  B.ffBudget = 6;
   for (const u of B.units) { u.px = u.x; u.pz = u.z; }
   for (const u of B.units) {
     if (u.dead) continue;
-    const T = TROOPS[u.type];
+    const S = u.S;
+    if (u.bT && B.t >= u.bT) { u.bD = u.bS = u.bH = 1; u.bT = 0; }
     let b = u.tgt >= 0 ? B.blds[u.tgt] : null;
     if (!b || b.dead) { u.tgt = pickTarget(B, u); b = u.tgt >= 0 ? B.blds[u.tgt] : null; }
-    if (!b) { u.mv = 0; continue; }
-    const d = distRect(u.x, u.z, b);
-    if (d > T.range) {
-      const px = Math.max(b.x - b.h, Math.min(u.x, b.x + b.h)), pz = Math.max(b.z - b.h, Math.min(u.z, b.z + b.h));
-      const dx = px - u.x, dz = pz - u.z, L = Math.sqrt(dx * dx + dz * dz) || 1;
-      const len = Math.min(T.speed * DT, d - T.range * 0.85);
-      u.x += dx / L * len; u.z += dz / L * len; u.mv = 1;
-    } else {
-      u.mv = 0; u.cd -= DT;
-      if (u.cd <= 0) {
-        u.cd += T.hit; u.atk = B.t; b.hp -= T.dmg;
-        if (u.type === 'archer') B.shots.push({ k: 'arrowU', fx: u.x, fz: u.z, tx: b.x, tz: b.z, t: B.t });
-        if (b.hp <= 0) destroyBld(B, b);
+    if (!b) { u.mv = 0; u.hit = -1; continue; }
+    let victim = null;
+    const d = distRect(u.x, u.z, b), speed = S.speed * u.bS * DT;
+    if (d <= S.range) victim = b;
+    else {
+      const st = navStep(B, u, b);
+      if (st.wait) u.mv = 1;
+      else if (st.blk != null) {
+        const w = B.blds[st.blk];
+        if (distRect(u.x, u.z, w) <= Math.max(S.range, 0.6)) victim = w;
+        else { const dx = w.x - u.x, dz = w.z - u.z, L = Math.sqrt(dx * dx + dz * dz) || 1; u.x += dx / L * Math.min(speed, L); u.z += dz / L * Math.min(speed, L); u.mv = 1; }
+      } else {
+        const dx = st.x - u.x, dz = st.z - u.z, L = Math.sqrt(dx * dx + dz * dz) || 1;
+        const len = st.path ? Math.min(speed, L) : Math.min(speed, Math.max(0, d - S.range * 0.85));
+        u.x += dx / L * len; u.z += dz / L * len; u.mv = 1;
       }
     }
+    if (victim) {
+      u.mv = 0; u.hit = victim.i; u.cd -= DT * u.bH;
+      if (u.cd <= 0) {
+        u.cd += S.hit; u.atk = B.t;
+        if (S.range > 1.5) B.shots.push({ k: 'arrowU', fx: u.x, fz: u.z, tx: victim.x, tz: victim.z, t: B.t });
+        else if (B.tk % 2 === 0 || u.hero) B.events.push({ k: 'hit', x: victim.wall ? victim.x : u.x + (victim.x - u.x) * 0.5, z: victim.wall ? victim.z : u.z + (victim.z - u.z) * 0.5, w: victim.wall ? 1 : 0 });
+        damageBld(B, victim, S.dmg * u.bD * (victim.wall ? S.wallMul : 1));
+      }
+    } else if (!u.mv) u.hit = -1;
   }
+  for (const V of B.volleys) {
+    if (V.n <= 0 || B.t + 1e-9 < V.next) continue;
+    V.n--; V.next = B.t + 0.6;
+    B.events.push({ k: 'volley', x: V.x, z: V.z, fx: V.fx, fz: V.fz });
+    for (const b of B.blds) if (!b.dead && distRect(V.x, V.z, b) <= 2.5) damageBld(B, b, V.dmg);
+  }
+  B.volleys = B.volleys.filter(V => V.n > 0);
   for (const b of B.blds) {
     if (b.dead || !b.def) continue;
     b.cd -= DT; if (b.cd > 0) continue;
@@ -585,6 +847,7 @@ function simulateRaid(layout, seed, budget) {
     while (i < plan.length && plan[i].t <= B.t + 1e-9) { deploy(B, plan[i].u, plan[i].x, plan[i].z, 1, true); i++; }
     if (i >= plan.length) B.noMore = true;
     stepBattle(B);
+    B.events.length = 0; B.shots.length = 0;
   }
   return { stars: B.stars, pct: B.pct };
 }
@@ -610,6 +873,25 @@ function genBot(seed, th, fortress, league) {
   for (let i = 0; i < nT; i++) place('tour', lvl('tour'), 2.5, 5.5);
   for (let i = 0; i < nB; i++) place('baliste', lvl('baliste'), 1.5, 4.5);
   for (let i = 0; i < nM; i++) place('mangonneau', lvl('mangonneau'), 0.5, 3.5);
+  if (th >= 2 || fortress) {
+    /* Une enceinte autour de la halle et des défenses, avec des brèches dans les petits camps. */
+    const core = v.b.slice();
+    let x0 = GRID, z0 = GRID, x1 = 0, z1 = 0;
+    for (const b of core) { const s = BLD[b.type].size; x0 = Math.min(x0, b.gx); z0 = Math.min(z0, b.gz); x1 = Math.max(x1, b.gx + s); z1 = Math.max(z1, b.gz + s); }
+    x0 = Math.max(EDGE, x0 - 1); z0 = Math.max(EDGE, z0 - 1); x1 = Math.min(GRID - EDGE - 1, x1); z1 = Math.min(GRID - EDGE - 1, z1);
+    const loop = [];
+    for (let x = x0; x < x1; x++) loop.push([x, z0]);
+    for (let z = z0; z < z1; z++) loop.push([x1, z]);
+    for (let x = x1; x > x0; x--) loop.push([x, z1]);
+    for (let z = z1; z > z0; z--) loop.push([x0, z]);
+    const nGaps = fortress ? 0 : th >= 3 ? 1 : 2, gaps = [];
+    for (let g = 0; g < nGaps; g++) gaps.push(Math.floor(R() * loop.length));
+    const wl = Math.max(1, Math.min(5, th - 1 + (fortress ? 1 : 0) + (lg >= 3 ? 1 : 0)));
+    loop.forEach(([x, z], k) => {
+      if (gaps.some(g => Math.min(Math.abs(k - g), loop.length - Math.abs(k - g)) <= 1)) return;
+      if (fits(v, 'rempart', x, z)) v.b.push({ id: v.nid++, type: 'rempart', lvl: wl, gx: x, gz: z });
+    });
+  }
   for (const type of ['scierie', 'carriere', 'ferme', 'entrepot', 'caserne', 'camp']) {
     const n = Math.max(1, limitOf(type, th) - (R() < 0.4 ? 1 : 0)) + (fortress ? 1 : 0);
     for (let i = 0; i < n; i++) place(type, lvl(type), 4, 8.5);
@@ -630,11 +912,12 @@ const V3 = (() => {
   const cam = { tx: 0, tz: 0, view: 18 };
   const M = {}, G = {};
   let winMat, fireMat, barBg, selMat, ghostOk, ghostBad, zoneTex, zoneMesh, gridMesh, selMesh, ghostMesh, ringMat, ringFill, glowTex, emberMat;
-  const bldGroup = new THREE.Group(), unitGroup = new THREE.Group(), fxGroup = new THREE.Group(), rangeGroup = new THREE.Group();
+  const bldGroup = new THREE.Group(), unitGroup = new THREE.Group(), fxGroup = new THREE.Group(), rangeGroup = new THREE.Group(), wallGroup = new THREE.Group();
   const decoProc = new THREE.Group(), decoModel = new THREE.Group();
   const blds = new Map();   // key -> {g, sig, item, info, bar, hp, glow}
   const units = new Map();  // id -> {g, lx, lz, model}
-  const dying = [], shots = [], puffs = [], embers = [];
+  const dying = [], shots = [], puffs = [], embers = [], chunks = [], waves = [], sparks = [];
+  let shakeT = 0, shakeA = 0;
   let anims = [];
   let frameHook = null, tapHook = null, mood = '', groundMat = null, outerMat = null;
   const LIB = { ok: false, b: {}, ch: {}, tex: {}, ver: 0, xbow: null };
@@ -1023,7 +1306,7 @@ const V3 = (() => {
     glowTex = radialTexture();
     emberMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xff8a3a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
     buildWorld();
-    scene.add(bldGroup); scene.add(unitGroup); scene.add(fxGroup); scene.add(rangeGroup);
+    scene.add(bldGroup); scene.add(unitGroup); scene.add(fxGroup); scene.add(rangeGroup); scene.add(wallGroup);
     selMesh = new THREE.Mesh(geo('plane'), selMat); selMesh.visible = false; selMesh.renderOrder = 2; scene.add(selMesh);
     ghostMesh = new THREE.Mesh(geo('plane'), ghostOk); ghostMesh.visible = false; ghostMesh.renderOrder = 3; scene.add(ghostMesh);
     const zc = document.createElement('canvas'); zc.width = zc.height = GRID * 4;
@@ -1101,11 +1384,14 @@ const V3 = (() => {
     canvas.addEventListener('wheel', e => { e.preventDefault(); cam.view = Math.max(VMIN, Math.min(VMAX, cam.view * (1 + e.deltaY * 0.0012))); frustum(); }, { passive: false });
     canvas.addEventListener('contextmenu', e => e.preventDefault());
   }
-  function updateCamera() {
+  function updateCamera(dt) {
     const cp = Math.cos(PITCH), D = 70;
-    camera.position.set(cam.tx + D * cp * Math.sin(YAW), D * Math.sin(PITCH), cam.tz + D * cp * Math.cos(YAW));
-    camera.lookAt(cam.tx, 0, cam.tz);
+    let ox = 0, oz = 0;
+    if (shakeT > 0) { shakeT = Math.max(0, shakeT - (dt || 0)); const a = shakeA * shakeT / 0.35; ox = (Math.random() - 0.5) * a; oz = (Math.random() - 0.5) * a; }
+    camera.position.set(cam.tx + ox + D * cp * Math.sin(YAW), D * Math.sin(PITCH), cam.tz + oz + D * cp * Math.cos(YAW));
+    camera.lookAt(cam.tx + ox, 0, cam.tz + oz);
   }
+  function shake(a) { shakeA = Math.max(shakeT > 0 ? shakeA : 0, a); shakeT = 0.35; }
   function resetCamera(view) { cam.tx = 0; cam.tz = 0; cam.view = view || (aspect < 0.8 ? 28 : aspect > 1.6 ? 15 : 19); if (camera) frustum(); }
   const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), hit = new THREE.Vector3();
   function setRay(cx, cy) { const [lx, ly] = mapPt(cx, cy), w = canvas.clientWidth || 1, h = canvas.clientHeight || 1; ndc.set(lx / w * 2 - 1, -(ly / h) * 2 + 1); ray.setFromCamera(ndc, camera); }
@@ -1114,11 +1400,13 @@ const V3 = (() => {
     setRay(cx, cy);
     const hits = ray.intersectObjects(bldGroup.children, true);
     for (const h of hits) { let o = h.object; while (o && o.parent !== bldGroup) o = o.parent; if (o && o.userData.key != null) return o.userData.key; }
+    const g = pickGround(cx, cy);
+    if (g) { const w = wallAt.get(Math.floor(g[0]) + ',' + Math.floor(g[1])); if (w) return w.key; }
     return null;
   }
 
   /* ---------- bâtiments affichés ---------- */
-  const B_MODEL = { mairie: 'castle', scierie: 'lumbermill', carriere: 'mine', ferme: 'windmill', entrepot: 'market', caserne: 'barracks', camp: 'tavern', tour: 'tower_A', baliste: 'tower_B', mangonneau: 'tower_catapult' };
+  const B_MODEL = { mairie: 'castle', scierie: 'lumbermill', carriere: 'mine', ferme: 'windmill', entrepot: 'market', caserne: 'barracks', camp: 'tavern', tour: 'tower_A', baliste: 'tower_B', mangonneau: 'tower_catapult', heros: 'church' };
   const TEAM = { '#D27A22': 2, '#2F8A63': 3, '#4A78C2': 0, '#B24F78': 2, '#8A67C6': 0 };
   const MODEL_RY = Math.PI / 4;
   const protos = new Map();
@@ -1170,6 +1458,7 @@ const V3 = (() => {
         const m = modelInst(B_MODEL[it.type], team, it.orc, foot * (1 + 0.035 * (Math.min(5, it.lvl) - 1)), MODEL_RY);
         if (m) { g.add(m); info.top = m.userData.h; info.muzzle = Math.max(0.8, info.top * 0.8); }
         if (['mairie', 'camp', 'scierie', 'caserne'].includes(it.type)) info.emit.push([0.15, info.top * 0.9, -0.15]);
+        if (it.type === 'heros' && !it.orc) { const f = makeGlow(0xffd27a, 1.4, info.top * 0.75); g.add(f); anims.push({ k: 'pulse', o: f, base: 1.4 }); }
         if (it.orc) { spikes(g, s + 0.25, 6 + 3 * s, 0.5); totem(g, s / 2 - 0.05, s / 2 + 0.05, 1.0); }
         if (it.up) g.add(makeScaffold(s, Math.min(2.4, info.top * 0.6)));
       }
@@ -1189,20 +1478,94 @@ const V3 = (() => {
     return rec;
   }
   function setBuildings(items) {
-    const seen = new Set();
+    const seen = new Set(), walls = [];
+    const fresh = blds.size === 0 && wallAt.size === 0;
     for (const it of items) {
+      if (it.type === 'rempart') { walls.push(it); continue; }
       seen.add(it.key);
       const old = blds.get(it.key), sig = sigOf(it);
       if (old && old.sig === sig) { old.item = it; continue; }
       if (old) { bldGroup.remove(old.g); pruneAnims(old.g); }
       const rec = build(it); blds.set(it.key, rec); bldGroup.add(rec.g);
+      if (!fresh && !it.dead && it.key !== 'ghost' && (!old || old.item.lvl !== it.lvl || old.item.gx !== it.gx || old.item.gz !== it.gz || !!old.item.up !== !!it.up)) {
+        anims.push({ k: 'pop', o: rec.g, t: 0 });
+        const s = BLD[it.type].size;
+        dustRing(it.gx + s / 2, it.gz + s / 2, s * 0.6);
+      }
     }
     for (const [k, rec] of blds) if (!seen.has(k)) { bldGroup.remove(rec.g); pruneAnims(rec.g); blds.delete(k); }
+    setWalls(walls, fresh);
+  }
+
+  /* ---------- remparts : dessinés en série (instances), reliés à leurs voisins ---------- */
+  const wallAt = new Map(), wallBars = new Map();
+  let wallSig = '';
+  const WS = {
+    d1: { post: ['cyl8', 0x8b6a45, 0.34, 0.95], cap: ['cone6', 0xa98353, 0.36, 0.3], link: [0x7a5c3a, 0.16, 0.74] },
+    d2: { post: ['box', 0x8e8a80, 0.56, 0.85], cap: ['box', 0x6f767c, 0.64, 0.1], link: [0x9a958a, 0.42, 0.68] },
+    d3: { post: ['box', 0xb8b3a8, 0.6, 1.0], cap: ['box', 0x7d858b, 0.68, 0.12], link: [0xaaa69b, 0.44, 0.82] },
+    d4: { post: ['box', 0x6f767c, 0.64, 1.12], cap: ['box', 0x4d5966, 0.72, 0.12], band: [0xc9922e, 0.66, 0.07, 0.78], link: [0x7d858b, 0.46, 0.92] },
+    d5: { post: ['box', 0x4d5966, 0.66, 1.25], cap: ['box', 0x3c4552, 0.74, 0.13], band: [0x7fe0ff, 0.68, 0.07, 0.86, true], link: [0x56626f, 0.48, 1.02] },
+  };
+  for (let l = 1; l <= 5; l++) WS['o' + l] = { post: ['cyl6', 0x4a3424, 0.3, 0.95 + 0.07 * l], cap: ['cone6', l >= 4 ? 0xe6dcc0 : 0x6b4a2b, 0.32, 0.34], band: l >= 3 ? [0x6e5a48, 0.33, 0.07, 0.6] : null, link: [0x34241a, 0.16, 0.72 + 0.06 * l] };
+  function setWalls(items, fresh) {
+    const live = items.filter(w => !w.dead), dead = items.filter(w => w.dead);
+    const sig = items.map(w => w.gx + ',' + w.gz + ',' + w.lvl + (w.orc ? 'o' : '') + (w.dead ? 'x' : '')).join(';');
+    const prev = new Set(wallAt.keys());
+    wallAt.clear();
+    for (const w of items) if (!w.dead) wallAt.set(w.gx + ',' + w.gz, w);
+    if (sig === wallSig) return;
+    wallSig = sig;
+    if (!fresh && prev.size) { let n = 0; for (const w of live) if (!prev.has(w.gx + ',' + w.gz) && n++ < 12) dustRing(w.gx + 0.5, w.gz + 0.5, 0.4); }
+    while (wallGroup.children.length) { const c = wallGroup.children[0]; wallGroup.remove(c); if (c.dispose) c.dispose(); }
+    for (const [k, bar] of wallBars) { if (!wallAt.has(k.split('|')[1])) { fxGroup.remove(bar); wallBars.delete(k); } }
+    const sets = new Map(), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), ps = new THREE.Vector3(), sc = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    const push = (key, k, color, basicM, x, y, z, sx, sy, sz, ry) => {
+      const id = key + '|' + k + '|' + color;
+      if (!sets.has(id)) sets.set(id, { k, color, basicM, mats: [] });
+      q.setFromAxisAngle(up, ry || 0); ps.set(x, y, z); sc.set(sx, sy, sz);
+      sets.get(id).mats.push(m4.clone().compose(ps, q, sc));
+    };
+    const styleOf = w => WS[(w.orc ? 'o' : 'd') + Math.max(1, Math.min(5, w.lvl | 0))];
+    const isW = (x, z) => wallAt.has(x + ',' + z);
+    for (const w of live) {
+      const st = styleOf(w), X = w.gx + 0.5 - half, Z = w.gz + 0.5 - half, key = (w.orc ? 'o' : 'd') + w.lvl;
+      const [pk, pc, pw, ph] = st.post;
+      push(key, pk, pc, false, X, 0, Z, pw, ph, pw);
+      const [ck, cc, cw, chh] = st.cap; push(key, ck, cc, false, X, ph, Z, cw, chh, cw);
+      if (st.band) { const [bc, bw, bh, by, glow] = st.band; push(key, 'box', bc, !!glow, X, by, Z, bw, bh, bw); }
+      const link = (o, cx, cz, len, ry) => { const lw = o.lvl < w.lvl ? o : w, ls = styleOf(lw), [lc, lwid, lh] = ls.link; push((lw.orc ? 'o' : 'd') + lw.lvl, 'box', lc, false, cx, 0, cz, len, lh, lwid, ry); };
+      const E = wallAt.get((w.gx + 1) + ',' + w.gz), S = wallAt.get(w.gx + ',' + (w.gz + 1));
+      if (E) link(E, X + 0.5, Z, 1, 0);
+      if (S) link(S, X, Z + 0.5, 1, Math.PI / 2);
+      const SE = wallAt.get((w.gx + 1) + ',' + (w.gz + 1)), SW = wallAt.get((w.gx - 1) + ',' + (w.gz + 1));
+      if (SE && !isW(w.gx + 1, w.gz) && !isW(w.gx, w.gz + 1)) link(SE, X + 0.5, Z + 0.5, Math.SQRT2, -Math.PI / 4);
+      if (SW && !isW(w.gx - 1, w.gz) && !isW(w.gx, w.gz + 1)) link(SW, X - 0.5, Z + 0.5, Math.SQRT2, Math.PI / 4);
+    }
+    for (const w of dead) {
+      const X = w.gx + 0.5 - half, Z = w.gz + 0.5 - half, c = w.orc ? 0x3a2a1e : 0x6b6258, r = ((w.gx * 7 + w.gz * 13) % 10) / 10;
+      push('rb', 'dode', c, false, X - 0.15, 0, Z + 0.1, 0.42, 0.18, 0.36, r * 3);
+      push('rb', 'dode', c, false, X + 0.18, 0, Z - 0.12, 0.3, 0.14, 0.3, r * 5);
+    }
+    for (const [, S] of sets) {
+      const im = new THREE.InstancedMesh(geo(S.k), S.basicM ? basic(S.color) : mat(S.color), S.mats.length);
+      S.mats.forEach((m, i) => im.setMatrixAt(i, m));
+      im.castShadow = !S.basicM; im.receiveShadow = true;
+      wallGroup.add(im);
+    }
+  }
+  function wallBar(key, frac) {
+    let w = null; for (const it of wallAt.values()) if (it.key === key) { w = it; break; }
+    const id = 'b|' + (w ? w.gx + ',' + w.gz : key);
+    let bar = wallBars.get(id);
+    if (!w || frac >= 0.999 || frac <= 0) { if (bar) { fxGroup.remove(bar); wallBars.delete(id); } return; }
+    if (!bar) { bar = makeBar(0.7, 0x5fd17a); bar.position.set(w.gx + 0.5 - half, 1.6, w.gz + 0.5 - half); fxGroup.add(bar); wallBars.set(id, bar); }
+    setBar(bar, frac);
   }
   function pruneAnims(g) { anims = anims.filter(a => { let o = a.o; while (o) { if (o === g) return false; o = o.parent; } return true; }); }
   function clearBuildings() { setBuildings([]); }
   function setBldHp(key, frac) {
-    const rec = blds.get(key); if (!rec) return;
+    const rec = blds.get(key); if (!rec) { wallBar(key, frac); return; }
     if (frac >= 0.999 || frac <= 0) { if (rec.hp) rec.hp.visible = false; return; }
     if (!rec.hp) { rec.hp = makeBar(1.1, 0x5fd17a); rec.hp.position.set(0, rec.info.top + 0.3, 0); rec.g.add(rec.hp); }
     rec.hp.visible = true; setBar(rec.hp, frac);
@@ -1227,6 +1590,9 @@ const V3 = (() => {
     ghostMesh.scale.set(s, 1, s); ghostMesh.position.set(gx + s / 2 - half, 0.03, gz + s / 2 - half);
   }
   function focus(gx, gz) { cam.tx = clampT(gx - half); cam.tz = clampT(gz - half); }
+  const projV = new THREE.Vector3();
+  function panOf(x, z) { if (!camera) return 0; projV.set(x - half, 0.5, z - half).project(camera); return Math.max(-1, Math.min(1, projV.x)); }
+  function toScreen(x, z) { projV.set(x - half, 0, z - half).project(camera); const r = canvas.getBoundingClientRect(); return [r.left + (projV.x + 1) / 2 * r.width, r.top + (1 - projV.y) / 2 * r.height]; }
   function showZone(B) {
     if (!B) { zoneMesh.visible = false; return; }
     const c = zoneTex.image, x = c.getContext('2d'), k = c.width / GRID;
@@ -1268,6 +1634,14 @@ const V3 = (() => {
       body.add(P('cyl8', 0x6c7e5a, 0.15, 0.62, 0.15, -0.42, 0.3, 0.05)); body.add(P('cyl8', 0x6c7e5a, 0.15, 0.62, 0.15, 0.42, 0.3, 0.05));
       body.add(piv(0.45, 0.35, 0.2, [P('cyl8', OR.woodD, 0.16, 0.75, 0.16, 0, 0, 0, 0, true)], 0.9));
       body.scale.setScalar(1.25); barY = 1.75;
+    } else if (HEROES[type]) {
+      const hc = HERO_GLOW[type];
+      body.add(P('box', 0x3a2a20, 0.22, 0.1, 0.15, 0, 0, 0, 0, true));
+      body.add(P('cyl8', hc, 0.36, 0.3, 0.36, 0, 0.08, 0));
+      body.add(P('sph', C.skin, 0.22, 0.22, 0.22, 0, 0.36, 0, 0, true));
+      body.add(piv(0, 0.46, 0.07, [P('cone6', BEARDS[(id || 0) % BEARDS.length], 0.24, 0.3, 0.16, 0, 0, 0, 0, true)], Math.PI));
+      body.add(P('cone6', 0xd9b54c, 0.26, 0.16, 0.26, 0, 0.47, 0, 0, true));
+      body.scale.setScalar(1.7); barY = 1.25;
     } else if (!orc) {
       body.add(P('box', 0x3a2a20, 0.2, 0.1, 0.13, 0, 0, 0, 0, true));
       body.add(P('cyl8', col, 0.31, 0.26, 0.31, 0, 0.08, 0));
@@ -1307,13 +1681,20 @@ const V3 = (() => {
       fantassin: { m: 'barbarian', show: ['1H_Axe', 'Barbarian_Round_Shield', 'Barbarian_Hat'], atk: '1H_Melee_Attack_Chop', h: 1.0, w: 1.28 },
       archer: { m: 'barbarian', show: ['Barbarian_Hat'], xbow: true, atk: '2H_Ranged_Shoot', h: 1.0, w: 1.28 },
     },
+    hero: {
+      roi: { m: 'knight', show: ['1H_Sword', 'Badge_Shield', 'Knight_Helmet', 'Knight_Cape'], atk: '1H_Melee_Attack_Chop', pow: 'Cheer', h: 1.3, w: 1.3 },
+      chasseresse: { m: 'rogue', show: ['2H_Crossbow', 'Rogue_Cape'], atk: '2H_Ranged_Shoot', pow: 'Cheer', h: 1.22, w: 1.18 },
+      berserker: { m: 'barbarian', show: ['2H_Axe', 'Barbarian_Cape'], atk: '2H_Melee_Attack_Chop', pow: '2H_Melee_Attack_Spin', h: 1.38, w: 1.34 },
+    },
     orc: {
       fantassin: { m: 'barbarian', tex: 'orc_barbarian', show: ['1H_Axe', '1H_Axe_Offhand'], atk: '1H_Melee_Attack_Chop', h: 1.28, w: 1.06 },
       archer: { m: 'rogue', tex: 'orc_rogue', show: ['2H_Crossbow'], atk: '2H_Ranged_Shoot', h: 1.22, w: 1.0 },
       belier: { m: 'barbarian', tex: 'troll', show: ['2H_Axe'], atk: '2H_Melee_Attack_Chop', h: 2.4, w: 1.32 },
     },
   };
-  const WEAPONS = ['1H_Axe_Offhand', 'Barbarian_Round_Shield', '1H_Axe', '2H_Axe', 'Mug', 'Barbarian_Hat', 'Knife_Offhand', '1H_Crossbow', '2H_Crossbow', 'Knife', 'Throwable'];
+  const WEAPONS = ['1H_Axe_Offhand', 'Barbarian_Round_Shield', '1H_Axe', '2H_Axe', 'Mug', 'Barbarian_Hat', 'Knife_Offhand', '1H_Crossbow', '2H_Crossbow', 'Knife', 'Throwable',
+    '1H_Sword_Offhand', 'Badge_Shield', 'Rectangle_Shield', 'Round_Shield', 'Spike_Shield', '1H_Sword', '2H_Sword', 'Knight_Helmet', 'Knight_Cape', 'Rogue_Cape', 'Barbarian_Cape'];
+  const HERO_GLOW = { roi: 0xffd27a, chasseresse: 0x9be37a, berserker: 0xff6a3c };
   const skinMats = new Map();
   function skinMat(orig, texName) {
     const key = orig.uuid + '|' + texName;
@@ -1321,7 +1702,7 @@ const V3 = (() => {
     return skinMats.get(key);
   }
   function makeUnitModel(type, col, orc) {
-    const def = (orc ? U_DEF.orc : U_DEF.dwarf)[type];
+    const def = HEROES[type] ? U_DEF.hero[type] : (orc ? U_DEF.orc : U_DEF.dwarf)[type];
     if (!def || !LIB.ch[def.m] || !THREE.SkeletonUtils) return null;
     const src = LIB.ch[def.m], obj = THREE.SkeletonUtils.clone(src.scene);
     obj.traverse(o => {
@@ -1334,14 +1715,17 @@ const V3 = (() => {
     }
     const k = def.h / src.h; obj.scale.set(k * def.w, k, k * def.w);
     const g = new THREE.Group(), body = new THREE.Group(); body.add(obj); g.add(body);
-    const ring = new THREE.Mesh(geo('plane'), basic(orc ? 0xb8402e : col, { transparent: true, opacity: 0.55, depthWrite: false }));
-    const rs = type === 'belier' ? 1.1 : 0.6; ring.scale.set(rs, 1, rs); ring.position.y = 0.02; ring.renderOrder = 2; g.add(ring);
+    const hero = !!HEROES[type];
+    const ring = new THREE.Mesh(geo('plane'), basic(orc ? 0xb8402e : hero ? HERO_GLOW[type] : col, { transparent: true, opacity: hero ? 0.75 : 0.55, depthWrite: false }));
+    const rs = type === 'belier' ? 1.1 : hero ? 0.95 : 0.6; ring.scale.set(rs, 1, rs); ring.position.y = 0.02; ring.renderOrder = 2; g.add(ring);
     const mixer = new THREE.AnimationMixer(obj);
     const act = n => src.clips[n] ? mixer.clipAction(src.clips[n]) : null;
-    const A = { idle: act('Idle'), walk: act('Walking_A'), atk: act(def.atk), death: act('Death_A'), cheer: act('Cheer') };
+    const A = { idle: act('Idle'), walk: act('Walking_A'), atk: act(def.atk), death: act('Death_A'), cheer: act('Cheer'), pow: act(def.pow || 'Cheer') };
     if (A.death) { A.death.setLoop(THREE.LoopOnce); A.death.clampWhenFinished = true; }
-    const bar = makeBar(0.5, 0x5fd17a); bar.position.y = def.h + 0.3; bar.visible = false; g.add(bar);
-    g.userData = { body, bar, mixer, A, cur: null };
+    if (A.pow) { A.pow.setLoop(THREE.LoopOnce); A.pow.clampWhenFinished = false; }
+    const bar = makeBar(hero ? 0.8 : 0.5, hero ? 0xffd27a : 0x5fd17a); bar.position.y = def.h + 0.3; bar.visible = false; g.add(bar);
+    g.userData = { body, bar, mixer, A, cur: null, hero, ring };
+    if (hero) { const gl = makeGlow(HERO_GLOW[type], 1.6, 0.25); gl.material.opacity = 0.35; g.add(gl); g.userData.halo = gl; }
     play(g, 'idle');
     return g;
   }
@@ -1371,8 +1755,10 @@ const V3 = (() => {
       if (rec.model) {
         const T = TROOPS[u.type] || TROOPS.fantassin;
         rec.g.position.set(x - half, 0, z - half);
-        if (u.mv) play(rec.g, 'walk', T.speed / 1.4);
-        else if (u.atkAge != null && u.atkAge < T.hit * 1.6) { const a = rec.g.userData.A.atk; play(rec.g, 'atk', a ? a.getClip().duration / T.hit : 1); }
+        const U = rec.g.userData;
+        if (U.powUntil > tNow) { /* animation du pouvoir en cours */ }
+        else if (u.mv) play(rec.g, 'walk', T.speed / 1.4);
+        else if (u.atkAge != null && u.atkAge < T.hit * 1.6) { const a = U.A.atk; play(rec.g, 'atk', a ? a.getClip().duration / T.hit : 1); }
         else play(rec.g, 'idle', 1);
       } else {
         const bob = u.mv ? Math.abs(Math.sin(tNow * 12 + u.id)) * 0.06 : 0;
@@ -1380,9 +1766,12 @@ const V3 = (() => {
         rec.g.position.set(x - half, bob, z - half);
         rec.g.userData.body.position.z = lunge;
       }
-      const f = u.hp / u.max;
-      rec.g.userData.bar.visible = f < 0.999;
-      if (f < 0.999) setBar(rec.g.userData.bar, f);
+      const f = u.hp / u.max, UD = rec.g.userData;
+      UD.bar.visible = f < 0.999 || !!UD.hero;
+      if (UD.bar.visible) setBar(UD.bar, f);
+      if (u.buff && !UD.aura) { UD.aura = makeGlow(u.hero ? HERO_GLOW[u.type] : 0xffc94a, 1.3, 0.6); UD.aura.material.opacity = 0.45; rec.g.add(UD.aura); }
+      if (UD.aura) { UD.aura.visible = !!u.buff; if (u.buff) UD.aura.material.opacity = 0.35 + 0.2 * Math.sin(tNow * 9 + u.id); }
+      if (UD.halo) UD.halo.material.opacity = 0.28 + 0.1 * Math.sin(tNow * 3);
     }
     for (const [id, rec] of units) if (!seen.has(id)) {
       units.delete(id);
@@ -1390,20 +1779,25 @@ const V3 = (() => {
       else { unitGroup.remove(rec.g); burst(rec.lx, rec.lz, 0.3, 0xd8d0c0, 4); }
     }
   }
+  function unitPower(id) {
+    const rec = units.get(id); if (!rec) return;
+    if (rec.model && rec.g.userData.A.pow) { play(rec.g, 'pow', 1.1); rec.g.userData.powUntil = performance.now() / 1000 + 1.1; }
+  }
   function clearUnits() {
     for (const [, rec] of units) unitGroup.remove(rec.g); units.clear();
     for (const d of dying) unitGroup.remove(d.g); dying.length = 0;
     for (const s of shots) fxGroup.remove(s.m); shots.length = 0;
+    for (const c of chunks) fxGroup.remove(c.m); chunks.length = 0;
   }
 
   /* ---------- projectiles et effets ---------- */
-  function spawnShot(kind, fx, fy, fz, target, dur) {
+  function spawnShot(kind, fx, fy, fz, target, dur, arcK) {
     let m;
     if (kind === 'stone') m = P('dode', 0x7d858b, 0.3, 0.3, 0.3, 0, 0, 0, 0, true);
     else if (kind === 'bolt') m = P('box', 0x4b3a2a, 0.07, 0.07, 0.6, 0, 0, 0, 0, true);
     else m = P('box', 0x3a2a1e, 0.035, 0.035, 0.42, 0, 0, 0, 0, true);
     fxGroup.add(m);
-    shots.push({ m, kind, fx: fx - half, fy, fz: fz - half, target, age: 0, dur: Math.max(0.12, dur), lx: fx - half, ly: fy, lz: fz - half });
+    shots.push({ m, kind, fx: fx - half, fy, fz: fz - half, target, age: 0, dur: Math.max(0.12, dur), lx: fx - half, ly: fy, lz: fz - half, arcK: arcK || 0 });
   }
   function burst(x, z, y, color, n) {
     for (let i = 0; i < n; i++) {
@@ -1412,6 +1806,49 @@ const V3 = (() => {
       m.position.set(x - half + (Math.random() - 0.5) * 0.6, y, z - half + (Math.random() - 0.5) * 0.6);
       fxGroup.add(m); puffs.push({ m, vy: 0.6 + Math.random() * 0.8, vx: (Math.random() - 0.5) * 0.6, vz: (Math.random() - 0.5) * 0.6, age: 0, life: 0.8 + Math.random() * 0.6, s });
     }
+  }
+  /* Effets : poussière, débris, ondes, étincelles, pouvoirs des héros. */
+  function dustRing(x, z, r) {
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * Math.PI * 2, m = new THREE.Mesh(geo('sph'), basic(0xd8c8a8, { transparent: true, opacity: 0.6, depthWrite: false }));
+      const s = 0.22 + Math.random() * 0.12; m.scale.setScalar(s);
+      m.position.set(x - half + Math.cos(a) * r, 0.12, z - half + Math.sin(a) * r);
+      fxGroup.add(m); puffs.push({ m, vy: 0.35, vx: Math.cos(a) * 0.9, vz: Math.sin(a) * 0.9, age: 0, life: 0.7, s });
+    }
+  }
+  const chunkMats = {};
+  function debris(x, z, s, orc, n) {
+    const cols = orc ? [0x4a3424, 0x6b4a2b, 0x8d6e4a] : [0x9a9488, 0x7d858b, 0x8b6a45];
+    for (let i = 0; i < (n || 10); i++) {
+      const c = cols[i % cols.length], m = new THREE.Mesh(geo('box'), chunkMats[c] || (chunkMats[c] = mat(c)));
+      const k = 0.12 + Math.random() * 0.18; m.scale.set(k, k * 0.8, k * 1.1); m.castShadow = false;
+      m.position.set(x - half + (Math.random() - 0.5) * s * 0.6, 0.3 + Math.random() * s * 0.4, z - half + (Math.random() - 0.5) * s * 0.6);
+      const a = Math.random() * Math.PI * 2, sp = 1.5 + Math.random() * 2.5;
+      fxGroup.add(m); chunks.push({ m, vx: Math.cos(a) * sp, vy: 3 + Math.random() * 3.5, vz: Math.sin(a) * sp, rx: (Math.random() - 0.5) * 12, rz: (Math.random() - 0.5) * 12, age: 0, life: 1.3 + Math.random() * 0.5, k });
+    }
+  }
+  function wave(x, z, color, r, life) {
+    const rg = new THREE.RingGeometry(0.75, 1, 40); rg.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(rg, basic(color, { transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }));
+    m.position.set(x - half, 0.06, z - half); m.renderOrder = 4; fxGroup.add(m);
+    waves.push({ m, r: r || 2, age: 0, life: life || 0.6 });
+  }
+  function spark(x, y, z, color) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: color || 0xfff0b0, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false }));
+    const k = 0.5 + Math.random() * 0.3; sp.scale.set(k, k, 1); sp.position.set(x - half + (Math.random() - 0.5) * 0.3, y, z - half + (Math.random() - 0.5) * 0.3);
+    fxGroup.add(sp); sparks.push({ s: sp, age: 0, life: 0.18, k });
+  }
+  function powerFx(type, x, z) {
+    const c = HERO_GLOW[type] || 0xffd27a;
+    wave(x, z, c, type === 'roi' ? 5 : 2.2, 0.8); wave(x, z, c, type === 'roi' ? 3.5 : 1.4, 0.55);
+    for (let i = 0; i < 6; i++) spark(x + (Math.random() - 0.5), 0.5 + Math.random() * 1.5, z + (Math.random() - 0.5), c);
+  }
+  function volley(fx, fz, x, z) {
+    for (let i = 0; i < 9; i++) {
+      const tx = x + (Math.random() - 0.5) * 4, tz = z + (Math.random() - 0.5) * 4;
+      spawnShot('arrow', fx + (Math.random() - 0.5), 1.2, fz + (Math.random() - 0.5), () => [tx, 0.1, tz], 0.45 + Math.random() * 0.2, 2.2);
+    }
+    setTimeout(() => { for (let i = 0; i < 4; i++) spark(x + (Math.random() - 0.5) * 3, 0.3, z + (Math.random() - 0.5) * 3, 0x9be37a); }, 500);
   }
   function smokeAt(wx, wy, wz, dark) {
     const m = new THREE.Mesh(geo('sph'), basic(dark ? 0x4a4440 : 0xeeeeea, { transparent: true, opacity: 0.4, depthWrite: false }));
@@ -1436,12 +1873,12 @@ const V3 = (() => {
   }
 
   /* ---------- chargement des modèles ---------- */
-  const MODEL_NAMES = ['castle', 'lumbermill', 'mine', 'windmill', 'market', 'barracks', 'tavern', 'tower_A', 'tower_B', 'tower_catapult', 'destroyed', 'scaffolding', 'trees_A_large', 'trees_A_medium', 'trees_B_large', 'tree_A', 'tree_B', 'mountain_A', 'mountain_B', 'mountain_C', 'hills_A', 'hills_C', 'rock_A', 'rock_C', 'rock_E'];
+  const MODEL_NAMES = ['castle', 'lumbermill', 'mine', 'windmill', 'market', 'barracks', 'tavern', 'tower_A', 'tower_B', 'tower_catapult', 'church', 'destroyed', 'scaffolding', 'trees_A_large', 'trees_A_medium', 'trees_B_large', 'tree_A', 'tree_B', 'mountain_A', 'mountain_B', 'mountain_C', 'hills_A', 'hills_C', 'rock_A', 'rock_C', 'rock_E'];
   function loadModels(base, onProgress) {
     if (!ok || !THREE.GLTFLoader) return Promise.resolve(false);
     THREE.Cache.enabled = true;
     const loader = new THREE.GLTFLoader(), tl = new THREE.TextureLoader();
-    const chars = ['barbarian', 'rogue'], texs = ['orc_barbarian', 'orc_rogue', 'troll'];
+    const chars = ['barbarian', 'rogue', 'knight'], texs = ['orc_barbarian', 'orc_rogue', 'troll'];
     const total = MODEL_NAMES.length + chars.length + texs.length;
     let done = 0;
     const tick = () => { done++; if (onProgress) onProgress(done, total); };
@@ -1461,6 +1898,47 @@ const V3 = (() => {
     });
   }
 
+  /* ---------- vignettes des troupes (rendues une fois, à la construction du site) ---------- */
+  function renderThumbs(keys, size) {
+    size = size || 256;
+    const cv = document.createElement('canvas'); cv.width = cv.height = size;
+    const r = new THREE.WebGLRenderer({ canvas: cv, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    r.outputEncoding = THREE.sRGBEncoding; r.setClearColor(0x000000, 0);
+    const out = {};
+    for (const k of keys) {
+      const sc = new THREE.Scene();
+      sc.add(new THREE.HemisphereLight(0xfff4e0, 0x4a3a2a, 0.95));
+      const key = new THREE.DirectionalLight(0xffe2b8, 1.25); key.position.set(-2, 3, 4); sc.add(key);
+      const rim = new THREE.DirectionalLight(0x9ab8ff, 0.7); rim.position.set(3, 2, -3); sc.add(rim);
+      const mg = LIB.ok ? makeUnitModel(k, COLORS[2], false) : null;
+      const g = mg || makeUnit(k, COLORS[2], false, 3);
+      if (g.userData.bar) g.userData.bar.visible = false;
+      if (g.userData.ring) g.userData.ring.visible = false;
+      if (g.userData.halo) g.userData.halo.visible = false;
+      g.children.forEach(c => { if (c.isMesh && c.geometry === geo('plane')) c.visible = false; });
+      if (g.userData.mixer) { play(g, 'idle', 1); g.userData.mixer.update(0.6); }
+      g.rotation.y = -0.45; sc.add(g);
+      g.updateMatrixWorld(true);
+      const shown = o => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
+      let h, cx = 0, cz = 0;
+      const def = HEROES[k] ? U_DEF.hero[k] : U_DEF.dwarf[k];
+      if (mg && def) h = def.h;
+      else {
+        const box = new THREE.Box3();
+        g.traverse(o => { if (o.isMesh && shown(o) && o.geometry !== geo('plane')) box.expandByObject(o); });
+        h = box.max.y - box.min.y || 1; cx = (box.min.x + box.max.x) / 2; cz = (box.min.z + box.max.z) / 2;
+      }
+      const wide = k === 'belier';
+      const cam = new THREE.PerspectiveCamera(26, 1, 0.05, 100);
+      const ty = wide ? h * 0.42 : h * 0.55, dist = wide ? h * 3.4 : h * 2.2;
+      cam.position.set(cx + 0.28 * dist, ty + h * 0.16, cz + dist); cam.lookAt(cx, ty, cz);
+      r.render(sc, cam);
+      out[k] = cv.toDataURL('image/png');
+    }
+    r.dispose();
+    return out;
+  }
+
   /* ---------- boucle ---------- */
   let lastFrame = 0, emitClock = 0, emberClock = 0;
   const camQ = new THREE.Quaternion();
@@ -1471,8 +1949,9 @@ const V3 = (() => {
     const dt = Math.min(0.1, (ts - (lastFrame || ts)) / 1000); lastFrame = ts;
     const tNow = ts / 1000;
     if (frameHook) frameHook(dt, tNow);
-    updateCamera();
+    updateCamera(dt);
     camQ.copy(camera.quaternion);
+    for (const [, bar] of wallBars) bar.quaternion.copy(camQ);
     for (const [, r] of blds) {
       if (r.bar) { r.bar.quaternion.copy(camQ); const up = r.item.up; if (up) setBar(r.bar, (Date.now() - up.t0) / Math.max(1, up.t1 - up.t0)); }
       if (r.hp) r.hp.quaternion.copy(camQ);
@@ -1488,6 +1967,8 @@ const V3 = (() => {
       if (a.k === 'spin') a.o.rotation.y += dt * a.s;
       else if (a.k === 'flag') a.o.rotation.y = Math.sin(tNow * 2.2 + a.ph) * 0.35;
       else if (a.k === 'fire') { const f = 0.85 + Math.sin(tNow * 17) * 0.1 + Math.sin(tNow * 29) * 0.07; a.o.scale.y = (a.base || 0.42) * f; }
+      else if (a.k === 'pop') { a.t += dt; const x = Math.min(1, a.t / 0.45), k = x < 0.6 ? 0.6 + 0.48 * (x / 0.6) : 1.08 - 0.08 * ((x - 0.6) / 0.4); a.o.scale.setScalar(k); if (x >= 1) { a.o.scale.setScalar(1); a.done = true; } }
+      else if (a.k === 'pulse') { const k = a.base * (0.9 + 0.12 * Math.sin(tNow * 2.4)); a.o.scale.set(k, k, 1); }
       else if (a.k === 'throw') { a.t += dt; const x = a.t / 0.5; a.o.rotation.x = x < 0.3 ? -0.9 + 1.6 * (x / 0.3) : x < 1 ? 0.7 - 1.6 * ((x - 0.3) / 0.7) : -0.9; if (x >= 1) a.done = true; }
     }
     anims = anims.filter(a => !a.done);
@@ -1516,7 +1997,7 @@ const V3 = (() => {
       s.age += dt;
       const t = Math.min(1, s.age / s.dur), tg = s.target();
       const tx = tg[0] - half, ty = tg[1], tz = tg[2] - half;
-      const arc = s.kind === 'stone' ? 3.5 : s.kind === 'bolt' ? 0.3 : 0.9;
+      const arc = s.arcK || (s.kind === 'stone' ? 3.5 : s.kind === 'bolt' ? 0.3 : 0.9);
       const x = s.fx + (tx - s.fx) * t, z = s.fz + (tz - s.fz) * t, y = s.fy + (ty - s.fy) * t + Math.sin(Math.PI * t) * arc;
       s.m.position.set(x, y, z);
       if (s.kind !== 'stone') s.m.lookAt(x + (x - s.lx) * 10, y + (y - s.ly) * 10, z + (z - s.lz) * 10);
@@ -1533,13 +2014,347 @@ const V3 = (() => {
       if (k >= 1) { p.done = true; fxGroup.remove(p.m); p.m.material.dispose(); }
     }
     for (let i = puffs.length - 1; i >= 0; i--) if (puffs[i].done) puffs.splice(i, 1);
+    for (const c of chunks) {
+      c.age += dt; c.vy -= 12 * dt;
+      c.m.position.x += c.vx * dt; c.m.position.y += c.vy * dt; c.m.position.z += c.vz * dt;
+      if (c.m.position.y < 0.05) { c.m.position.y = 0.05; c.vy *= -0.3; c.vx *= 0.6; c.vz *= 0.6; c.rx *= 0.5; c.rz *= 0.5; }
+      c.m.rotation.x += c.rx * dt; c.m.rotation.z += c.rz * dt;
+      if (c.age > c.life) { const k = Math.max(0, 1 - (c.age - c.life) / 0.4); c.m.scale.setScalar(c.k * k); if (k <= 0) { c.done = true; fxGroup.remove(c.m); } }
+    }
+    for (let i = chunks.length - 1; i >= 0; i--) if (chunks[i].done) chunks.splice(i, 1);
+    for (const w of waves) {
+      w.age += dt; const k = Math.min(1, w.age / w.life);
+      w.m.scale.setScalar(0.2 + w.r * k); w.m.material.opacity = 0.8 * (1 - k);
+      if (k >= 1) { w.done = true; fxGroup.remove(w.m); w.m.geometry.dispose(); w.m.material.dispose(); }
+    }
+    for (let i = waves.length - 1; i >= 0; i--) if (waves[i].done) waves.splice(i, 1);
+    for (const sp of sparks) {
+      sp.age += dt; const k = sp.age / sp.life;
+      sp.s.scale.set(sp.k * (1 + k), sp.k * (1 + k), 1); sp.s.material.opacity = 1 - k;
+      if (k >= 1) { sp.done = true; fxGroup.remove(sp.s); sp.s.material.dispose(); }
+    }
+    for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].done) sparks.splice(i, 1);
     renderer.render(scene, camera);
   }
 
   return {
     init, ok: () => ok, resize, resetCamera, setBuildings, clearBuildings, setBldHp, bldInfo, aimAt, select, ghost, showZone, showRanges,
     syncUnits, clearUnits, spawnShot, burst, pickGround, pickBuilding, focus, setPointerMap, setMood, loadModels, modelsReady: () => LIB.ok,
+    debris, wave, spark, shake, dustRing, powerFx, volley, unitPower, renderThumbs, panOf, toScreen,
     onFrame: f => { frameHook = f; }, onTap: f => { tapHook = f; },
+  };
+})();
+
+/* ===================== SON : musique de taverne et bruitages ===================== */
+/* Tout est synthétisé avec WebAudio (aucun fichier) : luth (corde pincée), flûte, bodhrán, tambourin, vielle. */
+const SND = (() => {
+  let ctx = null, master = null, musBus = null, sfxBus = null, rev = null, noise = null, unlocked = false;
+  const S = Object.assign({ music: true, sfx: true, mv: 0.5, sv: 0.8 }, (() => { try { return JSON.parse(localStorage.getItem('mk.sound')) || {}; } catch (e) { return {}; } })());
+  const save = () => { try { localStorage.setItem('mk.sound', JSON.stringify(S)); } catch (e) { /* réglage non mémorisé */ } };
+  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+  const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+  const midi = s => { const m = /^([A-G])(#|b)?(-?\d)$/.exec(s); return m ? 12 * (+m[3] + 1) + NOTE[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) : null; };
+
+  function init() {
+    if (ctx) return true;
+    const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return false;
+    try { ctx = new AC({ latencyHint: 'playback' }); } catch (e) { try { ctx = new AC(); } catch (e2) { return false; } }
+    master = ctx.createGain(); master.gain.value = 0.9;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -16; comp.knee.value = 12; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.25;
+    master.connect(comp); comp.connect(ctx.destination);
+    musBus = ctx.createGain(); musBus.connect(master);
+    sfxBus = ctx.createGain(); sfxBus.connect(master);
+    rev = ctx.createConvolver(); rev.buffer = impulse(1.8, 3);
+    const rg = ctx.createGain(); rg.gain.value = 0.28; rev.connect(rg); rg.connect(master);
+    noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    applyVolumes();
+    return true;
+  }
+  function impulse(sec, decay) {
+    const n = Math.floor(ctx.sampleRate * sec), b = ctx.createBuffer(2, n, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, decay); }
+    return b;
+  }
+  function applyVolumes() {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    musBus.gain.setTargetAtTime(S.music ? S.mv * 1.35 : 0, t, 0.15);
+    sfxBus.gain.setTargetAtTime(S.sfx ? S.sv : 0, t, 0.05);
+  }
+  /* Le navigateur n'autorise le son qu'après un premier geste du joueur. */
+  function unlock() {
+    if (!init()) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    if (!unlocked) { unlocked = true; setTimeout(switchTheme, 50); }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!ctx || !unlocked) return;
+    if (document.hidden) ctx.suspend().catch(() => {}); else ctx.resume().catch(() => {});
+  });
+
+  /* ---------- briques sonores ---------- */
+  function nsrc(t, dur) { const s = ctx.createBufferSource(); s.buffer = noise; s.loop = true; s.start(t, Math.random() * 0.8); s.stop(t + dur + 0.05); return s; }
+  function filt(type, f, q) { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; if (q != null) b.Q.value = q; return b; }
+  function gainEnv(t, a, peak, d, hold) {
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(peak, t + a);
+    if (hold) g.gain.setValueAtTime(peak, t + a + hold);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + a + (hold || 0) + d);
+    return g;
+  }
+  function out(node, dest, pan) {
+    if (pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); node.connect(p); p.connect(dest); }
+    else node.connect(dest);
+  }
+  function tone(dest, type, f0, f1, t, a, peak, d, pan) {
+    const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t);
+    if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(f1, t + a + d);
+    const g = gainEnv(t, a, peak, d); o.connect(g); out(g, dest, pan);
+    o.start(t); o.stop(t + a + d + 0.05);
+    return o;
+  }
+  function hiss(dest, type, f, q, t, a, peak, d, pan, f2) {
+    const s = nsrc(t, a + d), b = filt(type, f, q);
+    if (f2) { b.frequency.setValueAtTime(f, t); b.frequency.exponentialRampToValueAtTime(f2, t + a + d); }
+    const g = gainEnv(t, a, peak, d); s.connect(b); b.connect(g); out(g, dest, pan);
+  }
+  /* Luth : corde pincée (algorithme de Karplus-Strong), calculée une fois par note. */
+  const plucks = {};
+  function pluckBuf(m) {
+    if (plucks[m]) return plucks[m];
+    const sr = 22050, N = Math.max(2, Math.round(sr / mtof(m))), len = Math.floor(sr * (m < 52 ? 2.4 : 1.7));
+    const b = ctx.createBuffer(1, len, sr), d = b.getChannelData(0), ring = new Float32Array(N);
+    let last = 0; for (let i = 0; i < N; i++) { last = last * 0.45 + (Math.random() * 2 - 1) * 0.55; ring[i] = last; }
+    const damp = 0.9965 - Math.max(0, m - 62) * 0.0005;
+    let k = 0, mx = 0;
+    for (let i = 0; i < len; i++) { const a = ring[k], c = ring[(k + 1) % N], v = (a + c) * 0.5 * damp; ring[k] = v; d[i] = a; k = (k + 1) % N; mx = Math.max(mx, Math.abs(a)); }
+    const g = mx ? 0.8 / mx : 1, fade = Math.floor(len * 0.25);
+    for (let i = 0; i < len; i++) d[i] *= g * (i > len - fade ? (len - i) / fade : 1);
+    return (plucks[m] = b);
+  }
+  function lute(dest, m, t, vel, pan) {
+    if (m == null) return;
+    const s = ctx.createBufferSource(); s.buffer = pluckBuf(m);
+    const g = ctx.createGain(); g.gain.value = vel;
+    s.connect(g); out(g, dest, pan); s.start(t); s.stop(t + s.buffer.duration);
+  }
+  function flute(dest, m, t, dur, vel) {
+    if (m == null) return;
+    const f = mtof(m), o = ctx.createOscillator(), o2 = ctx.createOscillator();
+    o.type = 'sine'; o2.type = 'triangle';
+    o.frequency.setValueAtTime(f, t); o2.frequency.setValueAtTime(f * 2, t);
+    const lfo = ctx.createOscillator(), lg = ctx.createGain();
+    lfo.frequency.value = 5.3; lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * 0.007, t + Math.min(0.35, dur * 0.7));
+    lfo.connect(lg); lg.connect(o.frequency);
+    const g = ctx.createGain(), end = t + dur;
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(vel, t + 0.045); g.gain.setValueAtTime(vel * 0.85, Math.max(t + 0.05, end - 0.04)); g.gain.exponentialRampToValueAtTime(0.0001, end + 0.07);
+    const g2 = ctx.createGain(); g2.gain.value = 0.1;
+    o.connect(g); o2.connect(g2); g2.connect(g); g.connect(dest);
+    hiss(dest, 'bandpass', 2400, 1.2, t, 0.02, vel * 0.22, 0.09);
+    for (const x of [o, o2, lfo]) { x.start(t); x.stop(end + 0.1); }
+  }
+  function drum(dest, t, vel, kind) {
+    const f0 = kind === 'tom' ? 125 : kind === 'low' ? 92 : 190;
+    tone(dest, 'sine', f0, f0 * 0.5, t, 0.004, vel, kind === 'tom' ? 0.34 : 0.2);
+    hiss(dest, 'lowpass', kind === 'tap' ? 2600 : 900, 0.7, t, 0.002, vel * 0.45, 0.05);
+  }
+  function tamb(dest, t, vel) {
+    hiss(dest, 'highpass', 6800, 0.7, t, 0.002, vel, 0.07);
+    hiss(dest, 'bandpass', 9500, 2, t + 0.014, 0.002, vel * 0.6, 0.05);
+  }
+  function drone(dest, notes, vol) {
+    const g = ctx.createGain(); g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.linearRampToValueAtTime(vol, ctx.currentTime + 2.5);
+    const lp = filt('lowpass', 750, 0.6), lfo = ctx.createOscillator(), lg = ctx.createGain();
+    lfo.frequency.value = 0.13; lg.gain.value = 220; lfo.connect(lg); lg.connect(lp.frequency);
+    lp.connect(g); g.connect(dest);
+    const os = [lfo];
+    for (const n of notes) for (const det of [-4, 5]) { const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mtof(n); o.detune.value = det; o.connect(lp); os.push(o); }
+    os.forEach(o => o.start());
+    return { stop() { const t = ctx.currentTime; g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0.0001, t + 1.2); os.forEach(o => o.stop(t + 1.3)); } };
+  }
+
+  /* ---------- airs ---------- */
+  function parse(str) {           // « A4 D5 D5:2 . » -> une case par croche ; :n = durée en croches ; . = silence
+    const steps = [];
+    for (const tok of str.split(/\s+/).filter(x => x && x !== '|')) {
+      const [n, l] = tok.split(':'), len = +(l || 1);
+      steps.push(n === '.' ? null : { m: midi(n), len });
+      for (let i = 1; i < len; i++) steps.push(undefined);
+    }
+    return steps;
+  }
+  const CH = { D: ['D3', 'A3', 'D4', 'F#4'], G: ['G2', 'D3', 'G3', 'B3'], C: ['C3', 'G3', 'C4', 'E4'], Dm: ['D3', 'A3', 'D4', 'F4'], Bb: ['Bb2', 'F3', 'Bb3', 'D4'], A: ['A2', 'E3', 'A3', 'C#4'], Cb: ['C3', 'G3', 'C4', 'E4'] };
+  /* Village : une gigue en ré, joyeuse (6/8). */
+  const JIG_A = parse('A4 D5 D5 F#5 D5 D5 | A4 D5 F#5 E5 D5 B4 | A4 D5 D5 F#5 E5 F#5 | G5 F#5 E5 D5 B4 G4 | A4 D5 D5 F#5 D5 D5 | A4 D5 F#5 A5 F#5 D5 | G5 E5 C5 E5 F#5 E5 | D5:3 D5 A4 F#4');
+  const JIG_B = parse('A5 F#5 D5 A5 F#5 D5 | G5 E5 C5 G5 E5 C5 | A5 F#5 D5 F#5 E5 D5 | C5 E5 G5 E5 D5 C5 | A5 F#5 D5 A5 F#5 D5 | G5 E5 C5 E5 F#5 G5 | A5 G5 F#5 E5 D5 C5 | D5:3 D5:3');
+  const JIG_CH_A = ['D', 'D', 'D', 'G', 'D', 'D', 'C', 'D'], JIG_CH_B = ['D', 'C', 'D', 'C', 'D', 'C', 'D', 'D'];
+  /* Raid : un air tendu en ré mineur (4/4). */
+  const WAR_1 = parse('D5:4 F5:2 E5:2 | D5:6 A4:2 | Bb4:4 D5:2 F5:2 | E5:6 C5:2 | D5:2 E5:2 F5:2 G5:2 | A5:6 G5:2 | F5:4 D5:2 Bb4:2 | C#5:6 E5:2');
+  const WAR_2 = parse('A5:4 G5:2 F5:2 | E5:2 F5:2 D5:4 | F5:4 D5:2 Bb4:2 | C5:2 E5:2 G5:4 | F5:2 E5:2 D5:2 E5:2 | F5:2 G5:2 A5:4 | Bb5:4 A5:2 F5:2 | E5:4 C#5:2 A4:2');
+  const WAR_CH = ['Dm', 'Dm', 'Bb', 'C', 'Dm', 'Dm', 'Bb', 'A'];
+  const THEMES = {
+    village: {
+      dt: 60 / 104 / 3, drone: ['D3', 'A3'], droneVol: 0.022,
+      play(th, step, t) {
+        const loopLen = 192, s = step % loopLen, pass = Math.floor(step / loopLen), dest = th.g;
+        const part = s < 96 ? 'A' : 'B', ps = s % 48, bar = Math.floor(ps / 6), b = ps % 6;
+        const mel = (part === 'A' ? JIG_A : JIG_B)[ps], chord = CH[(part === 'A' ? JIG_CH_A : JIG_CH_B)[bar]].map(midi);
+        const fluteLead = (pass + (part === 'B' ? 1 : 0) + Math.floor(s / 48)) % 2 === 0;
+        if (mel) {
+          if (fluteLead) flute(dest, mel.m, t, mel.len * this.dt * 0.95, 0.085);
+          else lute(dest, mel.m, t, 0.32, 0.15);
+        }
+        if (b === 0) lute(dest, chord[0], t, 0.3, -0.2);
+        if (b === 2 || b === 5) { lute(dest, chord[2], t, 0.13, -0.1); lute(dest, chord[3], t + 0.012, 0.12, 0.05); }
+        if (b === 3) lute(dest, chord[1], t, 0.18, -0.2);
+        if (b === 0) drum(dest, t, 0.28, 'low');
+        else if (b === 3) drum(dest, t, 0.17, 'low');
+        else if (b === 2 || b === 5) drum(dest, t, 0.06, 'tap');
+        if (bar % 4 === 3 && b === 4) drum(dest, t, 0.09, 'tap');
+        if (part === 'B' && b % 3 !== 0) tamb(dest, t, 0.045);
+      },
+    },
+    battle: {
+      dt: 60 / 128 / 2, drone: ['D2', 'A2'], droneVol: 0.03,
+      play(th, step, t) {
+        const s = step % 128, dest = th.g, bar = Math.floor(s / 8) % 8, b = s % 8, I = th.intensity;
+        const ch = CH[WAR_CH[bar]].map(midi), root = ch[0], fifth = ch[1], third = ch[3] - 12;
+        const pat = [root, root, fifth, root, third, root, fifth, root];
+        lute(dest, pat[b] + 12, t, b === 0 ? 0.28 : 0.17, -0.15);
+        if (I > 0.6) {
+          const mel = (s < 64 ? WAR_1 : WAR_2)[s % 64];
+          if (mel) flute(dest, mel.m, t, mel.len * this.dt * 0.95, 0.075);
+        }
+        if (b === 0 || b === 3 || b === 6) drum(dest, t, (b === 0 ? 0.34 : 0.22) * (0.6 + 0.4 * I), 'tom');
+        if (b === 4) drum(dest, t, 0.16 * I + 0.05, 'low');
+        if (I > 0.6 && (b === 2 || b === 7)) drum(dest, t, 0.07, 'tap');
+        if (I > 0.6 && bar % 4 === 3 && b >= 4) drum(dest, t + this.dt / 2, 0.12, 'tom');
+        if (I > 0.6 && b % 2 === 1) tamb(dest, t, 0.03);
+      },
+    },
+  };
+  let theme = null, want = null, wantI = 1, timer = null;
+  function music(name, intensity) {
+    want = name || null; if (intensity != null) wantI = intensity;
+    if (theme && theme.name === want) theme.intensity = wantI;
+    if (ctx && unlocked) switchTheme();
+  }
+  function switchTheme() {
+    if (!ctx || !unlocked) return;
+    const target = S.music ? want : null;
+    if (theme && theme.name === target) return;
+    stopTheme();
+    if (!target) return;
+    const def = THEMES[target], g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.linearRampToValueAtTime(1, ctx.currentTime + 1.2);
+    g.connect(musBus);
+    const send = ctx.createGain(); send.gain.value = 0.5; g.connect(send); send.connect(rev);
+    theme = { name: target, def, g, step: 0, t: ctx.currentTime + 0.2, intensity: wantI, drone: drone(g, def.drone.map(midi), def.droneVol) };
+    if (!timer) timer = setInterval(tick, 40);
+  }
+  function stopTheme() {
+    if (!theme) return;
+    const th = theme, t = ctx.currentTime; theme = null;
+    th.g.gain.cancelScheduledValues(t); th.g.gain.setValueAtTime(th.g.gain.value, t); th.g.gain.linearRampToValueAtTime(0.0001, t + 1);
+    th.drone.stop();
+    setTimeout(() => th.g.disconnect(), 2600);
+  }
+  function tick() {
+    if (!theme || !ctx || ctx.state !== 'running') return;
+    const ahead = ctx.currentTime + 0.3;
+    if (theme.t < ctx.currentTime - 1) theme.t = ctx.currentTime + 0.05; // retour après une pause
+    while (theme.t < ahead) { theme.def.play(theme, theme.step, theme.t); theme.t += theme.def.dt; theme.step++; }
+  }
+
+  /* ---------- bruitages ---------- */
+  const last = {}, GAP = { chop: 0.07, wallhit: 0.08, shoot: 0.05, bolt: 0.06, boom: 0.06, death: 0.07, click: 0.03, collapse: 0.12, wallbreak: 0.08 };
+  const chime = (dest, freqs, t, step, vol) => freqs.forEach((f, i) => { tone(dest, 'sine', f, f, t + i * step, 0.004, vol, 0.5); tone(dest, 'sine', f * 2.76, f * 2.76, t + i * step, 0.002, vol * 0.25, 0.18); });
+  function knock(dest, t, f, vol, pan) { tone(dest, 'sine', f, f * 0.6, t, 0.002, vol, 0.09, pan); hiss(dest, 'bandpass', 700, 2, t, 0.001, vol * 0.7, 0.05, pan); }
+  function clink(dest, t, vol, pan) { for (const f of [1420, 2880, 4310]) tone(dest, 'sine', f * (0.97 + Math.random() * 0.06), null, t, 0.001, vol / (f / 1420), 0.16, pan); }
+  function horn(dest, notes, t, len, vol) {
+    notes.forEach((n, i) => {
+      const f = mtof(n), st = t + i * len, o = ctx.createOscillator(), o2 = ctx.createOscillator();
+      o.type = 'sawtooth'; o2.type = 'sawtooth'; o.frequency.setValueAtTime(f * 0.97, st); o.frequency.linearRampToValueAtTime(f, st + 0.06); o2.frequency.value = f * 1.005;
+      const lp = filt('lowpass', 500, 1.2); lp.frequency.setValueAtTime(400, st); lp.frequency.linearRampToValueAtTime(1500, st + 0.08); lp.frequency.linearRampToValueAtTime(900, st + len);
+      const g = gainEnv(st, 0.06, vol, i === notes.length - 1 ? 0.7 : len * 0.6, i === notes.length - 1 ? 0.25 : len * 0.3);
+      o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(dest);
+      o.start(st); o2.start(st); o.stop(st + len + 1.2); o2.stop(st + len + 1.2);
+    });
+  }
+  const FX = {
+    click: (d, t) => { tone(d, 'sine', 1300, 760, t, 0.002, 0.05, 0.05); hiss(d, 'bandpass', 3000, 3, t, 0.001, 0.025, 0.02); },
+    place: (d, t) => { knock(d, t, 210, 0.3); knock(d, t + 0.12, 175, 0.26); },
+    upgrade: (d, t) => { clink(d, t, 0.14); knock(d, t, 180, 0.2); clink(d, t + 0.22, 0.12); knock(d, t + 0.22, 170, 0.18); },
+    built: (d, t) => { clink(d, t, 0.1); chime(d, [1046, 1318, 1568, 2093], t + 0.08, 0.08, 0.07); },
+    coin: (d, t) => chime(d, [1568, 2093, 2637], t, 0.06, 0.06),
+    train: (d, t) => { drum(d, t, 0.18, 'tap'); clink(d, t + 0.05, 0.05); },
+    deploy: (d, t, p) => { drum(d, t, 0.22, 'low'); hiss(d, 'bandpass', 900, 1, t, 0.01, 0.06, 0.18, p, 300); },
+    hero: (d, t) => { drum(d, t, 0.3, 'tom'); horn(d, [50, 57, 62], t + 0.05, 0.16, 0.09); },
+    power: (d, t, p) => { hiss(d, 'bandpass', 400, 2, t, 0.35, 0.18, 0.4, p, 3200); chime(d, [880, 1318, 1760], t + 0.3, 0.05, 0.08); tone(d, 'sine', 90, 40, t + 0.32, 0.005, 0.4, 0.5); },
+    chop: (d, t, p) => { hiss(d, 'lowpass', 500 + Math.random() * 300, 0.8, t, 0.002, 0.3, 0.08, p); hiss(d, 'bandpass', 1600 + Math.random() * 800, 2, t, 0.001, 0.13, 0.04, p); },
+    wallhit: (d, t, p) => { hiss(d, 'bandpass', 950, 3, t, 0.001, 0.14, 0.06, p); tone(d, 'sine', 95, 60, t, 0.002, 0.16, 0.09, p); },
+    shoot: (d, t, p) => hiss(d, 'bandpass', 4200, 2.5, t, 0.004, 0.15, 0.09, p, 1500),
+    bolt: (d, t, p) => { tone(d, 'triangle', 170, 90, t, 0.002, 0.13, 0.24, p); hiss(d, 'bandpass', 2400, 2, t, 0.002, 0.06, 0.12, p, 900); },
+    catapult: (d, t, p) => { knock(d, t, 120, 0.2, p); hiss(d, 'lowpass', 300, 1, t + 0.05, 0.1, 0.08, 0.35, p, 1400); },
+    boom: (d, t, p) => { tone(d, 'sine', 85, 34, t, 0.004, 0.45, 0.55, p); hiss(d, 'lowpass', 420, 0.7, t, 0.003, 0.32, 0.42, p); },
+    collapse: (d, t, p) => {
+      hiss(d, 'lowpass', 320, 0.7, t, 0.03, 0.42, 1.25, p); tone(d, 'sine', 55, 32, t, 0.01, 0.34, 1.0, p);
+      for (let i = 0; i < 7; i++) hiss(d, 'bandpass', 1200 + Math.random() * 1600, 3, t + 0.05 + Math.random() * 0.8, 0.001, 0.09, 0.05, p);
+    },
+    wallbreak: (d, t, p) => { hiss(d, 'bandpass', 1250, 2, t, 0.001, 0.25, 0.12, p); hiss(d, 'lowpass', 260, 0.7, t, 0.01, 0.22, 0.4, p); tone(d, 'sine', 72, 40, t, 0.003, 0.25, 0.3, p); },
+    death: (d, t, p) => { tone(d, 'sine', 150, 60, t, 0.003, 0.1, 0.14, p); hiss(d, 'lowpass', 320, 0.7, t, 0.002, 0.08, 0.1, p); },
+    star: (d, t, p, i) => chime(d, [1046 * Math.pow(1.26, i || 0)], t, 0, 0.12),
+    invite: (d, t) => { horn(d, [57, 62], t, 0.2, 0.08); horn(d, [57, 62], t + 0.55, 0.2, 0.07); },
+    alarm: (d, t) => horn(d, [50, 50, 46], t, 0.22, 0.08),
+    error: (d, t) => { const o = tone(d, 'square', 170, 150, t, 0.004, 0.035, 0.12); o.detune.value = -10; },
+    victory: (d, t) => {
+      [62, 66, 69, 74].forEach((n, i) => flute(d, n, t + i * 0.13, i === 3 ? 0.9 : 0.12, 0.09));
+      [50, 57, 62, 66].forEach((n, i) => lute(d, n, t + 0.52 + i * 0.015, 0.26));
+      for (let i = 0; i < 6; i++) drum(d, t + i * 0.07, 0.08 + i * 0.03, 'tap');
+      drum(d, t + 0.52, 0.4, 'tom');
+    },
+    defeat: (d, t) => { [57, 53, 50].forEach((n, i) => lute(d, n, t + i * 0.42, 0.34)); horn(d, [45, 41], t + 0.1, 0.5, 0.05); drum(d, t + 1.3, 0.25, 'low'); },
+  };
+  function sfx(name, opts) {
+    if (!ctx || !unlocked || !S.sfx || ctx.state !== 'running' || !FX[name]) return;
+    const t = ctx.currentTime, g = GAP[name] || 0;
+    if (g && last[name] && t - last[name] < g) return;
+    last[name] = t;
+    try { FX[name](sfxBus, t + 0.01, opts && opts.pan, opts && opts.i); } catch (e) { /* son ignoré */ }
+  }
+  /* Petit air joué par-dessus la musique (victoire, défaite) : la musique se tait un instant. */
+  function jingle(name) {
+    if (!ctx || !unlocked || ctx.state !== 'running') return;
+    if (theme) { const g = theme.g, t = ctx.currentTime; g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0.15, t + 0.3); g.gain.linearRampToValueAtTime(1, t + 4.5); }
+    if (S.sfx || S.music) FX[name] && FX[name](S.sfx ? sfxBus : musBus, ctx.currentTime + 0.05);
+  }
+  /* Essais : rend quelques secondes d'un air ou d'un bruitage hors ligne et renvoie les niveaux (crête, moyenne). */
+  async function _render(kind, name, sec) {
+    const save = { ctx, master, musBus, sfxBus, rev, noise, plucks: Object.assign({}, plucks) };
+    const off = new OfflineAudioContext(2, Math.floor(44100 * sec), 44100);
+    ctx = off; for (const k in plucks) delete plucks[k];
+    master = ctx.createGain(); master.connect(ctx.destination);
+    musBus = ctx.createGain(); musBus.gain.value = S.mv * 1.35; musBus.connect(master);
+    sfxBus = ctx.createGain(); sfxBus.gain.value = S.sv; sfxBus.connect(master);
+    rev = ctx.createConvolver(); rev.buffer = impulse(1.8, 3); const rg = ctx.createGain(); rg.gain.value = 0.28; rev.connect(rg); rg.connect(master);
+    noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); const nd = noise.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    try {
+      if (kind === 'music') {
+        const def = THEMES[name], g = ctx.createGain(); g.connect(musBus); const th = { def, g, intensity: 1 };
+        drone(g, def.drone.map(midi), def.droneVol);
+        for (let st = 0, t = 0.05; t < sec - 0.3; st++, t += def.dt) def.play(th, st, t);
+      } else FX[name](sfxBus, 0.05);
+      const buf = await off.startRendering(), d = buf.getChannelData(0);
+      let peak = 0, sum = 0; for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > peak) peak = v; sum += v * v; }
+      return { peak: +peak.toFixed(3), rms: +Math.sqrt(sum / d.length).toFixed(4), nan: d.some(x => Number.isNaN(x)) };
+    } finally { ctx = save.ctx; master = save.master; musBus = save.musBus; sfxBus = save.sfxBus; rev = save.rev; noise = save.noise; for (const k in plucks) delete plucks[k]; Object.assign(plucks, save.plucks); }
+  }
+  return {
+    unlock, music, sfx, jingle, _render,
+    get: () => Object.assign({}, S),
+    set(o) { Object.assign(S, o); save(); applyVolumes(); if ('music' in o) switchTheme(); },
   };
 })();
 
@@ -1598,7 +2413,15 @@ const IC = {
   archer: '<svg viewBox="0 0 24 24"><path d="M3.5 8c5-3.5 12-3.5 17 0" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M12 5.5v15" stroke="currentColor" stroke-width="3" stroke-linecap="round"/><path d="M3.5 8 12 13l8.5-5" stroke="currentColor" stroke-width="1.2" fill="none"/></svg>',
   belier: '<svg viewBox="0 0 24 24"><path d="M2.5 10h14l2.5 2.5-2.5 2.5h-14z" fill="currentColor"/><path d="M4.5 9.5 9 5h5l3.5 4.5z" fill="currentColor" opacity=".6"/><circle cx="6" cy="18" r="2.5" fill="currentColor"/><circle cx="13" cy="18" r="2.5" fill="currentColor"/><rect x="18.5" y="10" width="3.5" height="5" rx="1" fill="currentColor"/></svg>',
 };
-const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k]}</span>`;
+IC.roi = '<svg viewBox="0 0 24 24"><path d="M3 8l4.6 4L12 5l4.4 7L21 8l-2 11H5z" fill="currentColor"/><rect x="5" y="19.5" width="14" height="2" rx="1" fill="currentColor"/></svg>';
+IC.chasseresse = IC.archer; IC.berserker = IC.axe;
+IC.wall = '<svg viewBox="0 0 24 24"><path d="M2 9h4V6h3v3h6V6h3v3h4v11H2z" fill="currentColor"/><path d="M2 14h20M8 9v5M16 9v5M12 14v6" stroke="#fff" stroke-opacity=".35" stroke-width="1.2"/></svg>';
+IC.help = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M9.3 9.2a2.8 2.8 0 1 1 3.9 2.6c-.8.4-1.2.9-1.2 1.8v.6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.2" fill="#fff"/></svg>';
+IC.sound = '<svg viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>';
+const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k] || ''}</span>`;
+/* Vignette d'une troupe ou d'un héros (image rendue depuis le modèle 3D, icône en secours). */
+const thumb = (k, cls) => `<span class="thumb${HEROES[k] ? ' hero' : ''}${cls ? ' ' + cls : ''}">${ico(k, '')}<img src="thumbs/${k}.png" alt="" draggable="false" onerror="this.remove()"></span>`;
+const unitName = (k, plural) => HEROES[k] ? HEROES[k].name : plural ? TROOPS[k].plural : TROOPS[k].name;
 function marks(kind, n) { let h = '<span class="stars">'; for (let i = 0; i < 3; i++) h += ico(kind, i < n ? 'st-on' : 'st-off'); return h + '</span>'; }
 function chipsRes(c, have, cls) { return RES.filter(k => c[k]).map(k => `<span class="chip${have && have[k] < c[k] ? ' short' : ''}${cls ? ' ' + cls : ''}">${ico(k)}${fmtN(c[k])}</span>`).join(''); }
 
@@ -1639,6 +2462,7 @@ function presentKeys() {
   return s;
 }
 const onlineOthers = () => [...presentKeys()].filter(k => k !== myKey && others[k]);
+function partnerAv(k) { for (const p of peers) if (p && !p.isMe && p.presence && p.presence.key === k) return p.presence.av | 0; return 0; }
 
 /* ---------- monde, actions, sauvegarde ---------- */
 function applyPending(v, a, t) {
@@ -1662,10 +2486,12 @@ function act(a, opts) {
   if (!me && a.type !== 'found') return null;
   const t = now(); a.at = t;
   const test = applyPending(me ? clone(me) : null, a, t);
-  if (!test.ok) { if (!(opts && opts.quiet)) toast(test.err); return null; }
+  if (!test.ok) { if (!(opts && opts.quiet)) { toast(test.err); SND.sfx('error'); } return null; }
   if (opts && opts.after) a.after = opts.after;
   pending.push(a); recompute(); renderAll(); refreshScene();
   scheduleCommit(a.type === 'train' || a.type === 'untrain' ? 700 : 150);
+  const fx = { build: 'place', walls: 'place', move: 'place', upgrade: 'upgrade', upwalls: 'upgrade', heroUp: 'upgrade', train: 'train', chest: 'coin', claim: 'coin', found: 'built', heroBuy: 'hero', remove: 'wallbreak' }[a.type];
+  if (fx) SND.sfx(fx);
   return test;
 }
 function scheduleCommit(ms) { clearTimeout(commitTimer); commitTimer = setTimeout(commit, ms); }
@@ -1751,7 +2577,7 @@ function refreshScene() {
     V3.setBuildings(homeItems(me, 'm', true));
     const b = sel != null && me.b.find(x => x.id === sel);
     V3.select(b && !place ? b : null);
-    if (place) V3.ghost(place.type, place.gx, place.gz, placeValid()); else V3.ghost(null);
+    if (place) V3.ghost(place.type, place.gx, place.gz, place.kind === 'wall' ? fits(me, 'rempart', place.gx, place.gz) || me.b.some(b => b.type === 'rempart' && b.gx === place.gx && b.gz === place.gz) : placeValid()); else V3.ghost(null);
   } else if (mode === 'visit' && others[visitKey]) {
     const v = others[visitKey].sim; V3.setBuildings(homeItems(v, 'o', false));
     const b = sel != null && v.b.find(x => x.id === sel); V3.select(b || null); V3.ghost(null);
@@ -1766,6 +2592,8 @@ function refreshScene() {
 function setMode(m) {
   const prev = mode;
   mode = m;
+  SND.music(m === 'fight' || m === 'scout' ? 'battle' : 'village', m === 'scout' ? 0.45 : m === 'fight' && fight && fight.kind === 'replay' ? 0.7 : 1);
+  if (m === 'home' && me && !modal && LS.get('mk.news') !== NEWS_V) { LS.set('mk.news', NEWS_V); if (prev !== 'gate') modal = { kind: 'news' }; }
   if (m !== 'home') { place = null; }
   if (m !== 'home' && m !== 'visit') sel = null;
   if (sheet && m !== 'home' && m !== 'visit') closeSheet(true);
@@ -1778,6 +2606,7 @@ function onTap(cx, cy) {
   if (modal) return;
   if (mode === 'fight') { if (fight && fight.kind !== 'replay') deployTap(cx, cy); return; }
   if (sheet) { closeSheet(); return; }
+  if (mode === 'home' && place && place.kind === 'wall') { wallTap(cx, cy); return; }
   if (mode === 'home' && place) {
     const g = V3.pickGround(cx, cy); if (!g) return;
     const s = BLD[place.type].size;
@@ -1795,11 +2624,38 @@ function startPlace(type) {
   if (!me) return;
   const th = thOf(me);
   if (countOf(me, type) >= limitOf(type, th)) { toast('Maximum atteint pour cette halle du clan.'); return; }
+  if (BLD[type].wall) {
+    const m = missingTxt(me, costOf(type, 1)); if (m) { toast(m); return; }
+    const spot = freeSpot(me, type); if (!spot) { toast('Plus de place libre dans le village.'); return; }
+    place = { kind: 'wall', type, gx: spot[0], gz: spot[1], last: null };
+    sel = null; closeSheet(true);
+    refreshScene(); renderAll(); return;
+  }
   if (busyBuilders(me) >= buildersOf(me)) { toast('Tous les ouvriers sont occupés.'); return; }
   const m = missingTxt(me, costOf(type, 1)); if (m) { toast(m); return; }
   const spot = freeSpot(me, type); if (!spot) { toast('Plus de place libre dans le village.'); return; }
   place = { kind: 'new', type, gx: spot[0], gz: spot[1] };
   sel = null; closeSheet(true); if (gl) V3.focus(spot[0] + 1, spot[1] + 1);
+  refreshScene(); renderAll();
+}
+/* Remparts : une case par toucher, ou toute une ligne quand on touche une case alignée avec la précédente. */
+function wallTap(cx, cy) {
+  const g = V3.pickGround(cx, cy); if (!g) return;
+  const gx = Math.floor(g[0]), gz = Math.floor(g[1]);
+  if (gx < EDGE || gz < EDGE || gx >= GRID - EDGE || gz >= GRID - EDGE) { toast('Trop près du bord.'); return; }
+  if (me.b.some(b => b.type === 'rempart' && b.gx === gx && b.gz === gz)) {
+    place.last = [gx, gz]; place.gx = gx; place.gz = gz;
+    toast('Départ de ligne choisi : touche une autre case sur la même ligne.'); refreshScene(); renderAll(); return;
+  }
+  let tiles = [[gx, gz]];
+  const L = place.last;
+  if (L && (L[0] === gx || L[1] === gz) && Math.abs(L[0] - gx) + Math.abs(L[1] - gz) > 1) {
+    tiles = []; const dx = Math.sign(gx - L[0]), dz = Math.sign(gz - L[1]);
+    for (let x = L[0] + dx, z = L[1] + dz; ; x += dx, z += dz) { if (!me.b.some(b => b.type === 'rempart' && b.gx === x && b.gz === z)) tiles.push([x, z]); if (x === gx && z === gz) break; }
+  }
+  place.gx = gx; place.gz = gz;
+  const r = act({ type: 'walls', tiles });
+  if (r) { place.last = [gx, gz]; if (r.why && r.n < tiles.length) toast(r.n + ' posé' + (r.n > 1 ? 's' : '') + '. ' + r.why); }
   refreshScene(); renderAll();
 }
 function startMove(id) {
@@ -1831,8 +2687,9 @@ function startFight(kind, bot, extra) {
     bldCol: kind === 'replay' ? safeColor(me.c) : BOT_COLOR, partnerName: extra.partnerName || '',
     inbox: [], outShots: [], hostOut: false, guestOut: false, units: [], stT: 0, lastSt: performance.now(), t: 0, stars: 0, pct: 0,
     zoneUntil: kind === 'replay' ? 0 : performance.now() + 3500, plan: extra.plan || null, pi: 0, label: extra.label || '',
+    heroes: kind === 'replay' ? [] : HERO_KEYS.filter(k => heroReady(me, k, now())), hero: null, powQ: false, outEvents: [], alive: 0,
   };
-  F.selType = TROOP_KEYS.find(k => F.avail[k] > 0) || null;
+  F.selType = TROOP_KEYS.find(k => F.avail[k] > 0) || (F.heroes.length ? 'h:' + F.heroes[0] : null);
   fight = F;
   setMode('fight');
   if (gl && F.zoneUntil) V3.showZone(F.zoneB);
@@ -1841,27 +2698,54 @@ function deployTap(cx, cy) {
   const F = fight; if (!F || F.ended || !gl) return;
   const g = V3.pickGround(cx, cy); if (!g) return;
   const type = F.selType;
-  if (!type || !(F.avail[type] > 0)) { toast('Choisis une troupe en bas de l’écran.'); return; }
+  const heroK = type && type.startsWith('h:') ? type.slice(2) : null;
+  if (!type || (heroK ? (F.hero || !F.heroes.includes(heroK)) : !(F.avail[type] > 0))) { toast('Choisis une troupe en bas de l’écran.'); return; }
   const x0 = Math.round(g[0] * 10) / 10, z0 = Math.round(g[1] * 10) / 10;
-  if (!canDeploy(F.zoneB, x0, z0)) { V3.showZone(F.zoneB); F.zoneUntil = performance.now() + 2500; toast('Trop près des bâtiments : déploie hors de la zone rouge.'); return; }
+  if (!canDeploy(F.zoneB, x0, z0)) { V3.showZone(F.zoneB); F.zoneUntil = performance.now() + 2500; toast(F.zoneB.inside && F.zoneB.inside[Math.floor(z0) * GRID + Math.floor(x0)] ? 'Impossible de déployer à l’intérieur des remparts.' : 'Trop près des bâtiments : déploie hors de la zone rouge.'); SND.sfx('error'); return; }
+  if (heroK) {
+    const lvl = (me.heroes[heroK] || {}).lvl || 1;
+    if (F.kind === 'guest') emitDuo({ k: 'dep', id: duo.id, t: UNIT_KEYS.indexOf(heroK), x: x0, z: z0, l: lvl });
+    else if (!deploy(F.B, heroK, x0, z0, 0, false, lvl)) return;
+    F.hero = { k: heroK, lvl, uid: F.kind === 'guest' ? null : F.B.units[F.B.units.length - 1].id, pw: false };
+    F.deployed = true;
+    F.selType = TROOP_KEYS.find(k => F.avail[k] > 0) || null;
+    SND.sfx('hero'); if (gl) { V3.wave(x0, z0, 0xffd27a, 1.6, 0.6); V3.dustRing(x0, z0, 0.5); }
+    buzz(); checkOut(F); renderBottom(); return;
+  }
   const n = type === 'belier' ? 1 : Math.min(F.batch, F.avail[type]);
   const offs = [[0, 0], [0.45, 0.1], [-0.4, 0.2], [0.15, -0.45], [-0.2, -0.35]];
   for (let i = 0; i < n; i++) {
     let x = Math.round((x0 + offs[i % 5][0]) * 10) / 10, z = Math.round((z0 + offs[i % 5][1]) * 10) / 10;
     if (!canDeploy(F.zoneB, x, z)) { x = x0; z = z0; }
     F.avail[type]--; F.used[type] = (F.used[type] || 0) + 1; F.deployed = true;
-    if (F.kind === 'guest') emitDuo({ k: 'dep', id: duo.id, t: TROOP_KEYS.indexOf(type), x, z });
+    if (F.kind === 'guest') emitDuo({ k: 'dep', id: duo.id, t: UNIT_KEYS.indexOf(type), x, z });
     else deploy(F.B, type, x, z, 0);
   }
-  buzz();
-  if (!(F.avail[type] > 0)) F.selType = TROOP_KEYS.find(k => F.avail[k] > 0) || null;
-  if (!TROOP_KEYS.some(k => F.avail[k] > 0)) {
-    if (F.kind === 'solo') F.B.noMore = true;
-    else if (F.kind === 'duoHost') F.hostOut = true;
-    else emitDuo({ k: 'out', id: duo.id });
-  }
+  buzz(); SND.sfx('deploy', { pan: gl ? V3.panOf(x0, z0) : 0 }); if (gl) V3.dustRing(x0, z0, 0.35);
+  if (!(F.avail[type] > 0)) F.selType = TROOP_KEYS.find(k => F.avail[k] > 0) || (F.heroes.length && !F.hero ? 'h:' + F.heroes[0] : null);
+  checkOut(F);
   renderBottom();
 }
+/* Il ne reste rien à déployer (troupes, et héros s'il y en a un) : on prévient le moteur ou l'hôte. */
+const leftToDeploy = F => TROOP_KEYS.some(k => F.avail[k] > 0) || (F.heroes.length > 0 && !F.hero);
+function checkOut(F) {
+  if (leftToDeploy(F)) return;
+  if (F.kind === 'solo') F.B.noMore = true;
+  else if (F.kind === 'duoHost') F.hostOut = true;
+  else if (!F.outSent) { F.outSent = true; emitDuo({ k: 'out', id: duo.id }); }
+}
+function usePower() {
+  const F = fight; if (!F || !F.hero || F.hero.pw || F.ended) return;
+  if (F.kind === 'guest') { if (!heroAlive(F)) return; emitDuo({ k: 'pow', id: duo.id }); F.hero.pw = true; SND.sfx('power'); }
+  else if (heroPower(F.B, 0)) F.hero.pw = true;
+  renderBottom();
+}
+function heroAlive(F) {
+  if (!F.hero) return false;
+  if (F.kind === 'guest') return F.units.some(u => u.type === F.hero.k && u.owner === 1);
+  const u = F.B.units.find(q => q.id === F.hero.uid); return !!u && !u.dead;
+}
+function shotSound(k, x, z) { SND.sfx(k === 'stone' ? 'catapult' : k === 'bolt' ? 'bolt' : 'shoot', { pan: gl && x != null ? V3.panOf(x, z) : 0 }); }
 function findUnit(F, uid) { return F.kind === 'guest' ? F.units.find(u => u.id === uid) : F.B.units.find(u => u.id === uid && !u.dead); }
 function spawnDefShot(F, bi, kind, uid, tx, tz, dur) {
   const B = F.kind === 'guest' ? F.zoneB : F.B, b = B.blds[bi]; if (!b || !gl) return;
@@ -1874,29 +2758,48 @@ function spawnDefShot(F, bi, kind, uid, tx, tz, dur) {
 function consume(F) {
   const B = F.B;
   for (const s of B.shots) {
-    if (s.k === 'arrowU') { if (gl) V3.spawnShot('arrow', s.fx, 0.55, s.fz, () => [s.tx, 0.9, s.tz], 0.3); }
-    else spawnDefShot(F, s.b, s.k, s.uid, s.tx, s.tz, s.dur);
+    if (s.k === 'arrowU') { if (gl) V3.spawnShot('arrow', s.fx, 0.55, s.fz, () => [s.tx, 0.9, s.tz], 0.3); SND.sfx('shoot', { pan: gl ? V3.panOf(s.fx, s.fz) : 0 }); }
+    else { spawnDefShot(F, s.b, s.k, s.uid, s.tx, s.tz, s.dur); shotSound(s.k, s.x0, s.z0); }
     if (F.kind === 'duoHost') F.outShots.push([s.b != null ? s.b : -1, s.uid | 0, KIDX.indexOf(s.k), Math.round((s.dur || 0.3) * 10), Math.round((s.tx || 0) * 10), Math.round((s.tz || 0) * 10), Math.round((s.fx || 0) * 10), Math.round((s.fz || 0) * 10)]);
   }
   B.shots.length = 0;
-  let changed = false;
-  for (const e of B.events) if (e.k === 'down') { changed = true; const b = B.blds[e.i]; if (gl) V3.burst(b.x, b.z, 0.4, 0x9a8f80, 10); }
+  let changed = false, hits = 0;
+  for (const e of B.events) {
+    if (e.k === 'down' || e.k === 'wall') { changed = true; bldDownFx(F, B.blds[e.i]); }
+    else if (e.k === 'hit') { if (hits++ < 3) hitFx(e.x, e.z, e.w); if (F.kind === 'duoHost' && hits <= 2) F.outEvents.push([3, Math.round(e.x * 10), Math.round(e.z * 10), e.w]); }
+    else if (e.k === 'power') { powerFx(e.type, e.x, e.z, e.uid); if (F.kind === 'duoHost') F.outEvents.push([0, Math.round(e.x * 10), Math.round(e.z * 10), UNIT_KEYS.indexOf(e.type), e.uid]); }
+    else if (e.k === 'volley') { volleyFx(e); if (F.kind === 'duoHost') F.outEvents.push([1, Math.round(e.x * 10), Math.round(e.z * 10), Math.round(e.fx * 10), Math.round(e.fz * 10)]); }
+    else if (e.k === 'boom') SND.sfx('boom', { pan: gl ? V3.panOf(e.x, e.z) : 0 });
+  }
   B.events.length = 0;
+  const alive = B.units.reduce((a, u) => a + (u.dead ? 0 : 1), 0);
+  if (alive < F.alive) SND.sfx('death');
+  F.alive = alive;
   if (changed) refreshScene();
 }
+function bldDownFx(F, b) {
+  if (!b) return;
+  const orc = F.orcBld, pan = gl ? V3.panOf(b.x, b.z) : 0;
+  if (b.wall) { SND.sfx('wallbreak', { pan }); if (gl) { V3.debris(b.x, b.z, 1, orc, 5); V3.burst(b.x, b.z, 0.3, 0x9a8f80, 4); } return; }
+  SND.sfx('collapse', { pan });
+  if (gl) { V3.burst(b.x, b.z, 0.4, 0x9a8f80, 10); V3.debris(b.x, b.z, b.s, orc, 6 + b.s * 4); V3.shake(b.type === 'mairie' ? 0.5 : 0.22); }
+}
+function hitFx(x, z, w) { SND.sfx(w ? 'wallhit' : 'chop', { pan: gl ? V3.panOf(x, z) : 0 }); if (gl && Math.random() < 0.5) V3.spark(x, 0.6, z, w ? 0xd8d0c0 : 0xffe0a0); }
+function powerFx(type, x, z, uid) { SND.sfx('power', { pan: gl ? V3.panOf(x, z) : 0 }); if (gl) { V3.powerFx(type, x, z); if (uid != null) V3.unitPower(uid); } }
+function volleyFx(e) { SND.sfx('shoot'); setTimeout(() => SND.sfx('chop'), 450); if (gl) V3.volley(e.fx, e.fz, e.x, e.z); }
 function drawUnits(F, alpha, tNow) {
   if (!gl) return;
   const list = [];
   for (const u of F.B.units) if (!u.dead) {
-    const b = u.tgt >= 0 ? F.B.blds[u.tgt] : null;
-    list.push({ id: u.id, type: u.type, x: u.x, z: u.z, px: u.px, pz: u.pz, hp: u.hp, max: u.max, mv: u.mv, col: F.colors[u.owner] || F.colors[0], orc: F.orcUnits, atkAge: F.B.t - u.atk, face: b ? [b.x, b.z] : null });
+    const fi = u.hit >= 0 ? u.hit : u.tgt, b = fi >= 0 ? F.B.blds[fi] : null;
+    list.push({ id: u.id, type: u.type, x: u.x, z: u.z, px: u.px, pz: u.pz, hp: u.hp, max: u.max, mv: u.mv, col: F.colors[u.owner] || F.colors[0], orc: F.orcUnits, atkAge: F.B.t - u.atk, face: b ? [b.x, b.z] : null, hero: u.hero, buff: u.bT > 0 });
   }
   V3.syncUnits(list, alpha, tNow);
 }
 function sendState(F) {
   const B = F.B, u = [];
-  for (const x of B.units) { if (x.dead) continue; if (u.length >= 8 * 70) break; u.push(x.id, TROOP_KEYS.indexOf(x.type), x.owner, Math.round(x.x * 10), Math.round(x.z * 10), Math.round(x.hp / x.max * 100), x.mv ? 1 : 0, x.tgt); }
-  emitDuo({ k: 'st', id: duo.id, t: B.t, u, b: B.blds.map(x => x.dead ? -1 : Math.round(x.hp / x.max * 100)), s: F.outShots.splice(0).slice(-12), st: B.stars, p: Math.round(B.pct * 100) });
+  for (const x of B.units) { if (x.dead) continue; if (u.length >= 8 * 70) break; u.push(x.id, UNIT_KEYS.indexOf(x.type), x.owner, Math.round(x.x * 10), Math.round(x.z * 10), Math.max(1, Math.round(x.hp / x.max * 100)), (x.mv ? 1 : 0) | (x.bT > 0 ? 2 : 0), x.hit >= 0 ? x.hit : x.tgt); }
+  emitDuo({ k: 'st', id: duo.id, t: B.t, u, b: B.blds.map(x => x.dead ? -1 : Math.round(x.hp / x.max * 100)), s: F.outShots.splice(0).slice(-12), e: F.outEvents.splice(0).slice(-10), st: B.stars, p: Math.round(B.pct * 100) });
 }
 function fightFrame(dt, tNow) {
   const F = fight; if (!F || mode !== 'fight') return;
@@ -1912,7 +2815,8 @@ function fightFrame(dt, tNow) {
         if (F.pi >= F.plan.length) B.noMore = true;
       }
       if (F.kind === 'duoHost') {
-        for (const d of F.inbox.splice(0)) { const ty = TROOP_KEYS[d.t | 0]; if (ty) deploy(B, ty, +d.x, +d.z, 1); }
+        for (const d of F.inbox.splice(0)) { const ty = UNIT_KEYS[d.t | 0]; if (ty) deploy(B, ty, +d.x, +d.z, 1, false, Math.max(1, Math.min(5, d.l | 0))); }
+        if (F.powQ) { F.powQ = false; heroPower(B, 1); }
         B.noMore = F.hostOut && F.guestOut;
       }
       stepBattle(B); F.acc -= DT; steps++;
@@ -1922,7 +2826,7 @@ function fightFrame(dt, tNow) {
     if (steps >= 5) F.acc = 0;
   }
   drawUnits(F, Math.min(1, F.acc / DT), tNow);
-  if (gl) for (const b of B.blds) if (!b.dead) V3.setBldHp('x' + b.i, b.hp / b.max);
+  if (gl) for (const b of B.blds) if (!b.dead && b.hp < b.max) V3.setBldHp('x' + b.i, b.hp / b.max);
   if (B.over && !F.ended) finishFight();
   if (tNow - (F.hudT || 0) > 0.25) { F.hudT = tNow; renderTop(); renderBottom(); }
 }
@@ -1931,7 +2835,7 @@ function guestFrame(tNow) {
   const alpha = Math.min(1, (performance.now() - (F.stT || 0)) / 200);
   if (gl) V3.syncUnits(F.units.map(u => {
     const b = u.tgt >= 0 ? F.zoneB.blds[u.tgt] : null;
-    return { id: u.id, type: u.type, x: u.x, z: u.z, px: u.px, pz: u.pz, hp: u.hp, max: 100, mv: u.mv, col: F.colors[u.owner] || F.colors[0], orc: false, atkAge: u.mv ? 9 : (tNow + u.id * 0.37) % 1, face: b ? [b.x, b.z] : null };
+    return { id: u.id, type: u.type, x: u.x, z: u.z, px: u.px, pz: u.pz, hp: u.hp, max: 100, mv: u.mv, col: F.colors[u.owner] || F.colors[0], orc: false, atkAge: u.mv ? 9 : (tNow + u.id * 0.37) % 1, face: b ? [b.x, b.z] : null, hero: u.hero, buff: u.buff };
   }), alpha, tNow);
   if (!F.ended && performance.now() - F.lastSt > 9000) guestAbort('La connexion avec ' + F.partnerName + ' a été perdue. Le raid est annulé et tes troupes te sont rendues.');
   if (tNow - (F.hudT || 0) > 0.25) { F.hudT = tNow; renderTop(); renderBottom(); }
@@ -1948,8 +2852,15 @@ function applyResult(kind, crowns, pct) {
   if (kind === 'solo' && !F.deployed) { leaveFight(); return; }
   const mark = kind === 'solo' ? sabresOf(pct) : crowns;
   const loot = lootFor(F.bot, pct, mark);
-  const r = act({ type: 'battle', kind, mark, pct: Math.round(pct * 100), loot, used: F.used, deployed: F.deployed, name: F.bot.name });
-  modal = { kind: 'result', mode: kind, mark, pct, got: r ? r.got : {}, dM: r ? r.dM : 0, name: F.bot.name };
+  let hero = null;
+  if (F.hero) {
+    if (F.kind === 'guest') { const u = F.units.find(q => q.type === F.hero.k && q.owner === 1); hero = { k: F.hero.k, frac: u ? u.hp / 100 : 0, dead: !u }; }
+    else { const u = F.B.units.find(q => q.id === F.hero.uid); hero = { k: F.hero.k, frac: u && !u.dead ? u.hp / u.max : 0, dead: !u || u.dead }; }
+  }
+  const r = act({ type: 'battle', kind, mark, pct: Math.round(pct * 100), loot, used: F.used, deployed: F.deployed, name: F.bot.name, hero });
+  modal = { kind: 'result', mode: kind, mark, pct, got: r ? r.got : {}, dM: r ? r.dM : 0, name: F.bot.name, hero };
+  SND.jingle(mark > 0 ? 'victory' : 'defeat');
+  for (let i = 0; i < mark; i++) setTimeout(() => SND.sfx('star', { i }), 700 + i * 380);
   if (kind === 'duo') duo = { phase: 'idle' };
   renderAll();
 }
@@ -1957,8 +2868,8 @@ function endFightEarly() {
   const F = fight; if (!F || F.ended) return;
   if (F.kind === 'replay') { leaveFight(); return; }
   if (F.kind === 'solo') { if (!F.deployed) { leaveFight(); return; } F.B.over = true; return; }
-  if (F.kind === 'duoHost') { F.hostOut = true; for (const k of TROOP_KEYS) F.avail[k] = 0; F.selType = null; toast('C’est noté : tu ne déploies plus rien.'); }
-  else { for (const k of TROOP_KEYS) F.avail[k] = 0; F.selType = null; emitDuo({ k: 'out', id: duo.id }); toast('C’est noté : tu ne déploies plus rien.'); }
+  if (F.kind === 'duoHost') { F.hostOut = true; for (const k of TROOP_KEYS) F.avail[k] = 0; F.heroes = F.hero ? F.heroes : []; F.selType = null; toast('C’est noté : tu ne déploies plus rien.'); }
+  else { for (const k of TROOP_KEYS) F.avail[k] = 0; F.heroes = F.hero ? F.heroes : []; F.selType = null; if (!F.outSent) { F.outSent = true; emitDuo({ k: 'out', id: duo.id }); } toast('C’est noté : tu ne déploies plus rien.'); }
   renderBottom();
 }
 function leaveFight() {
@@ -1978,11 +2889,12 @@ function emitDuo(d) { if (!room) return; d.from = myKey; room.emit('duo', d).cat
 function proposeDuo(k) {
   if (!room) { toast('Le raid à deux n’est pas disponible ici.'); return; }
   if (!presentKeys().has(k)) { toast(pname(others[k] && others[k].sim) + ' n’est pas connecté en ce moment.'); return; }
+  if (partnerAv(k) !== APP_PV) { toast(pname(others[k] && others[k].sim) + ' n’a pas encore la nouvelle version : il faut fermer puis rouvrir le jeu.'); return; }
   if (armyCount(me) === 0) { toast('Entraîne des troupes avant le raid.'); openSheet('army'); return; }
   const p = others[k] && others[k].sim;
   const th = Math.min(5, Math.max(thOf(me), p ? thOf(p) : 1)), lg = Math.max(leagueOf(me.medals), p ? leagueOf(p.medals) : 0);
   duo = { phase: 'inviting', id: 'r' + Math.random().toString(36).slice(2, 9), partner: k, seed: (Math.random() * 2147483647) | 0, th, lg, t0: now() };
-  emitDuo({ k: 'inv', id: duo.id, to: k, seed: duo.seed, th, lg });
+  emitDuo({ k: 'inv', id: duo.id, to: k, seed: duo.seed, th, lg, pv: APP_PV });
   closeSheet(true); renderAll();
 }
 function acceptDuo() {
@@ -2006,11 +2918,12 @@ function onDuo(msg) {
     case 'inv':
       if (d.to !== myKey || !me) return;
       if (mode === 'fight' || duo.phase === 'battle') { emitDuo({ k: 'dec', id: d.id, why: 'busy' }); return; }
+      if ((d.pv | 0) !== APP_PV) { emitDuo({ k: 'dec', id: d.id, why: 'version' }); toast(pname(others[d.from] && others[d.from].sim) + ' t’invite, mais vos versions du jeu diffèrent : fermez puis rouvrez l’appli tous les deux.'); return; }
       duo = { phase: 'invited', id: String(d.id), partner: d.from, seed: d.seed | 0, th: Math.max(1, Math.min(5, d.th | 0)), lg: Math.max(0, Math.min(LEAGUES.length - 1, d.lg | 0)), t0: now() };
       if (room.watch) room.watch(duo.id);
-      buzz(); renderAll(); break;
+      buzz(); SND.sfx('invite'); renderAll(); break;
     case 'dec':
-      if (duo.phase === 'inviting' && d.id === duo.id) { const n = pname(others[duo.partner] && others[duo.partner].sim); duo = { phase: 'idle' }; toast(d.why === 'busy' ? n + ' est déjà en plein combat.' : n + ' a refusé le raid.'); renderAll(); }
+      if (duo.phase === 'inviting' && d.id === duo.id) { const n = pname(others[duo.partner] && others[duo.partner].sim); duo = { phase: 'idle' }; toast(d.why === 'busy' ? n + ' est déjà en plein combat.' : d.why === 'version' ? 'Vos versions du jeu diffèrent : fermez puis rouvrez l’appli tous les deux.' : n + ' a refusé le raid.'); renderAll(); }
       break;
     case 'cancel':
       if (duo.phase === 'invited' && d.id === duo.id) { duo = { phase: 'idle' }; toast('Invitation annulée.'); renderAll(); }
@@ -2023,6 +2936,7 @@ function onDuo(msg) {
       break;
     case 'st': if (fight && fight.kind === 'guest' && d.id === duo.id) guestState(d); break;
     case 'dep': if (fight && fight.kind === 'duoHost' && d.id === duo.id) fight.inbox.push(d); break;
+    case 'pow': if (fight && fight.kind === 'duoHost' && d.id === duo.id) fight.powQ = true; break;
     case 'out': if (fight && fight.kind === 'duoHost' && d.id === duo.id) fight.guestOut = true; break;
     case 'end': if (fight && fight.kind === 'guest' && d.id === duo.id && !fight.ended) { fight.ended = true; applyResult('duo', d.st | 0, Math.max(0, Math.min(1, (d.p | 0) / 100))); } break;
     case 'bye':
@@ -2038,30 +2952,39 @@ function guestState(d) {
   const prev = new Map(F.units.map(u => [u.id, u])), arr = Array.isArray(d.u) ? d.u : [], units = [];
   for (let i = 0; i + 8 <= arr.length; i += 8) {
     const id = arr[i], x = arr[i + 3] / 10, z = arr[i + 4] / 10, p = prev.get(id);
-    units.push({ id, type: TROOP_KEYS[arr[i + 1]] || 'fantassin', owner: arr[i + 2] | 0, x, z, px: p ? p.x : x, pz: p ? p.z : z, hp: arr[i + 5], mv: arr[i + 6], tgt: arr[i + 7] });
+    const ty = UNIT_KEYS[arr[i + 1]] || 'fantassin';
+    units.push({ id, type: ty, owner: arr[i + 2] | 0, x, z, px: p ? p.x : x, pz: p ? p.z : z, hp: arr[i + 5], mv: arr[i + 6] & 1, buff: !!(arr[i + 6] & 2), hero: !!HEROES[ty], tgt: arr[i + 7] });
   }
+  if (units.length < F.units.length) SND.sfx('death');
   F.units = units; F.stT = F.lastSt = performance.now(); F.t = +d.t || 0; F.stars = d.st | 0; F.pct = (d.p | 0) / 100;
   let changed = false;
   (Array.isArray(d.b) ? d.b : []).forEach((hp, i) => {
     const b = F.zoneB.blds[i]; if (!b) return;
-    if (hp < 0) { if (!b.dead) { b.dead = true; changed = true; if (gl) V3.burst(b.x, b.z, 0.4, 0x9a8f80, 10); } }
-    else if (gl) V3.setBldHp('x' + i, hp / 100);
+    if (hp < 0) { if (!b.dead) { b.dead = true; changed = true; bldDownFx(F, b); } }
+    else if (gl && hp < 100) V3.setBldHp('x' + i, hp / 100);
   });
-  if (changed) refreshScene();
+  if (changed) { for (const b of F.zoneB.blds) markOcc(F.zoneB, b, b.dead ? 0 : b.i + 1); computeInside(F.zoneB); refreshScene(); }
   for (const s of (Array.isArray(d.s) ? d.s : [])) {
     if (!Array.isArray(s)) continue;
     const [bi, uid, ki, dur, tx, tz, fx, fz] = s, k = KIDX[ki];
-    if (k === 'arrowU') { if (gl) V3.spawnShot('arrow', fx / 10, 0.55, fz / 10, () => [tx / 10, 0.9, tz / 10], 0.3); }
-    else if (k) spawnDefShot(F, bi, k, uid, tx / 10, tz / 10, dur / 10);
+    if (k === 'arrowU') { if (gl) V3.spawnShot('arrow', fx / 10, 0.55, fz / 10, () => [tx / 10, 0.9, tz / 10], 0.3); SND.sfx('shoot'); }
+    else if (k) { spawnDefShot(F, bi, k, uid, tx / 10, tz / 10, dur / 10); const b = F.zoneB.blds[bi]; shotSound(k, b && b.x, b && b.z); }
+  }
+  for (const e of (Array.isArray(d.e) ? d.e : [])) {
+    if (!Array.isArray(e)) continue;
+    const x = e[1] / 10, z = e[2] / 10;
+    if (e[0] === 0) powerFx(UNIT_KEYS[e[3]], x, z, e[4]);
+    else if (e[0] === 1) volleyFx({ x, z, fx: e[3] / 10, fz: e[4] / 10 });
+    else if (e[0] === 3) hitFx(x, z, e[3]);
   }
 }
 function guestAbort(msg) { if (!fight) return; fight.ended = true; duo = { phase: 'idle' }; modal = { kind: 'info', title: 'Raid interrompu', text: msg }; renderAll(); }
 function updatePresence() {
   if (!room || !me || !myKey) return;
-  const busy = mode === 'fight', sig = myKey + '|' + busy;
+  const busy = mode === 'fight', sig = myKey + '|' + busy + '|' + APP_PV;
   if (sig === presenceSig) return;
   presenceSig = sig;
-  room.presence({ key: myKey, busy }).catch(() => { presenceSig = ''; });
+  room.presence({ key: myKey, busy, av: APP_PV }).catch(() => { presenceSig = ''; });
 }
 
 /* ---------- cadeaux ---------- */
@@ -2092,6 +3015,8 @@ function topIdentity(v, mine) {
   let chips = '';
   if (modelLoad && modelLoad.d < modelLoad.n) chips += `<span class="glass chipb">Modèles 3D ${Math.round(modelLoad.d / modelLoad.n * 100)} %</span>`;
   if (mine) {
+    chips += `<button class="glass chipb helpb" data-act="help" aria-label="Aide">${ico('help', 'c-tro')}</button>`;
+    if (window.__mkUpdate) chips += `<button class="glass chipb alert" data-act="reload">Nouvelle version : toucher ici</button>`;
     if (unseenRaid()) chips += `<button class="glass chipb alert" data-act="sheet" data-s="village">Attaqué !</button>`;
     if (installEvt) chips += `<button class="glass chipb" data-act="install">Installer l’appli</button>`;
     if (v.chest) chips += `<button class="glass chipb" data-act="sheet" data-s="duo">${ico('chest', 'c-tro')}Récompense</button>`;
@@ -2139,7 +3064,8 @@ function renderTop() {
   else if (mode === 'scout' && scout) {
     const FOE_DEF = { tour: ['tour d’archers', 'tours d’archers'], baliste: ['tour de garde', 'tours de garde'], mangonneau: ['catapulte', 'catapultes'] };
     const cnt = {}; scout.layout.forEach(l => { if (BLD[l[0]].def) cnt[l[0]] = (cnt[l[0]] || 0) + 1; });
-    const defTxt = Object.keys(cnt).map(k => cnt[k] + ' ' + FOE_DEF[k][cnt[k] > 1 ? 1 : 0]).join(', ');
+    const nW = scout.layout.filter(l => l[0] === 'rempart').length;
+    const defTxt = Object.keys(cnt).map(k => cnt[k] + ' ' + FOE_DEF[k][cnt[k] > 1 ? 1 : 0]).join(', ') + (nW ? ', une palissade' : '');
     h = `<div class="glass bt-top"><div class="nm"><b>${esc(scout.name)}</b><small>Camp orque · chef niv. ${scout.th} · ${esc(defTxt)}</small></div></div>
       <div class="glass card"><div class="row split"><b>Butin à 100 %</b><span class="chips2">${chipsRes(lootFor(scout, 1, 0))}</span></div>
       <p class="note">Les cercles rouges montrent la portée des défenses. ${ico('sabre', 'c-tro')} 1 sabre à 50 %, 2 à 75 %, 3 à 100 % : chaque sabre ajoute un bonus au butin.</p></div>`;
@@ -2157,6 +3083,8 @@ function bldStats(type, lvl) {
   if (type === 'camp') return campCap(lvl) + ' places pour l’armée';
   if (type === 'caserne') return 'Débloque : ' + TROOP_KEYS.filter(k => TROOPS[k].cas <= lvl).map(k => TROOPS[k].plural.toLowerCase()).join(', ');
   if (type === 'mairie') return buildersOf({ b: [{ type: 'mairie', lvl }] }) + ' ouvrier' + (lvl >= 2 ? 's' : '') + ' · bâtiments jusqu’au niveau ' + Math.min(5, lvl + 1);
+  if (type === 'rempart') return fmtN(hpOf(type, lvl)) + ' PV · les ennemis doivent le casser ou le contourner';
+  if (type === 'heros') return 'Héros jusqu’au niveau ' + lvl + ' · ' + HERO_KEYS.filter(k => HEROES[k].hall <= lvl).length + ' héros disponibles sur 3';
   const D = defOf(type, lvl);
   if (D) return 'Portée ' + String(D.range).replace('.', ',') + ' · ' + Math.round(D.dmg / D.rate) + ' dégâts/s' + (D.splash ? ' sur une zone' : '') + ' · ' + fmtN(hpOf(type, lvl)) + ' PV';
   return '';
@@ -2168,6 +3096,19 @@ function bldPanel() {
   let h = `<div class="glass card"><h3><span>${esc(d.name)}</span><span class="row"><small>${b.lvl > 0 ? 'niveau ' + b.lvl : 'en construction'}</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>`;
   h += `<p class="note">${esc(b.lvl > 0 ? bldStats(b.type, b.lvl) : d.desc)}</p>`;
   if (b.up) h += `<div class="bar"><i data-p0="${b.up.t0}" data-p1="${b.up.t1}"></i></div><div class="row split note"><span>${b.lvl > 0 ? 'Amélioration vers le niveau ' + (b.lvl + 1) : 'Construction'}</span><b data-until="${b.up.t1}"></b></div>`;
+  if (mine && b.type === 'rempart') {
+    const to = b.lvl + 1, same = v.b.filter(x => x.type === 'rempart' && x.lvl === b.lvl).length;
+    if (to > BLD.rempart.max) h += '<p class="note">Niveau maximum atteint.</p>';
+    else if (to > maxLvlOf('rempart', th)) h += '<p class="note">Agrandis la halle du clan pour renforcer les remparts.</p>';
+    else {
+      const c = costOf('rempart', to), miss = missingTxt(v, c);
+      h += `<div class="row split"><span class="chips2">${chipsRes(c, v.r)}</span><button class="btn${miss ? ' off' : ' primary'}" data-act="upgrade" data-id="${b.id}">Niveau ${to}</button></div>`;
+      if (same > 1) h += `<div class="row split"><span class="note">Les ${same} remparts de niveau ${b.lvl} (tant que tu peux payer)</span><button class="btn small" data-act="upwalls" data-l="${b.lvl}">Tous au niveau ${to}</button></div>`;
+    }
+    h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button><button class="btn small" data-act="removeWall" data-id="${b.id}">Retirer</button></div>`;
+    return h + '</div>';
+  }
+  if (mine && b.type === 'heros' && b.lvl > 0) h += `<div class="row"><button class="btn small primary" data-act="sheet" data-s="army" data-k="heroes">${ico('roi', '')}Voir les héros</button></div>`;
   if (mine) {
     let up = '';
     if (!b.up) {
@@ -2186,7 +3127,7 @@ function bldPanel() {
 }
 function navBar() {
   const v = me, t = now();
-  const canBuild = busyBuilders(v) < buildersOf(v) && SHOP.some(k => countOf(v, k) < limitOf(k, thOf(v)) && !missingTxt(v, costOf(k, 1)));
+  const canBuild = busyBuilders(v) < buildersOf(v) && SHOP.some(k => !BLD[k].wall && countOf(v, k) < limitOf(k, thOf(v)) && !missingTxt(v, costOf(k, 1)));
   const duoDot = !!v.chest || onlineOthers().length > 0;
   return `<nav class="glass nav" aria-label="Actions">
     <button class="hot" data-act="attack">${ico('axe', '')}Raid solo</button>
@@ -2198,7 +3139,11 @@ function navBar() {
 function renderBottom() {
   let h = '';
   if (mode === 'home' && me) {
-    if (place) {
+    if (place && place.kind === 'wall') {
+      const n = countOf(me, 'rempart'), lim = limitOf('rempart', thOf(me));
+      h = `<div class="glass card"><div class="row split"><b class="row">${ico('wall', 'c-pierre')}Remparts · ${n} sur ${lim}</b><span class="chips2">${chipsRes(costOf('rempart', 1), me.r)}<span class="note">chacun</span></span><button class="btn small primary" data-act="placeCancel">Terminé</button></div>
+        <p class="note">Touche une case, puis une autre sur la même ligne : toute la ligne se remplit.</p></div>`;
+    } else if (place) {
       const valid = placeValid(), d = BLD[place.type];
       h = `<div class="glass card"><div class="row split"><b>${place.kind === 'new' ? 'Placer' : 'Déplacer'} : ${esc(d.name)}</b><span class="note">Touchez le terrain pour choisir.</span></div>
         ${valid ? '' : '<p class="why">Emplacement occupé ou trop près du bord.</p>'}
@@ -2220,10 +3165,17 @@ function renderBottom() {
     if (F.kind === 'replay') h = `<div class="glass card"><div class="row split"><span class="note">Les orques attaquent ton village. Regarde ce qui a tenu, et ce qui a cédé.</span><button class="btn" data-act="endFight">Quitter</button></div></div>`;
     else {
       let tb = '';
-      for (const k of TROOP_KEYS) { const n = F.avail[k] || 0; if (!n && !(F.used[k] > 0)) continue; tb += `<button class="tbtn${F.selType === k ? ' on' : ''}${n ? '' : ' empty'}" data-act="troop" data-u="${k}">${ico(k, '')}<span class="n">${n}</span><span>${TROOPS[k].plural}</span></button>`; }
-      const left = TROOP_KEYS.some(k => F.avail[k] > 0);
-      h = `<div class="glass fightbar">${left ? `<p class="tip">Touchez le terrain, hors de la zone rouge, pour déployer${F.selType && F.selType !== 'belier' ? ' (par ' + F.batch + ')' : ''}.</p>` : '<p class="tip">Toutes tes troupes sont sur le terrain.</p>'}
-        <div class="troopbar">${tb || '<span class="tip">Aucune troupe.</span>'}${left ? `<button class="tbtn" data-act="batch"><span class="n">×${F.batch}</span><span>Groupe</span></button>` : ''}</div>
+      for (const k of TROOP_KEYS) { const n = F.avail[k] || 0; if (!n && !(F.used[k] > 0)) continue; tb += `<button class="tbtn${F.selType === k ? ' on' : ''}${n ? '' : ' empty'}" data-act="troop" data-u="${k}">${thumb(k, 'sm')}<span class="n">${n}</span><span class="nm">${TROOPS[k].plural}</span></button>`; }
+      if (F.hero) {
+        const alive = heroAlive(F), H = HEROES[F.hero.k];
+        tb += `<button class="tbtn hero${!F.hero.pw && alive ? ' power' : ' empty'}" data-act="power">${thumb(F.hero.k, 'sm')}<span class="n">${!alive ? 'K.O.' : F.hero.pw ? 'Utilisé' : 'Pouvoir'}</span><span class="nm">${esc(H.power)}</span></button>`;
+      } else for (const k of F.heroes) tb += `<button class="tbtn hero${F.selType === 'h:' + k ? ' on' : ''}" data-act="troop" data-u="h:${k}">${thumb(k, 'sm')}<span class="n">Héros</span><span class="nm">${esc(HEROES[k].name)}</span></button>`;
+      const left = leftToDeploy(F), heroSel = F.selType && F.selType.startsWith('h:');
+      const tip = !left ? (F.hero && !F.hero.pw && heroAlive(F) ? 'Touche le héros en bas pour lancer son pouvoir.' : 'Toutes tes troupes sont sur le terrain.')
+        : heroSel ? 'Touche le terrain pour faire entrer ' + esc(HEROES[F.selType.slice(2)].name) + ' (un seul héros par raid).'
+        : 'Touchez le terrain, hors de la zone rouge, pour déployer' + (F.selType && F.selType !== 'belier' ? ' (par ' + F.batch + ')' : '') + '.';
+      h = `<div class="glass fightbar"><p class="tip">${tip}</p>
+        <div class="troopbar">${tb || '<span class="tip">Aucune troupe.</span>'}${TROOP_KEYS.some(k => F.avail[k] > 0) ? `<button class="tbtn" data-act="batch"><span class="n">×${F.batch}</span><span class="nm">Groupe</span></button>` : ''}</div>
         <div class="row" style="padding:0 6px 6px"><button class="btn grow" data-act="endFight">${F.kind === 'solo' ? (F.deployed ? 'Terminer le raid' : 'Renoncer') : (left ? 'J’ai fini de déployer' : 'En attente de la fin')}</button></div></div>`;
     }
   }
@@ -2233,7 +3185,7 @@ function renderBottom() {
 /* ---------- feuilles ---------- */
 function openSheet(s, arg) {
   if (!me) return;
-  sheet = s; sheetArg = arg || null; place = null;
+  sheet = s; sheetArg = arg || null; place = null; renderSheet.scrolled = false;
   if (s === 'village' && me.reports.length) LS.set('hameau2.seen.' + myKey, me.reports[me.reports.length - 1].t);
   renderAll(); els.sheetBody.scrollTop = 0;
 }
@@ -2247,7 +3199,7 @@ function sheetBuild() {
     else if (m.lvl >= 5) foot = '<p class="note">Niveau maximum atteint.</p>';
     else {
       const to = m.lvl + 1, c = costOf('mairie', to), miss = missingTxt(v, c);
-      const gains = SHOP.filter(k => limitOf(k, to) > limitOf(k, th)).map(k => '+' + (limitOf(k, to) - limitOf(k, th)) + ' ' + BLD[k].name.toLowerCase());
+      const gains = SHOP.filter(k => limitOf(k, to) > limitOf(k, th)).map(k => { const n = limitOf(k, to) - limitOf(k, th); return '+' + n + ' ' + (BLD[k].wall ? 'remparts' : BLD[k].name.toLowerCase()); });
       if (buildersOf({ b: [{ type: 'mairie', lvl: to }] }) > buildersOf(v)) gains.push('1 ouvrier de plus');
       gains.push('bâtiments jusqu’au niveau ' + Math.min(5, to + 1));
       foot = `<p>Niveau ${to} : ${esc(gains.join(', '))}.</p><div class="foot"><span class="chips2">${chipsRes(c, v.r)}<span class="dur">${ico('clock', '')}${fmtDur(timeOf('mairie', to))}</span></span>
@@ -2261,10 +3213,11 @@ function sheetBuild() {
     let why = '';
     if (lim === 0) { let need = th; while (need < 5 && limitOf(k, need) === 0) need++; why = 'Débloqué avec la halle du clan niveau ' + need + '.'; }
     else if (n >= lim) why = th < 5 ? 'Maximum atteint : agrandissez la halle pour en bâtir plus.' : 'Maximum atteint.';
-    else if (!free) why = 'Aucun ouvrier libre.';
+    else if (!free && !d.wall) why = 'Aucun ouvrier libre.';
     else if (miss) why = miss;
-    h += `<div class="item"><div class="head"><b>${esc(d.name)}</b><small>${n} sur ${lim}</small></div><p>${esc(d.desc)}</p>
-      <div class="foot"><span class="chips2">${chipsRes(c, v.r)}<span class="dur">${ico('clock', '')}${fmtDur(timeOf(k, 1))}</span></span>
+    if (k === 'rempart') h += '</div><div class="sec"><h4>Remparts</h4>';
+    h += `<div class="item${d.wall ? ' feature' : ''}"><div class="head"><b class="row">${d.wall ? ico('wall', 'c-pierre') : ''}${esc(d.name)}</b><small>${n} sur ${lim}</small></div><p>${esc(d.desc)}${d.wall ? ' Touche une case, puis une autre sur la même ligne pour remplir toute la ligne.' : ''}</p>
+      <div class="foot"><span class="chips2">${chipsRes(c, v.r)}${d.wall ? '<span class="note">chacun</span>' : `<span class="dur">${ico('clock', '')}${fmtDur(timeOf(k, 1))}</span>`}</span>
       <button class="btn${why ? ' off' : ' primary'}" data-act="place" data-type="${k}">Placer</button></div>${why ? `<p class="why">${esc(why)}</p>` : ''}</div>`;
   }
   return h + '</div>';
@@ -2273,7 +3226,8 @@ function sheetArmy() {
   const v = me, hs = housingOf(v), as = armySpace(v), qs = queueSpace(v), cl = casLvl(v);
   let h = `<div class="item"><div class="head"><b>Armée</b><small>${as} / ${hs} places${qs ? ' · ' + qs + ' en formation' : ''}</small></div>
     <div class="bar"><i style="width:${hs ? Math.min(100, as / hs * 100) : 0}%;transition:none"></i></div>
-    <div class="chips2">${TROOP_KEYS.filter(k => v.army[k]).map(k => `<span class="chip">${ico(k, '')}${v.army[k]} ${TROOPS[k].plural.toLowerCase()}</span>`).join('') || '<span class="note">Aucune troupe pour l’instant.</span>'}</div></div>`;
+    <div class="chips2">${TROOP_KEYS.filter(k => v.army[k]).map(k => `<span class="chip">${ico(k, '')}${v.army[k]} ${TROOPS[k].plural.toLowerCase()}</span>`).join('') || '<span class="note">Aucune troupe pour l’instant.</span>'}</div>
+    ${HERO_KEYS.some(k => (v.heroes || {})[k]) ? `<div class="chips2">${HERO_KEYS.filter(k => (v.heroes || {})[k]).map(k => `<span class="chip${heroReady(v, k, now()) ? ' plus' : ''}">${ico('roi', '')}${esc(HEROES[k].name)} niv. ${v.heroes[k].lvl}</span>`).join('')}</div>` : ''}</div>`;
   if (v.train.length) {
     const first = v.train[0], T = TROOPS[first.u], nc = casernes(v);
     const left = nc ? Math.max(0, (T.time - v.trainP) / nc) * 1000 : 0;
@@ -2290,12 +3244,42 @@ function sheetArmy() {
   for (const k of TROOP_KEYS) {
     const T = TROOPS[k], locked = cl < T.cas, roomLeft = hs - as - qs;
     const btn = n => { const off = locked || roomLeft < n * T.space || v.r.vivres < n * T.cost; return `<button class="btn small${off ? ' off' : ''}" data-act="train" data-u="${k}" data-n="${n}">+${n}</button>`; };
-    h += `<div class="item troop"><div class="tico">${ico(k, '')}</div><div style="display:grid;gap:6px;min-width:0">
+    h += `<div class="item troop">${thumb(k)}<div style="display:grid;gap:6px;min-width:0">
       <div class="head"><b>${T.name}</b><small>${ico('vivres')} ${T.cost} · ${T.time} s · ${T.space} place${T.space > 1 ? 's' : ''}</small></div>
       <p>${esc(T.desc)}</p><p class="stats">${T.hp} PV · ${Math.round(T.dmg / T.hit)} dégâts/s · portée ${String(T.range).replace('.', ',')}</p>
       ${locked ? `<p class="why">Il faut une caserne de niveau ${T.cas}.</p>` : `<div class="row">${btn(1)}${btn(5)}${k !== 'belier' ? btn(10) : ''}</div>`}</div></div>`;
   }
+  h += '</div><div class="sec" id="heroSec"><h4>Héros</h4>';
+  const hall = hallLvl(v);
+  if (!hall) h += `<p class="note">${v.b.some(b => b.type === 'heros') ? 'La Salle des Héros est en construction.' : 'Construis la Salle des Héros (menu Construire, dès la halle du clan niveau 2) pour recruter des héros.'} Un seul héros combat par raid.</p>`;
+  else h += '<p class="note">Un seul héros combat par raid. Après un combat, il se repose un moment avant de repartir.</p>';
+  for (const k of HERO_KEYS) h += heroCard(k);
   return h + '</div>';
+}
+function heroCard(k) {
+  const H = HEROES[k], v = me, h = (v.heroes || {})[k], hall = hallLvl(v), t = now(), lvl = h ? h.lvl : 1, sc = heroScale(lvl);
+  let status, foot;
+  if (!h) {
+    const lock = hall < H.hall ? (hall ? 'Il faut une Salle des Héros de niveau ' + H.hall + '.' : 'Construis d’abord la Salle des Héros.') : '';
+    const miss = missingTxt(v, { vivres: H.cost }), big = H.cost > capOf(v);
+    status = `<span class="chip">${lock ? 'Verrouillé' : 'À recruter'}</span>`;
+    foot = `<div class="foot"><span class="chips2">${chipsRes({ vivres: H.cost }, v.r)}</span><button class="btn${lock || miss || big ? ' off' : ' primary'}" data-act="heroBuy" data-k="${k}">Recruter</button></div>${lock ? `<p class="why">${esc(lock)}</p>` : big ? '<p class="why">Tes entrepôts sont trop petits pour réunir ce coût.</p>' : miss ? `<p class="why">${esc(miss)}</p>` : ''}`;
+  } else {
+    status = h.up ? `<span class="chip">Entraînement · <b data-until="${h.up.t1}"></b></span>` : h.rest > t ? `<span class="chip">Se repose · <b data-until="${h.rest}"></b></span>` : '<span class="chip plus">Prêt au combat</span>';
+    if (h.up) foot = `<div class="bar"><i data-p0="${h.up.t0}" data-p1="${h.up.t1}"></i></div>`;
+    else {
+      const to = h.lvl + 1;
+      if (to > 5) foot = '<p class="note">Niveau maximum atteint.</p>';
+      else if (to > hall) foot = `<p class="note">Améliore la Salle des Héros au niveau ${to} pour aller plus loin.</p>`;
+      else { const c = heroUpCost(k, to), miss = missingTxt(v, c); foot = `<div class="foot"><span class="chips2">${chipsRes(c, v.r)}<span class="dur">${ico('clock', '')}${fmtDur(heroUpTime(to))}</span></span><button class="btn${miss ? ' off' : ' primary'}" data-act="heroUp" data-k="${k}">Niveau ${to}</button></div>${miss ? `<p class="why">${esc(miss)}</p>` : ''}`; }
+    }
+  }
+  return `<div class="item hero-card"><div class="troop">${thumb(k)}<div style="display:grid;gap:5px;min-width:0">
+    <div class="head"><b>${esc(H.name)}, ${esc(H.title)}</b><small>${h ? 'niveau ' + h.lvl : 'salle niv. ' + H.hall}</small></div>
+    <div class="row">${status}</div>
+    <p class="stats">${fmtN(H.hp * sc)} PV · ${Math.round(H.dmg * sc / H.hit)} dégâts/s · portée ${String(H.range).replace('.', ',')}${H.pref === 'def' ? ' · vise les défenses' : ''}</p>
+    <p class="pm"><b class="plus">+</b> ${esc(H.plus)}</p><p class="pm"><b class="minus">−</b> ${esc(H.minus)}</p>
+    <p class="pw">${ico('roi', 'c-tro')}<span><b>${esc(H.power)}</b> : ${esc(H.pdesc)}</span></p></div></div>${foot}</div>`;
 }
 function sheetDuo() {
   const v = me, t = now(), L = leagueOf(v.medals), next = LEAGUES[L + 1];
@@ -2318,7 +3302,7 @@ function sheetDuo() {
       <span class="chip${on ? ' plus' : ''}">${on ? 'en ligne' : 'hors ligne'}</span></div>
       <div class="row"><button class="btn${on ? ' primary' : ' off'} grow" data-act="duoInvite" data-k="${esc(k)}">${ico('duo', '')}Raid à deux</button>
       <button class="btn" data-act="visit" data-k="${esc(k)}">${ico('eye', '')}Visiter</button><button class="btn" data-act="gift" data-k="${esc(k)}">${ico('chest', '')}Envoyer</button></div>
-      ${on ? '' : '<p class="note">Le raid à deux se joue quand vous êtes connectés tous les deux en même temps.</p>'}</div>`;
+      ${on ? (partnerAv(k) !== APP_PV ? `<p class="why">${esc(pname(p))} n’a pas encore la nouvelle version du jeu : il faut le fermer complètement puis le rouvrir.</p>` : '') : '<p class="note">Le raid à deux se joue quand vous êtes connectés tous les deux en même temps.</p>'}</div>`;
   }
   h += '</div>';
   const rank = [{ k: myKey, v }].concat(ks.map(k => ({ k, v: others[k].sim }))).sort((a, b) => (b.v.medals || 0) - (a.v.medals || 0));
@@ -2332,6 +3316,51 @@ function sheetDuo() {
     <li>Plus la ligue est haute, plus les forteresses sont solides, et plus elles rapportent.</li></ul></details>
     <details class="help"><summary>Les ligues</summary><ol class="log">${LEAGUES.map((l, i) => `<li><time>${l.min}+</time><span class="row split"><b>${l.name}</b><span class="chips2">${chipsRes(chestOf(i))}</span></span></li>`).join('')}</ol></details>`;
   return h;
+}
+/* ---------- aide ---------- */
+function sheetHelp() {
+  const sec = (t, body, open) => `<details class="help"${open ? ' open' : ''}><summary>${t}</summary>${body}</details>`;
+  const ul = a => '<ul>' + a.map(x => `<li>${x}</li>`).join('') + '</ul>';
+  let h = '<p class="note">Tout ce qu’il faut savoir pour mener ton clan. Touche un titre pour l’ouvrir.</p>';
+  h += sec('Ton village', ul([
+    'Ton village vit en continu : les scieries, mines et moulins produisent même quand l’appli est fermée.',
+    'Chaque ressource a un plafond de stockage : la halle du clan et les entrepôts l’augmentent.',
+    'Les ouvriers construisent et améliorent les bâtiments, un chantier chacun. La halle du clan en débloque d’autres.',
+    'Agrandir la halle du clan débloque de nouveaux bâtiments, plus de remparts et des niveaux plus élevés.',
+    'Touche un bâtiment pour voir ses infos, l’améliorer ou le déplacer.']), true);
+  h += sec('Remparts', ul([
+    'Les remparts se posent et s’améliorent tout de suite, sans ouvrier. Ils se paient en pierre.',
+    'Pour poser une ligne : touche une case, puis une autre case sur la même ligne. Toute la ligne se remplit.',
+    'Les ennemis doivent casser un rempart ou faire le tour. Une brèche suffit pour qu’ils passent par là.',
+    'Les béliers font 4 fois plus de dégâts aux remparts. Le Berserker les brise aussi très vite.',
+    'On ne peut pas déployer de troupes à l’intérieur d’une enceinte fermée.',
+    'Les remparts ne comptent pas dans le pourcentage de destruction.']));
+  h += sec('Armée', TROOP_KEYS.map(k => { const T = TROOPS[k]; return `<div class="item troop">${thumb(k)}<div style="display:grid;gap:4px"><b>${T.name}</b><p>${esc(T.desc)}</p><p class="stats">${T.hp} PV · ${Math.round(T.dmg / T.hit)} dégâts/s · portée ${String(T.range).replace('.', ',')} · ${T.cost} vivres · ${T.space} place${T.space > 1 ? 's' : ''}</p></div></div>`; }).join('') +
+    ul(['Les troupes s’entraînent à la caserne, une à la fois par caserne, et logent dans les tavernes.', 'Une troupe utilisée en raid est perdue, qu’elle survive ou non.']));
+  h += sec('Héros', HERO_KEYS.map(k => { const H = HEROES[k]; return `<div class="item troop">${thumb(k)}<div style="display:grid;gap:4px"><b>${esc(H.name)}, ${esc(H.title)}</b><p class="pm"><b class="plus">+</b> ${esc(H.plus)}</p><p class="pm"><b class="minus">−</b> ${esc(H.minus)}</p><p class="pw">${ico('roi', 'c-tro')}<span><b>${esc(H.power)}</b> : ${esc(H.pdesc)}</span></p></div></div>`; }).join('') +
+    ul(['Construis la Salle des Héros (halle du clan niveau 2), puis recrute les héros avec des vivres.', 'Le niveau de la salle fixe le niveau maximum des héros. L’entraînement prend du temps : le héros ne peut pas combattre pendant ce temps.',
+      'Un seul héros par raid. En bataille, touche sa vignette puis le terrain pour le faire entrer, puis touche-la encore pour lancer son pouvoir (une fois par raid).',
+      'Un héros ne meurt jamais pour de bon : après un combat, il se repose, d’autant plus longtemps qu’il a été blessé.']));
+  h += sec('Raids solo', ul([
+    'Choisis un camp orque : les cercles rouges montrent la portée de ses défenses. « Autre camp » en propose un nouveau contre quelques vivres.',
+    'En bataille, choisis une troupe en bas puis touche le terrain, hors de la zone rouge. Le bouton ×5 déploie par groupes.',
+    `${ico('sabre', 'st-on')} Les sabres notent ta réussite : 1 à 50 % de destruction, 2 à 75 %, 3 à 100 %. Chaque sabre augmente le butin.`,
+    'Tu peux terminer le raid à tout moment : tu gardes le butin déjà gagné.']));
+  h += sec('Raids à deux', ul([
+    'Vous attaquez ensemble une forteresse orque, en direct. Il faut être connectés tous les deux en même temps, avec la même version du jeu.',
+    `${ico('crown', 'st-on')} 1 couronne à 50 % de destruction, 1 de plus si le donjon tombe, 1 de plus à 100 %.`,
+    'Les couronnes rapportent des médailles. Sans couronne, on en perd, et de plus en plus dans les ligues hautes.',
+    'Tous les 2 jours à 20 h, chaque ligue donne une récompense, à condition d’avoir fait au moins un raid à deux. Sinon, rien, et on descend d’une ligue.',
+    'À 3 couronnes : +25 % de production pendant 12 h.']));
+  h += sec('Défendre ton village', ul([
+    'Quand tu n’es pas là, des orques attaquent parfois ton village. Ils n’attaquent jamais pendant que tu joues.',
+    'Après une attaque, un bouclier te protège quelques heures. Tu peux revoir chaque attaque dans le menu Village.',
+    'Place les tours pour couvrir les bâtiments du bord, et protège le centre avec des remparts.']));
+  h += sec('Commandes et réglages', ul([
+    'Fais glisser la carte avec un doigt. Écarte ou rapproche deux doigts pour zoomer.',
+    'Menu Village : orientation de l’écran, musique et bruitages, compte.',
+    'Pour installer le jeu comme une appli : bouton « Installer l’appli », ou menu du navigateur puis « Ajouter à l’écran d’accueil ». Les mises à jour arrivent toutes seules.']));
+  return h + '<button class="btn" data-act="tuto">Revoir le tutoriel</button>';
 }
 function sheetGift() {
   const k = sheetArg, p = others[k] && others[k].sim;
@@ -2359,6 +3388,10 @@ function sheetVillage() {
     h += `<div class="sec"><h4>Compte</h4><p class="note">Connecté${fbUser && fbUser.name ? ' : <b>' + esc(fbUser.name) + '</b>' : ''}. Ton village est sauvegardé en ligne.</p>
       <div class="row">${installEvt ? '<button class="btn small primary" data-act="install">Installer l’appli</button>' : ''}<button class="btn small" data-act="logout">Se déconnecter</button></div></div>`;
   }
+  const S = SND.get(), tg = (k, on) => `<button class="btn small${on ? ' primary' : ''}" data-act="snd" data-k="${k}" aria-pressed="${on}">${on ? 'Activée' : 'Coupée'}</button>`;
+  h += `<div class="sec"><h4>Son</h4>
+    <div class="item"><div class="row split"><b class="row">${ico('sound', 'c-tro')}Musique</b>${tg('music', S.music)}</div><input class="range" type="range" min="0" max="100" value="${Math.round(S.mv * 100)}" data-snd="mv" aria-label="Volume de la musique"></div>
+    <div class="item"><div class="row split"><b class="row">${ico('axe', 'c-tro')}Bruitages</b>${tg('sfx', S.sfx)}</div><input class="range" type="range" min="0" max="100" value="${Math.round(S.sv * 100)}" data-snd="sv" aria-label="Volume des bruitages"></div></div>`;
   h += '<div class="sec"><h4>Attaques subies</h4>';
   if (!v.reports.length) h += '<p class="note">Aucune attaque pour l’instant.</p>';
   for (let i = v.reports.length - 1; i >= 0; i--) {
@@ -2367,22 +3400,17 @@ function sheetVillage() {
       <div class="row split"><span class="chips2"><span class="chip">${r.pct} % détruit</span>${chipsRes(r.lost, null, 'short')}</span><button class="btn small" data-act="replay" data-i="${i}">${ico('eye', '')}Revoir</button></div></div>`;
   }
   h += '</div><div class="sec"><h4>Journal</h4><ol class="log">' + v.log.slice().reverse().map(e => `<li><time>${fmtAgo(e.t)}</time><span>${esc(e.m)}</span></li>`).join('') + '</ol></div>';
-  h += `<details class="help"><summary>Comment jouer</summary><ul>
-    <li>Ton village vit en continu : scieries, mines et champignonnières produisent même appli fermée.</li>
-    <li>Agrandis la halle du clan pour débloquer des bâtiments, des ouvriers et des niveaux.</li>
-    <li>Entraîne des troupes à la caserne, puis pars en raid solo contre les camps orques pour piller leurs ressources. Chaque raid solo est noté sur 3 sabres.</li>
-    <li>Place tes défenses avec soin : les orques attaquent parfois ton village quand tu n’es pas là. Tu peux revoir chaque attaque.</li>
-    <li>Les médailles et la ligue se gagnent uniquement en raid à deux.</li>
-    <li>Pour déplacer la carte : fais-la glisser avec un doigt. Pour zoomer : écarte ou rapproche deux doigts.</li></ul></details>`;
+  h += `<div class="row"><button class="btn grow" data-act="help">${ico('help', 'c-tro')}Aide et règles du jeu</button><button class="btn grow" data-act="tuto">Revoir le tutoriel</button></div>`;
   return h;
 }
 function renderSheet() {
   if (!sheet || !me) { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', army: 'Armée', duo: 'À deux', village: me.name, gift: 'Envoyer des ressources' };
+  const titles = { build: 'Construire', army: 'Armée et héros', duo: 'À deux', village: me.name, gift: 'Envoyer des ressources', help: 'Aide' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const body = sheet === 'build' ? sheetBuild() : sheet === 'army' ? sheetArmy() : sheet === 'duo' ? sheetDuo() : sheet === 'gift' ? sheetGift() : sheetVillage();
+  const body = sheet === 'build' ? sheetBuild() : sheet === 'army' ? sheetArmy() : sheet === 'duo' ? sheetDuo() : sheet === 'gift' ? sheetGift() : sheet === 'help' ? sheetHelp() : sheetVillage();
   setHTML(els.sheetBody, body);
+  if (sheetArg === 'heroes' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#heroSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
 
 /* ---------- fenêtres ---------- */
@@ -2412,10 +3440,12 @@ function renderModal() {
     const L = me ? leagueOf(me.medals) : 0;
     h = `<p class="eyebrow">${solo ? 'Raid solo' : 'Raid à deux'} · ${esc(M.name)}</p>
       <h2>${win ? (M.mark === 3 ? 'Victoire totale !' : 'Victoire !') : 'Raid repoussé'}</h2>
-      <div class="bigstars">${[0, 1, 2].map(i => ico(solo ? 'sabre' : 'crown', i < M.mark ? 'st-on' : 'st-off')).join('')}</div>
+      <div class="bigstars">${[0, 1, 2].map(i => `<span class="${i < M.mark ? 'pop' : ''}" style="animation-delay:${0.7 + i * 0.38}s">${ico(solo ? 'sabre' : 'crown', i < M.mark ? 'st-on' : 'st-off')}</span>`).join('')}</div>
       <p class="result-pct">${Math.floor(M.pct * 100)} % du camp détruit</p>
       <div class="chips2" style="justify-content:center">${chipsRes(M.got || {}, null, 'plus') || '<span class="note">Pas de butin cette fois.</span>'}</div>
       ${solo ? '' : `<p style="text-align:center"><b class="row" style="justify-content:center">${ico('medal', 'c-tro')}${M.dM >= 0 ? '+' : '−'}${Math.abs(M.dM)} médailles</b><span class="note">Ligue des ${LEAGUES[L].name} · ${me ? me.medals : 0} médailles</span></p>`}
+      ${M.hero ? (() => { const rt = heroRestTime((me.heroes[M.hero.k] || {}).lvl || 1, M.hero.frac, M.hero.dead), n = esc(HEROES[M.hero.k].name);
+        return `<p class="note" style="text-align:center">${M.hero.dead ? n + ' est tombé au combat : il se repose ' + fmtDur(rt) + '.' : rt < 60000 ? n + ' rentre en pleine forme.' : n + ' rentre blessé : il se repose ' + fmtDur(rt) + '.'}</p>`; })() : ''}
       <button class="btn primary" data-act="resultOk">Retour au village</button>`;
   } else if (modal && modal.kind === 'replayEnd') {
     h = `<p class="eyebrow">Rediffusion</p><h2>${modal.pct >= 0.5 ? 'Le village a été pillé' : 'Le village a tenu bon'}</h2><p class="result-pct">${Math.floor(modal.pct * 100)} % détruit</p>
@@ -2434,6 +3464,15 @@ function renderModal() {
       <p class="note" style="font-size:12.5px">La fenêtre Google ne s’ouvre pas ? Ouvre le lien du jeu directement dans Chrome ou Safari.</p>`;
   } else if (modal && modal.kind === 'dberr') {
     h = `<h2>La vallée ne répond pas</h2><p>Impossible de joindre le serveur du jeu. Vérifie ta connexion internet, puis réessaie.</p><button class="btn primary" data-act="reload">Réessayer</button>`;
+  } else if (modal && modal.kind === 'news') {
+    h = `<p class="eyebrow">Mise à jour</p><h2>Du nouveau dans la vallée</h2>
+      <ul class="news">
+        <li>${ico('wall', 'c-pierre')}<span><b>Remparts</b> : protège ton village. Ils se posent en ligne, tout de suite, et les camps orques en ont aussi.</span></li>
+        <li>${ico('roi', 'c-tro')}<span><b>Salle des Héros</b> : trois héros puissants, chacun avec son pouvoir. Un seul par raid.</span></li>
+        <li>${ico('sound', 'c-tro')}<span><b>Musique et bruitages</b> d’ambiance taverne, réglables dans le menu Village.</span></li>
+        <li>${ico('help', 'c-tro')}<span><b>Aide</b> complète (bouton ? en haut) et nouvelles vignettes des troupes.</span></li>
+      </ul>
+      <div class="row"><button class="btn grow" data-act="tuto">Voir le tutoriel</button><button class="btn primary grow" data-act="closeModal">C’est parti</button></div>`;
   } else if (modal && modal.kind === 'nogl') {
     h = `<h2>La 3D ne s’affiche pas</h2><p>Cet appareil ou ce navigateur ne permet pas l’affichage 3D. Les menus marchent quand même, mais la carte du village reste vide.</p><button class="btn primary" data-act="closeModal">Compris</button>`;
   }
@@ -2447,11 +3486,56 @@ function tickLive() {
 }
 function renderAll() {
   els.loading.hidden = mode !== 'loading' || !!(modal && (modal.kind === 'login' || modal.kind === 'dberr'));
-  renderTop(); renderBottom(); renderSheet(); renderModal(); tickLive();
+  renderTop(); renderBottom(); renderSheet(); renderModal(); tickLive(); renderTuto();
+}
+
+/* ---------- tutoriel ---------- */
+const NEWS_V = 3;
+const TUTO = [
+  { t: 'Bienvenue, chef !', x: 'Voici ton village nain. Il vit même quand l’appli est fermée : il produit, il entraîne tes troupes et il se défend contre les orques.' },
+  { sel: '#hudTop .stock', t: 'Tes réserves', x: 'Bois, pierre et vivres, puis la place dans tes tavernes. Les scieries, mines et moulins les remplissent toutes les heures.' },
+  { sel: '.nav [data-s="build"]', t: 'Construire', x: 'Ajoute des bâtiments, des défenses et des remparts. Touche un bâtiment du village pour l’améliorer ou le déplacer.' },
+  { sel: '.nav [data-s="army"]', t: 'Armée et héros', x: 'Entraîne guerriers, arbalétriers et béliers. Plus tard, recrute des héros à la Salle des Héros.' },
+  { sel: '.nav [data-act="attack"]', t: 'Raid solo', x: 'Attaque un camp orque pour piller ses ressources : choisis une troupe en bas de l’écran, puis touche le terrain pour la déployer.' },
+  { sel: '.nav [data-s="duo"]', t: 'À deux', x: 'Le cœur du jeu : des raids en direct avec ta partenaire. Les couronnes rapportent des médailles et font monter votre ligue.' },
+  { sel: '#hudTop [data-act="help"]', t: 'Besoin d’aide ?', x: 'Toutes les règles sont ici, à tout moment. Le menu Village règle la musique et l’affichage. Bonne chance, chef !' },
+];
+let tuto = null;
+function startTuto() { if (mode !== 'home' || !me) return; tuto = 0; sel = null; place = null; modal = null; closeSheet(true); LS.set('mk.tuto', 1); renderAll(); }
+function localRect(el) {
+  const r = el.getBoundingClientRect(), rot = applyOrientation.rot || 0, W = window.innerWidth, H = window.innerHeight;
+  const map = rot === 90 ? (x, y) => [y, W - x] : rot === -90 ? (x, y) => [H - y, x] : (x, y) => [x, y];
+  const a = map(r.left, r.top), b = map(r.right, r.bottom);
+  return { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(b[0] - a[0]), h: Math.abs(b[1] - a[1]) };
+}
+function renderTuto() {
+  const el = $('#tuto'); if (!el) return;
+  if (tuto == null || mode !== 'home' || modal || sheet) { el.hidden = true; return; }
+  const st = TUTO[tuto], card = el.querySelector('.tuto-card'), hole = el.querySelector('.tuto-hole');
+  el.hidden = false;
+  if (card._step !== tuto) {
+    card._step = tuto;
+    card.innerHTML = `<p class="eyebrow">Tutoriel · ${tuto + 1} sur ${TUTO.length}</p><h3>${esc(st.t)}</h3><p>${esc(st.x)}</p>
+      <div class="row"><button class="btn small" data-act="tutoSkip">Passer</button><button class="btn primary grow" data-act="tutoNext">${tuto === TUTO.length - 1 ? 'C’est parti !' : 'Suivant'}</button></div>`;
+  }
+  const app = $('#app'), AW = app.clientWidth || window.innerWidth, AH = app.clientHeight || window.innerHeight, cw = Math.min(340, AW - 24);
+  card.style.width = cw + 'px';
+  const target = st.sel ? document.querySelector(st.sel) : null;
+  if (target && target.offsetParent !== null) {
+    const r = localRect(target), pad = 6, ch = card.offsetHeight;
+    el.classList.remove('dim');
+    Object.assign(hole.style, { display: 'block', left: (r.x - pad) + 'px', top: (r.y - pad) + 'px', width: (r.w + 2 * pad) + 'px', height: (r.h + 2 * pad) + 'px' });
+    let cy = r.y + r.h + 16; if (cy + ch > AH - 8) cy = Math.max(8, r.y - ch - 16);
+    Object.assign(card.style, { left: Math.max(12, Math.min(AW - cw - 12, r.x + r.w / 2 - cw / 2)) + 'px', top: cy + 'px' });
+  } else {
+    el.classList.add('dim'); hole.style.display = 'none';
+    Object.assign(card.style, { left: (AW - cw) / 2 + 'px', top: Math.max(12, (AH - card.offsetHeight) / 2) + 'px' });
+  }
 }
 
 /* ---------- événements ---------- */
-document.addEventListener('pointerdown', e => { pressing = e.target.closest('button'); }, true);
+document.addEventListener('pointerdown', e => { pressing = e.target.closest('button, input'); SND.unlock(); }, true);
+document.addEventListener('input', e => { const k = e.target && e.target.dataset && e.target.dataset.snd; if (k) SND.set({ [k]: Math.max(0, Math.min(1, e.target.value / 100)) }); });
 const release = () => { pressing = null; };
 document.addEventListener('pointerup', release, true);
 document.addEventListener('pointercancel', release, true);
@@ -2488,6 +3572,16 @@ const ACT = {
   duoCancel: () => cancelInvite(),
   duoAccept: () => acceptDuo(),
   duoDecline: () => declineDuo(),
+  upwalls: b => { const r = act({ type: 'upwalls', lvl: +b.dataset.l }); if (r) toast(r.n + ' rempart' + (r.n > 1 ? 's renforcés' : ' renforcé') + '.'); },
+  removeWall: b => { if (!window.confirm('Retirer ce rempart ? La pierre ne sera pas rendue.')) return; if (act({ type: 'remove', id: +b.dataset.id })) { sel = null; refreshScene(); renderAll(); } },
+  heroBuy: b => { const k = b.dataset.k; if (act({ type: 'heroBuy', k })) toast(HEROES[k].name + ' rejoint ton clan !'); },
+  heroUp: b => { const k = b.dataset.k; if (act({ type: 'heroUp', k })) toast(HEROES[k].name + ' part s’entraîner.'); },
+  power: () => usePower(),
+  snd: b => { const k = b.dataset.k, S = SND.get(); SND.set({ [k]: !S[k] }); renderAll(); },
+  help: () => { if (mode === 'home' && me) openSheet('help'); },
+  tuto: () => { modal = null; closeSheet(true); if (mode === 'home') startTuto(); else renderAll(); },
+  tutoNext: () => { tuto = tuto != null && tuto < TUTO.length - 1 ? tuto + 1 : null; renderAll(); },
+  tutoSkip: () => { tuto = null; renderAll(); },
   login: () => doLogin(),
   logout: () => { if (!confirm('Se déconnecter de Mountain Kings sur cet appareil ?')) return; FB.logout().finally(() => location.reload()); },
   reload: () => location.reload(),
@@ -2495,8 +3589,10 @@ const ACT = {
   importOld: () => importOld(),
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
+const QUIET = new Set(['troop', 'power', 'batch', 'noop', 'heroBuy', 'upgrade', 'upwalls', 'chest', 'train', 'placeOk']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b) return;
+  if (!QUIET.has(b.dataset.act)) SND.sfx('click');
   const f = ACT[b.dataset.act]; if (f) f(b);
 });
 document.addEventListener('submit', e => {
@@ -2507,17 +3603,20 @@ document.addEventListener('submit', e => {
   const err = $('#fErr');
   if (!vname || !pn) { err.textContent = !vname ? 'Donne un nom à ton village.' : 'Écris ton prénom.'; err.hidden = false; return; }
   LS.set('hameau2.me', { vname, pname: pn, c });
-  if (act({ type: 'found', vname, pname: pn, c: safeColor(c) })) { LS.set('hameau2.seen.' + myKey, now()); setMode('home'); }
+  if (act({ type: 'found', vname, pname: pn, c: safeColor(c) })) { LS.set('hameau2.seen.' + myKey, now()); LS.set('mk.news', NEWS_V); setMode('home'); setTimeout(startTuto, 900); }
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { resim(); renderAll(); refreshScene(); } });
 
-let lastRaids = null;
+let lastRaids = null, lastUp = null;
 function tick() {
   const t = now();
   if (simMine) {
     simulateVillage(simMine, t);
-    if (lastRaids != null && simMine.raids > lastRaids && mode !== 'loading') { toast('Des orques ont attaqué ton village ! Tout est dans le menu Village.'); buzz(); }
+    if (lastRaids != null && simMine.raids > lastRaids && mode !== 'loading') { toast('Des orques ont attaqué ton village ! Tout est dans le menu Village.'); buzz(); SND.sfx('alarm'); }
     lastRaids = simMine.raids;
+    const upN = simMine.b.filter(b => b.up).length + Object.values(simMine.heroes || {}).filter(h => h && h.up).length;
+    if (lastUp != null && upN < lastUp && mode === 'home') SND.sfx('built');
+    lastUp = upN;
     recompute();
   }
   for (const k in others) simulateVillage(others[k].sim, t);
@@ -2549,9 +3648,11 @@ window.addEventListener('resize', applyOrientation);
 window.addEventListener('orientationchange', () => setTimeout(applyOrientation, 200));
 
 /* ---------- démarrage ---------- */
+if (window.MK_TEST) window.__mk = { get me() { return me; }, get mode() { return mode; }, get fight() { return fight; }, toScreen: (x, z) => gl ? V3.toScreen(x, z) : null, canDeploy: (x, z) => !!fight && canDeploy(fight.zoneB, x, z), snd: SND };
 async function boot() {
   const cv = $('#gl');
   gl = typeof THREE !== 'undefined' && V3.init(cv);
+  if (/[?&]thumbs=1/.test(location.search)) { if (gl) V3.loadModels('models/').then(() => { window.__thumbs = V3.renderThumbs(UNIT_KEYS); }); return; }
   if (gl) { V3.onTap(onTap); V3.onFrame(fightFrame); }
   applyOrientation();
   if (gl) {

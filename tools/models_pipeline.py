@@ -1,9 +1,10 @@
 import json, struct, base64, os, colorsys
 from PIL import Image
-S = '/tmp/claude-0/-home-claude/be95f51b-a61c-5ea0-96a1-2fc7b921ca15/scratchpad/'
-HB = S + 'assets/KayKit-Medieval-Hexagon-Pack-1.0/addons/kaykit_medieval_hexagon_pack/Assets/gltf/'
-CH = S + 'assets/KayKit-Character-Pack-Adventures-1.0/addons/kaykit_character_pack_adventures/Characters/gltf/'
-OUT = S + 'v3/models/'
+# Modèles KayKit (licence CC0) : dossier des packs dans MK_ASSETS. Écrit dans docs/models/.
+ASSETS = os.environ.get('MK_ASSETS', '/tmp/claude-0/-home-claude/be95f51b-a61c-5ea0-96a1-2fc7b921ca15/scratchpad/assets/')
+HB = ASSETS + 'KayKit-Medieval-Hexagon-Pack-1.0/addons/kaykit_medieval_hexagon_pack/Assets/gltf/'
+CH = ASSETS + 'KayKit-Character-Pack-Adventures-1.0/addons/kaykit_character_pack_adventures/Characters/gltf/'
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'docs', 'models') + '/'
 
 def load(path):
     if path.endswith('.glb'):
@@ -62,7 +63,7 @@ total = 0
 blds = {'castle': 'buildings/blue/building_castle_blue', 'lumbermill': 'buildings/blue/building_lumbermill_blue', 'mine': 'buildings/blue/building_mine_blue',
         'windmill': 'buildings/blue/building_windmill_blue', 'market': 'buildings/blue/building_market_blue', 'barracks': 'buildings/blue/building_barracks_blue',
         'tavern': 'buildings/blue/building_tavern_blue', 'tower_A': 'buildings/blue/building_tower_A_blue', 'tower_B': 'buildings/blue/building_tower_B_blue',
-        'tower_catapult': 'buildings/blue/building_tower_catapult_blue', 'destroyed': 'buildings/neutral/building_destroyed', 'scaffolding': 'buildings/neutral/building_scaffolding',
+        'tower_catapult': 'buildings/blue/building_tower_catapult_blue', 'church': 'buildings/blue/building_church_blue', 'destroyed': 'buildings/neutral/building_destroyed', 'scaffolding': 'buildings/neutral/building_scaffolding',
         'fence': 'buildings/neutral/fence_wood_straight', 'stone': 'buildings/neutral/projectile_catapult',
         'trees_A_large': 'decoration/nature/trees_A_large', 'trees_A_medium': 'decoration/nature/trees_A_medium', 'trees_B_large': 'decoration/nature/trees_B_large',
         'tree_A': 'decoration/nature/tree_single_A', 'tree_B': 'decoration/nature/tree_single_B', 'mountain_A': 'decoration/nature/mountain_A_grass_trees',
@@ -78,10 +79,14 @@ for k, p in blds.items():
 Image.open(HB + 'buildings/blue/hexagons_medieval.png').save(OUT + 'atlas.png', optimize=True)
 
 # --- personnages : animations utiles seulement ---
-KEEP = ['Idle', 'Walking_A', 'Running_A', '1H_Melee_Attack_Chop', '2H_Melee_Attack_Chop', '2H_Ranged_Shoot', 'Death_A', 'Cheer']
-for k, f in [('barbarian', 'Barbarian.glb'), ('rogue', 'Rogue_Hooded.glb')]:
+ANIMS = {  # seulement les animations utilisées par le jeu
+    'barbarian': ['Idle', 'Walking_A', '1H_Melee_Attack_Chop', '2H_Melee_Attack_Chop', '2H_Ranged_Shoot', '2H_Melee_Attack_Spin', 'Death_A', 'Cheer'],
+    'rogue': ['Idle', 'Walking_A', '2H_Ranged_Shoot', 'Death_A', 'Cheer'],
+    'knight': ['Idle', 'Walking_A', '1H_Melee_Attack_Chop', '1H_Melee_Attack_Slice_Diagonal', 'Death_A', 'Cheer'],
+}
+for k, f in [('barbarian', 'Barbarian.glb'), ('rogue', 'Rogue_Hooded.glb'), ('knight', 'Knight.glb')]:
     j, b = load(CH + f)
-    j['animations'] = [a for a in j['animations'] if a['name'] in KEEP]
+    j['animations'] = [a for a in j['animations'] if a['name'] in ANIMS[k]]
     total += write(k, repack(j, b))
 
 # --- textures orques / trolls : cases de peau recolorées ---

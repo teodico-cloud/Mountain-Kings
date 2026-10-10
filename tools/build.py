@@ -13,7 +13,7 @@ rd = lambda p: open(p, encoding='utf-8').read()
 head = rd(D + 'p1_head.html')
 imp = json.load(open(D + 'import_village.json', encoding='utf-8'))
 p0 = rd(D + 'p0_fb.js').replace('/*IMPORT*/null', json.dumps(imp, ensure_ascii=False, separators=(',', ':')))
-js = "(() => {\n'use strict';\n" + p0 + "\n" + rd(D + 'p2_rules.js') + "\n" + rd(D + 'p3_render.js') + "\n" + rd(D + 'p4_app.js') + "\n})();\n"
+js = "(() => {\n'use strict';\n" + p0 + "\n" + rd(D + 'p2_rules.js') + "\n" + rd(D + 'p3_render.js') + "\n" + rd(D + 'p5_audio.js') + "\n" + rd(D + 'p4_app.js') + "\n})();\n"
 build = hashlib.sha1(js.encode()).hexdigest()[:10]
 
 # models/ et lib/ (three.js r128) sont des fichiers fixes du dépôt : on ne les régénère pas.
@@ -80,7 +80,7 @@ json.dump(manifest, open(SITE + 'manifest.json', 'w', encoding='utf-8'), ensure_
 
 FBV = '10.12.2'
 fb = ''.join(f'<script src="https://www.gstatic.com/firebasejs/{FBV}/firebase-{m}-compat.js"></script>\n' for m in ('app', 'auth', 'database'))
-if TEST: fb = '<script src="fakefb.js"></script>\n'
+if TEST: fb = '<script>window.MK_TEST = true;</script>\n<script src="fakefb.js"></script>\n'
 i = head.index('</style>') + len('</style>')
 index = f'''<!doctype html>
 <html lang="fr">
@@ -117,7 +117,10 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {{
       }});
     }});
   }}).catch(() => {{}});
-  document.addEventListener('visibilitychange', () => {{ if (document.hidden && window.__mkUpdate) location.reload(); }});
+  document.addEventListener('visibilitychange', () => {{
+    if (document.hidden && window.__mkUpdate) location.reload();
+    else if (!document.hidden) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {{}});
+  }});
 }}
 </script>
 </body>

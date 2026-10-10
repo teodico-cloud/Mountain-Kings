@@ -139,11 +139,43 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 .score{flex:none}
 .score .time{font-size:13px;padding:3px 7px;border-radius:8px;background:var(--surface-2)}
 .troopbar{display:flex;gap:6px;overflow-x:auto;padding:6px;align-items:stretch}
-.tbtn{appearance:none;border:2px solid transparent;background:var(--surface-2);color:var(--fg);font:inherit;border-radius:12px;min-width:70px;padding:6px 8px;display:grid;justify-items:center;gap:2px;cursor:pointer;font-weight:800;font-size:12px}
+.tbtn{appearance:none;border:2px solid transparent;background:var(--surface-2);color:var(--fg);font:inherit;border-radius:12px;min-width:70px;padding:5px 7px;display:grid;justify-items:center;gap:1px;cursor:pointer;font-weight:800;font-size:12px;position:relative}
 .tbtn .ic{width:26px;height:26px}
-.tbtn .n{font-size:15px;font-variant-numeric:tabular-nums}
+.tbtn .n{font-size:15px;font-variant-numeric:tabular-nums;line-height:1.1}
+.tbtn .nm{font-size:11px;white-space:nowrap;max-width:84px;overflow:hidden;text-overflow:ellipsis}
 .tbtn.on{border-color:var(--lantern);background:var(--lantern-soft)}
 .tbtn.empty{opacity:.45}
+.tbtn.hero{background:linear-gradient(180deg,color-mix(in srgb,#d9a441 22%,var(--surface-2)),var(--surface-2))}
+.tbtn.power{border-color:#e8b14a;animation:glowp 1.2s ease-in-out infinite}
+@keyframes glowp{0%,100%{box-shadow:0 0 0 0 rgba(232,177,74,.0)}50%{box-shadow:0 0 0 5px rgba(232,177,74,.45)}}
+/* Vignettes des troupes et des héros */
+.thumb{position:relative;width:56px;height:56px;border-radius:14px;flex:none;display:grid;place-items:center;overflow:hidden;background:radial-gradient(circle at 50% 30%,#fff3d6 0%,#ecd3a0 55%,#c69a5a 100%);box-shadow:inset 0 0 0 2px rgba(122,85,52,.35),0 2px 6px var(--shadow);color:#7a5534}
+.thumb .ic{width:28px;height:28px}
+.thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;-webkit-user-drag:none;pointer-events:none}
+.thumb.hero{background:radial-gradient(circle at 50% 30%,#fff6dc 0%,#f2c96a 55%,#b9802a 100%);box-shadow:inset 0 0 0 2px #c9922e,0 2px 8px rgba(201,146,46,.45)}
+.thumb.sm{width:40px;height:40px;border-radius:10px}
+.thumb.sm .ic{width:22px;height:22px}
+.hero-card .pm{font-size:13px;color:var(--fg)}
+.hero-card .pm .plus,.item .pm .plus{color:var(--ok)} .item .pm .minus{color:var(--danger)}
+.item .pm{font-size:13px}
+.pw{display:flex;gap:6px;align-items:flex-start;font-size:13px;color:var(--fg)}
+.pw .ic{width:16px;height:16px;margin-top:2px}
+.helpb{padding:5px 7px}
+.helpb .ic{width:17px;height:17px}
+.range{width:100%;accent-color:var(--lantern)}
+.news{margin:0;padding:0;list-style:none;display:grid;gap:10px}
+.news li{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--fg)}
+.news .ic{width:22px;height:22px;flex:none;margin-top:1px}
+.bigstars .pop{animation:starpop .55s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes starpop{0%{transform:scale(0) rotate(-25deg);opacity:0}100%{transform:scale(1) rotate(0);opacity:1}}
+/* Tutoriel */
+.tuto{position:absolute;inset:0;z-index:60}
+.tuto.dim{background:rgba(8,12,10,.58)}
+.tuto-hole{position:absolute;border-radius:14px;box-shadow:0 0 0 9999px rgba(8,12,10,.58),inset 0 0 0 3px var(--lantern);pointer-events:none;transition:left .25s ease,top .25s ease,width .25s ease,height .25s ease}
+.tuto-card{position:absolute;padding:14px 16px;display:grid;gap:8px;border-radius:16px;background:var(--surface);border:1px solid var(--line);box-shadow:0 18px 50px var(--shadow)}
+.tuto-card h3{font-family:var(--font-display);font-size:25px;line-height:1.05;font-weight:700}
+.tuto-card p{color:var(--muted);font-size:14px}
+@media (prefers-reduced-motion: reduce){ .tbtn.power,.bigstars .pop{animation:none} .tuto-hole{transition:none} }
 .tip{font-size:12.5px;font-weight:700;color:var(--muted);text-align:center;padding:4px 8px}
 
 /* modales */
@@ -196,8 +228,9 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 .land .nav button{min-height:48px;padding:5px 2px 4px}
 .land .fightbar{flex:1 1 auto;max-width:760px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
 .land .fightbar .tip{grid-column:1 / -1;padding:3px 8px 0;font-size:11.5px}
-.land .tbtn{min-width:60px;padding:4px 6px;font-size:11px}
+.land .tbtn{min-width:60px;padding:3px 5px;font-size:11px}
 .land .tbtn .ic{width:22px;height:22px}
+.land .tbtn .thumb.sm{width:34px;height:34px}
 .land .troopbar{padding:4px}
 .land .fightbar .row{padding:6px!important}
 .land .sheet{left:auto;right:0;top:0;bottom:0;transform:none;width:min(440px,60%);max-height:none;height:100%;border-radius:18px 0 0 18px;border:1px solid var(--line);border-right:0;padding-bottom:0}
@@ -221,4 +254,5 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 </section>
 <div class="modal" id="modal" hidden><div class="mcard" id="mcard"></div></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="tuto" id="tuto" hidden><div class="tuto-hole"></div><div class="tuto-card" role="dialog" aria-live="polite"></div></div>
 </div>
