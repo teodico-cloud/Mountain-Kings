@@ -121,14 +121,16 @@ ok(!R.applyV(vfe, { type: 'feast' }, who).ok, 'pas de fête sans bière');
 vfe.r.biere = 50;
 ok(R.applyV(vfe, { type: 'feast' }, who).ok && vfe.cnt.fete === 1, 'fête avec de la bière, comptée pour les objectifs');
 
-/* 13. Hiver au chaud (ou pas) */
+/* 13. Hiver sans famine (ou pas) */
 let vh1 = R.clone(v); vh1.r.pain = 3000; vh1.r.viande = 3000; vh1.r.bois = 3000;
 R.simulateVillage(vh1, T0 + 8 * D + H);
-ok(vh1.cnt.win === 1 && vh1.log.some(l => /sans faim ni froid/.test(l.m)), 'un hiver passé sans faim ni froid est compté');
-let vh2 = R.clone(v); vh2.r.pain = 3000; vh2.r.viande = 3000; vh2.r.bois = 3000;
-R.simulateVillage(vh2, T0 + 6 * D + 2 * H); vh2.r.bois = 0; for (const p of vh2.vil) if (p.job === vh2.b.find(x => x.type === 'bucheron').id) p.job = null;
+ok(vh1.cnt.win === 1 && vh1.log.some(l => /sans famine/.test(l.m)), 'un hiver passé sans famine est compté');
+ok(vh1.r.bois >= 3000, 'les maisons ne brûlent plus de bois en hiver (' + Math.round(vh1.r.bois) + ')');
+let vh2 = R.clone(v); vh2.r.pain = 3000; vh2.r.viande = 3000;
+R.simulateVillage(vh2, T0 + 6 * D + 2 * H); vh2.r.pain = 0; vh2.r.viande = 0; for (const p of vh2.vil) if (p.job === vh2.b.find(x => x.type === 'chasse').id) p.job = null;
+R.simulateVillage(vh2, T0 + 6 * D + 4 * H); vh2.r.pain = 3000;
 R.simulateVillage(vh2, T0 + 8 * D + H);
-ok(vh2.cnt.win === 0, 'un hiver où l’on a eu froid ne compte pas');
+ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
 
 /* 14. Rapidité : simuler 3 jours */
 const t0 = Date.now(); R.simulateVillage(R.clone(v3), v3.t + 3 * D); const ms = Date.now() - t0;

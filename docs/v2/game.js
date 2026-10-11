@@ -180,7 +180,7 @@ const NAMES = {
 /* ---------- bâtiments ---------- */
 const BLD = {
   halle: { name: 'Halle du village', size: 3, max: 5, cost: { bois: 300, pierre: 200 }, mul: 2.4, work: 240, cat: 'vie', desc: 'Le cœur du village. L’agrandir débloque des bâtiments, des niveaux et plus de bâtisseurs.' },
-  maison: { name: 'Maison', size: 2, max: 3, cost: { bois: 60, pierre: 20 }, mul: 1.8, work: 40, house: 3, cat: 'hab', desc: 'Loge 3 villageois, un de plus par niveau. L’hiver, chaque maison brûle du bois.' },
+  maison: { name: 'Maison', size: 2, max: 3, cost: { bois: 60, pierre: 20 }, mul: 1.8, work: 40, house: 3, cat: 'hab', desc: 'Loge 3 villageois, un de plus par niveau.' },
   bucheron: { name: 'Cabane de bûcheron', size: 2, max: 3, cost: { bois: 40 }, mul: 2, work: 30, spec: 'buch', jobs: 2, out: { bois: 14 }, job: 'Bûcheron', cat: 'prod', desc: 'Les bûcherons y coupent le bois de la forêt.' },
   carriere: { name: 'Carrière', size: 2, max: 3, cost: { bois: 60 }, mul: 2, work: 40, spec: 'mine', jobs: 2, out: { pierre: 10 }, job: 'Carrier', cat: 'prod', desc: 'On y taille la pierre de la montagne.' },
   champ: { name: 'Champ', size: 2, max: 3, cost: { bois: 30 }, mul: 2, work: 20, spec: 'agri', jobs: 2, out: { ble: 16 }, seasonal: 'champ', job: 'Fermier', cat: 'prod', desc: 'Donne du blé ou de l’orge (au choix), surtout en été et en automne. Rien en hiver.' },
@@ -280,7 +280,6 @@ function moraleParts(v, t) {
   let tr = 0; for (const p of v.vil) tr += TRAITS[p.tr] && TRAITS[p.tr].mor || 0;
   if (tr) out.push(['Caractères', tr]);
   if (v.feast > t) out.push(['Fête à la taverne', FEAST.mor]);
-  if (v.cold) out.push(['Froid : plus de bois de chauffage', -15]);
   return out;
 }
 const moraleOf = (v, t) => Math.max(0, Math.min(100, 50 + moraleParts(v, t).reduce((a, p) => a + p[1], 0)));
@@ -307,7 +306,7 @@ const GOALS = [
   { id: 'taverne', name: 'La taverne', txt: 'Construire la taverne.', prog: v => [built(v, 'taverne'), 1], rew: { bois: 100, pierre: 60 } },
   { id: 'biere', name: 'Santé !', txt: 'Semer de l’orge dans un champ et construire une brasserie.', prog: v => [(v.b.some(b => b.type === 'champ' && b.lvl > 0 && b.crop === 'orge') ? 1 : 0) + Math.min(1, built(v, 'brasserie')), 2], rew: { orge: 40 } },
   { id: 'pop8', name: 'Huit villageois', txt: 'Loger huit villageois.', prog: v => [v.vil.length, 8], rew: { bois: 120, pierre: 60 } },
-  { id: 'hiver', name: 'Un hiver au chaud', txt: 'Passer un hiver entier sans faim ni froid.', prog: v => [cntOf(v, 'win'), 1], rew: { pain: 80, bois: 100 } },
+  { id: 'hiver', name: 'Un hiver sans famine', txt: 'Passer un hiver entier sans que personne n’ait faim.', prog: v => [cntOf(v, 'win'), 1], rew: { pain: 80, bois: 100 } },
   { id: 'fete', name: 'Une grande fête', txt: 'Offrir une fête à la taverne.', prog: v => [cntOf(v, 'fete'), 1], rew: { pierre: 100 } },
   { id: 'deco', name: 'Un village coquet', txt: 'Avoir cinq décorations (bancs, fleurs, fontaine, statue).', prog: v => [v.b.filter(b => BLD[b.type].deco && b.lvl > 0).length, 5], rew: { pierre: 80 } },
   { id: 'entrepot', name: 'De la place', txt: 'Agrandir un entrepôt au niveau 2.', prog: v => [v.b.some(b => b.type === 'entrepot' && b.lvl >= 2) ? 1 : 0, 1], rew: { bois: 120 } },
@@ -317,7 +316,7 @@ const GOALS = [
   { id: 'fetes3', name: 'Le village en fête', txt: 'Offrir trois fêtes à la taverne.', prog: v => [cntOf(v, 'fete'), 3], rew: { biere: 60 } },
   { id: 'halle4', name: 'Une petite ville', txt: 'Agrandir la halle du village au niveau 4.', prog: v => [hallLvl(v), 4], rew: { bois: 500, pierre: 350 } },
   { id: 'pop16', name: 'Seize villageois', txt: 'Loger seize villageois.', prog: v => [v.vil.length, 16], rew: { pain: 150, viande: 150 } },
-  { id: 'hivers3', name: 'Trois hivers au chaud', txt: 'Passer trois hivers sans faim ni froid.', prog: v => [cntOf(v, 'win'), 3], rew: { bois: 300, pierre: 300 } },
+  { id: 'hivers3', name: 'Trois hivers sans famine', txt: 'Passer trois hivers sans que personne n’ait faim.', prog: v => [cntOf(v, 'win'), 3], rew: { bois: 300, pierre: 300 } },
   { id: 'halle5', name: 'La capitale de la vallée', txt: 'Agrandir la halle du village au niveau 5.', prog: v => [hallLvl(v), 5], rew: { bois: 800, pierre: 600 } },
 ];
 const GOAL_BY = Object.fromEntries(GOALS.map(g => [g.id, g]));
@@ -371,7 +370,7 @@ function newVillage(vid, name, col, t, uid, pname) {
     v: VERSION, vid, name, c: col, born: t, t, seed, tick: 0, nid: 1, q: 0,
     members: { [uid]: { name: pname, t, hi: 1 } }, heroes: {},
     r: { bois: 160, pierre: 80, ble: 0, farine: 0, pain: 60, viande: 40, orge: 0, biere: 0 },
-    b: [], vil: [], cands: [], log: [], hunger: 0, cold: 0, feast: 0, feastCd: 0, ws: seasonIdx({ born: t }, t),
+    b: [], vil: [], cands: [], log: [], hunger: 0, feast: 0, feastCd: 0, ws: seasonIdx({ born: t }, t),
     goals: [], cnt: { acc: 0, fete: 0, win: 0 }, wok: 0,
   };
   const add = (type, gx, gz) => { const b = { id: v.nid++, type, lvl: 1, gx, gz, up: null }; v.b.push(b); return b; };
@@ -400,8 +399,8 @@ function stepVillage(v) {
     v.ws = si;
     if (!v.cnt) v.cnt = { acc: 0, fete: 0, win: 0 };
     if (warm) v.cnt.win = (v.cnt.win || 0) + 1;
-    v.wok = S.cold ? 1 : 0;                        // début de l'hiver : réussi tant que personne n'a faim ni froid
-    addLog(v, t, S.name + ' arrive sur la vallée.' + (S.cold ? ' Les champs dorment : pensez aux réserves de nourriture et de bois.' : si === 0 ? ' Les champs repartent.' + (warm ? ' L’hiver s’est passé sans faim ni froid : bravo !' : '') : ''), 'season');
+    v.wok = S.cold ? 1 : 0;                        // début de l'hiver : réussi tant que personne n'a faim
+    addLog(v, t, S.name + ' arrive sur la vallée.' + (S.cold ? ' Les champs dorment : pensez aux réserves de nourriture.' : si === 0 ? ' Les champs repartent.' + (warm ? ' L’hiver s’est passé sans famine : bravo !' : '') : ''), 'season');
   }
   /* Production */
   for (const b of v.b) {
@@ -462,11 +461,6 @@ function stepVillage(v) {
   }
   /* Bière : on la boit à la taverne */
   if ((v.r.biere || 0) > 0 && v.vil.length && hasTavern(v)) v.r.biere = Math.max(0, v.r.biere - v.vil.length * BEER.day / 1440);
-  /* Hiver : chaque maison brûle du bois */
-  if (S.cold) {
-    let wood = 0; for (const b of v.b) if (b.type === 'maison' && b.lvl > 0) wood += 2 * h;
-    if ((v.r.bois || 0) >= wood) { v.r.bois -= wood; v.cold = 0; } else { v.r.bois = 0; v.cold = 1; v.wok = 0; }
-  } else v.cold = 0;
   /* Famine : au bout d'un jour sans manger, quelqu'un s'en va */
   if (v.hunger >= 1440 && v.vil.length) {
     const p = v.vil.slice().sort((x, y) => SPEC.reduce((a, s) => a + x.st[s], 0) - SPEC.reduce((a, s) => a + y.st[s], 0))[0];
@@ -510,7 +504,6 @@ function ratesOf(v, t) {
   let eat = 0; for (const p of v.vil) eat += EAT_DAY * ((TRAITS[p.tr] || {}).eat || 1) / 24;
   out.food = -eat;
   if (hasTavern(v)) out.biere -= v.vil.length * BEER.day / 24;
-  if (S.cold) out.bois -= 2 * v.b.filter(b => b.type === 'maison' && b.lvl > 0).length;
   return out;
 }
 /* Travail des bâtisseurs par heure et par chantier ouvert (pour estimer la fin des travaux). */
@@ -3379,7 +3372,7 @@ function sheetVillage() {
     <div class="row"><button class="btn small primary" data-act="copyLink">Copier le lien</button>${navigator.share ? '<button class="btn small" data-act="shareLink">Partager</button>' : ''}</div></div>`;
   h += '</div>';
   const next = nextSeasonAt(v, t);
-  h += `<div class="sec"><h4>Saison</h4><div class="item"><b class="row">${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</b><p>${SEASONS[(si + 1) % 4].name} dans <b>${fmtDur(next - t)}</b>. ${si === 2 ? 'L’hiver approche : faites des réserves de nourriture et de bois.' : si === 3 ? 'Les champs dorment, et chaque maison brûle du bois.' : ''}</p></div></div>`;
+  h += `<div class="sec"><h4>Saison</h4><div class="item"><b class="row">${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</b><p>${SEASONS[(si + 1) % 4].name} dans <b>${fmtDur(next - t)}</b>. ${si === 2 ? 'L’hiver approche : faites des réserves de nourriture.' : si === 3 ? 'Les champs dorment : le village vit sur ses réserves.' : ''}</p></div></div>`;
   if (v.b.some(b => b.type === 'taverne' && b.lvl > 0)) {
     const ready = v.feastCd <= t, miss = missingTxt(v, FEAST.cost);
     h += `<div class="sec" id="feastSec"><h4>Fête à la taverne</h4><div class="item"><p>+${FEAST.mor} de moral pendant un jour pour tout le village.${ready ? '' : ' Prochaine fête possible dans ' + fmtDur(v.feastCd - t) + '.'}</p>
@@ -3408,7 +3401,7 @@ function sheetHelp() {
   return sec('Objectifs', ['Trois objectifs s’affichent en haut à gauche. Quand l’un est atteint, touchez « Récupérer » pour gagner sa récompense : un nouvel objectif apparaît.'])
     + sec('Le village', ['Un seul village pour vous deux : tout ce que l’un construit ou décide, l’autre le voit.', 'Le village vit même quand vous êtes déconnectés : on y travaille, on y mange, et des voyageurs se présentent.', 'Touchez un bâtiment pour le voir, l’agrandir ou y envoyer des travailleurs. Touchez un habitant pour voir sa fiche.'])
     + sec('Les villageois', ['Chacun a une note sur 10 dans six spécialités. Sa note dans son métier décide de ce qu’il produit : 1 donne 60 %, 5 normal, 10 donne 50 % de plus.', 'Ils progressent en pratiquant, de plus en plus lentement.', 'Leur caractère compte : un travailleur produit plus, un joyeux remonte le moral, un gourmand mange plus.', 'Des voyageurs se présentent s’il y a une place libre dans les maisons, à manger et un bon moral. Vous avez un jour pour les accueillir.'])
-    + sec('Nourriture et saisons', ['Chaque villageois mange une ration par heure : du pain ou de la viande. Des repas variés remontent le moral.', 'Une saison dure 2 jours. En hiver, les champs ne donnent rien et chaque maison brûle du bois : faites des réserves en automne.', 'Sans nourriture, le moral s’effondre, et au bout d’un jour quelqu’un quitte le village.', 'Touchez un champ pour choisir sa culture : blé ou orge. L’orge devient bière à la brasserie ; servie à la taverne, la bière remonte le moral, et il en faut pour les fêtes.'])
+    + sec('Nourriture et saisons', ['Chaque villageois mange une ration par heure : du pain ou de la viande. Des repas variés remontent le moral.', 'Une saison dure 2 jours. En hiver, les champs ne donnent rien : faites des réserves en automne.', 'Sans nourriture, le moral s’effondre, et au bout d’un jour quelqu’un quitte le village.', 'Touchez un champ pour choisir sa culture : blé ou orge. L’orge devient bière à la brasserie ; servie à la taverne, la bière remonte le moral, et il en faut pour les fêtes.'])
     + sec('Construire', ['Les bâtisseurs font avancer les chantiers, plus vite s’ils sont doués en construction. Sans bâtisseur, ça avance quand même un peu.', 'Agrandir la halle débloque des bâtiments, plus de bâtisseurs et plus de chantiers à la fois.'])
     + sec('Vos héros', ['Au village, votre héros se promène. Affectez-le à un bâtiment : +25 % là où sa race excelle (nain : minage, elfe : chasse, humain : construction), +10 % ailleurs.', 'Les donjons, les combats et l’équipement arrivent aux prochaines étapes.']);
 }
