@@ -90,7 +90,10 @@ open(SITE + 'index.html', 'w', encoding='utf-8').write(index)
 # Cache hors ligne : le jeu, les bibliothèques et les modèles partagés, puis les modèles Meshy.
 DOCS = ROOT + 'docs/'
 shared_models = sorted('../models/' + f for f in os.listdir(DOCS + 'models') if not f.startswith('.'))
-own_models = sorted('models/' + f for f in os.listdir(ROOT + 'docs/v2/models') if not f.startswith('.'))
+# Seuls les modèles Meshy utilisés par le jeu (liste M2_NAMES du rendu) sont mis en cache.
+import re
+m2_names = re.findall(r"'([a-z_]+)'", re.search(r'const M2_NAMES = \[([^\]]*)\]', rd(D + 'p3_render.js')).group(1))
+own_models = sorted('models/' + n + '.glb' for n in m2_names if os.path.exists(ROOT + 'docs/v2/models/' + n + '.glb'))
 core = ['./', 'game.js?v=' + build, 'manifest.json', '../lib/three.min.js', '../lib/GLTFLoader.js', '../lib/SkeletonUtils.js',
         '../icons/icon-192.png', '../icons/favicon.png']
 models = shared_models + own_models

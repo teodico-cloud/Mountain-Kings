@@ -16,7 +16,7 @@ const V3 = (() => {
   let frameHook = null, tapHook = null, mood = '', groundMat = null, outerMat = null;
   const LIB = { ok: false, b: {}, ch: {}, tex: {}, ver: 0, xbow: null, gear: {}, clips: {}, m2: {} };
   /* Modèles générés avec Meshy pour le nouveau jeu (remplacent les modèles provisoires au fur et à mesure). */
-  const M2_NAMES = ['taverne'];
+  const M2_NAMES = ['taverne', 'halle', 'chantier'];   // modèles Meshy de docs/v2/models (chantier = bâtiment en construction)
   const C = { stone: 0x9a9488, stoneL: 0xb6b2a8, stoneD: 0x7d858b, wood: 0x9b7a54, woodD: 0x5f4127, woodL: 0xc49a63, timber: 0xdac9a6, roof: 0x8e3b2d, roofD: 0x5a3320, roofB: 0x5b4430, door: 0x3e2716, dirt: 0xa88a5c, field: 0x7a5a32, crop: 0x8fbf5a, gold: 0xd9b54c, red: 0x8c3b2d, cream: 0xede3d3, metal: 0xaeb4b8, rock: 0x8b9297, rockL: 0xcfd3d6, canvas: 0xe8dfc8, skin: 0xe6c29c };
 
   /* ---------- géométries et matériaux ---------- */
@@ -976,7 +976,7 @@ const V3 = (() => {
     const team = TEAM[it.col] != null ? TEAM[it.col] : 0, foot = s * 0.98, small = s < 2 || it.type === 'champ';
     if (it.dead) { const m = LIB.ok && modelInst('destroyed', 0, false, foot * 0.92, MODEL_RY); if (m) g.add(m); else g.add(makeRubble(s)); info.top = 0.8; }
     else if (it.lvl <= 0) {
-      const m = LIB.ok && s >= 2 && modelInst('scaffolding', 0, false, foot * 0.85, MODEL_RY);
+      const m = LIB.ok && s >= 2 && modelInst(LIB.m2.chantier ? 'm2:chantier' : 'scaffolding', 0, false, foot * (LIB.m2.chantier ? 0.95 : 0.85), MODEL_RY);
       if (m) { g.add(m); info.top = m.userData.h + 0.2; }
       else { g.add(P('box', 0xb39669, s - 0.2, 0.06, s - 0.2, 0, 0, 0, 0, true)); g.add(makeScaffold(s, s < 2 ? 0.5 : 1.0)); info.top = s < 2 ? 0.8 : 1.4; }
     } else if (PROC2[it.type] && !(LIB.ok && LIB.m2[it.type])) {
@@ -985,7 +985,7 @@ const V3 = (() => {
     } else if (LIB.ok && (LIB.m2[it.type] || B_MODEL[it.type])) {
       const m = modelInst(LIB.m2[it.type] ? 'm2:' + it.type : B_MODEL[it.type], team, false, foot * (1 + 0.035 * (Math.min(5, it.lvl) - 1)), MODEL_RY);
       if (m) { g.add(m); info.top = m.userData.h; info.muzzle = Math.max(0.8, info.top * 0.8); }
-      if (SMOKE.includes(it.type)) info.emit.push([0.15, info.top * 0.9, -0.15]);
+      if (SMOKE.includes(it.type) && !LIB.m2[it.type]) info.emit.push([0.15, info.top * 0.9, -0.15]);   // les modèles Meshy ont leur propre fumée (ou pas de cheminée)
       if (it.up) g.add(makeScaffold(s, Math.min(2.4, info.top * 0.6)));
     } else {
       const b = makeBld(V1_PROC[it.type] || 'entrepot', it.lvl, it.col || COLORS[0], false); g.add(b.g); info = b.info;
