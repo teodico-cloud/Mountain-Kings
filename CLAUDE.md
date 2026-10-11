@@ -17,6 +17,8 @@ Jeu coop sur téléphone (Téo et sa compagne) : village nain 3D, raids solo con
 - `tools/test_engine.js` : essais du moteur (remparts, chemins, héros) avec node.
 - `tools/make_thumbs.py` : vignettes `docs/thumbs/*.png` rendues depuis les modèles 3D (à relancer si les modèles changent).
 - `tools/models_pipeline.py` : conversion des modèles KayKit (CC0) vers `docs/models/`.
+- `tools/meshy_import.py` : allège un GLB Meshy (1-2 millions de triangles, textures 4K, 60-90 Mo) pour le téléphone → `docs/v2/models/`. Textures : couleur 1024, relief 512, métal/rugosité 256. Simplification par `gltfpack` (meshoptimizer, compilé depuis GitHub : `git clone https://github.com/zeux/meshoptimizer && make config=release gltfpack`, puis `GLTFPACK=…/build/release/gltfpack`), JAMAIS en mode agressif (`-sa`) : il casse les textures (atlas très fragmentés). Le simplificateur s'arrête seul à la limite qui garde les textures (≈ 36 000 triangles pour la taverne, 15 000 pour un personnage). Les personnages doivent être animés dans Meshy (Rig + Animate) : sans squelette, ils glissent comme des statues.
+- `tools/test_v2.js` : essais des règles du nouveau jeu (node).
 
 ## Façon de travailler (demandée par Téo)
 - Avant chaque implémentation : lui présenter ce qu'on veut faire, avec des propositions annexes, et attendre son accord avant de coder.

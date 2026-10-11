@@ -129,6 +129,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {{
 open(SITE + 'index.html', 'w', encoding='utf-8').write(index)
 
 files = sorted(os.path.relpath(os.path.join(r, f), SITE).replace(os.sep, '/') for r, _, fs in os.walk(SITE) for f in fs if not f.startswith('.'))
+files = [f for f in files if not f.startswith('v2/')]   # le nouveau jeu (adresse de test) a son propre cache
 core = ['./'] + [f for f in files if f not in ('index.html', 'sw.js', 'fakefb.js') and not f.startswith('models/')]
 models = [f for f in files if f.startswith('models/')]
 mhash = hashlib.sha1(b''.join(open(SITE + f, 'rb').read() for f in models)).hexdigest()[:10]
