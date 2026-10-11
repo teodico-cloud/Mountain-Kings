@@ -21,10 +21,12 @@ function normVillage(v) {
   v.vil = fbArr(v.vil).map(p => Object.assign({ job: null }, p, { st: Object.assign({}, p.st), xp: Object.assign({}, p.xp) }));
   v.cands = fbArr(v.cands).map(p => Object.assign({}, p, { st: Object.assign({}, p.st) }));
   v.log = fbArr(v.log);
+  v.goals = fbArr(v.goals);
+  v.cnt = Object.assign({ acc: 0, fete: 0, win: 0 }, v.cnt);
   v.members = fbObj(v.members);
   v.heroes = fbObj(v.heroes);
   for (const k of Object.keys(v.heroes)) v.heroes[k] = Object.assign({ lvl: 1, xp: 0, at: null }, v.heroes[k]);
-  v.r = Object.assign({}, v.r);
+  v.r = Object.assign({ orge: 0, biere: 0 }, v.r);
   return v;
 }
 const fbFix = (path, v) => path.indexOf(ROOT + 'villages/') === 0 && path.split('/').length === 3 ? normVillage(v) : v;

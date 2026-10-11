@@ -299,6 +299,28 @@ ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:v
 .land .mcard:has(#heroForm){width:min(800px,100%)}
 .land .hf2{grid-template-columns:minmax(0,.85fr) minmax(0,1.6fr);gap:18px}
 .land #heroForm h2{font-size:26px}
+.c-orge{color:#B59A3E} .c-biere{color:#C7841C} .c-star{color:var(--lantern)}
+/* Objectifs du village : petit panneau sous la barre du haut */
+.hud > .goalrow{display:flex;pointer-events:none}
+.goalrow > .goals{pointer-events:auto}
+.goals{width:238px;padding:3px 6px 6px;display:grid;gap:1px}
+.goals.min{padding-bottom:3px;width:auto}
+.ghead{appearance:none;border:0;background:transparent;font:inherit;color:var(--fg);display:flex;align-items:center;gap:6px;padding:4px 4px;cursor:pointer;font-size:12.5px;text-align:left;min-height:30px}
+.ghead b{font-weight:800}
+.ghead .ic{width:15px;height:15px}
+.ghead .chev{margin-left:auto;padding-left:6px;color:var(--muted);font-size:11px}
+.gready{background:var(--ok);color:#fff;border-radius:999px;padding:1px 7px;font-size:10.5px;font-weight:800;white-space:nowrap}
+.grow2{display:flex;align-items:center;gap:6px;border-top:1px solid var(--line);padding:3px 2px 1px}
+.gtxt{appearance:none;border:0;background:transparent;font:inherit;color:var(--fg);flex:1;min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 6px;align-items:center;cursor:pointer;text-align:left;padding:3px 2px}
+.gtxt span{font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gtxt small{font-size:11px;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums}
+.grow2.done .gtxt small{color:var(--ok)}
+.gbar{grid-column:1/-1;height:4px;border-radius:3px;background:color-mix(in srgb,var(--fg) 12%,transparent);overflow:hidden;display:block}
+.gbar b{display:block;height:100%;background:var(--lantern);border-radius:3px}
+.grow2.done .gbar b{background:var(--ok)}
+.btn.gclaim{min-height:30px;padding:4px 9px;font-size:12px;flex:none}
+.land .hud.top > .goalrow{order:5;flex-basis:100%}
+.item .head b.row .ic{width:17px;height:17px}
 </style>
 
 <div id="app">

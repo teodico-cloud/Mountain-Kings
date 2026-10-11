@@ -21,8 +21,9 @@ async def text(pg, sel):
     except Exception: return f'<none {sel}>'
 
 async def close_modal(pg):
-    if await pg.is_visible('#modal') and await pg.is_visible('[data-act="closeModal"]'):
-        await pg.click('[data-act="closeModal"]'); await pg.wait_for_timeout(500)
+    for i in range(6):
+        if not (await pg.is_visible('#modal') and await pg.is_visible('[data-act="closeModal"]')): return
+        await pg.click('[data-act="closeModal"]'); await pg.wait_for_timeout(700)
 
 async def main():
     logs = []
@@ -118,6 +119,35 @@ async def main():
         await close_modal(A)
         await A.wait_for_timeout(1500)
         print('after 2 days, next modal:', (await text(A, '#mcard'))[:200] if await A.is_visible('#modal') else 'none')
+        # objectifs : après deux jours, la 3e maison est finie, « Trois maisons » est atteint
+        await close_modal(A)
+        print('goals:', (await text(A, '.goals'))[:220])
+        await A.screenshot(path=S + 'v2_goals.png')
+        if await A.is_visible('.goals [data-act="claim"]'):
+            await A.click('.goals [data-act="claim"]'); await A.wait_for_timeout(2500)
+            print('after claim:', (await text(A, '.goals'))[:220], '| log:', await A.evaluate('window.__mk.me.log.slice(-1)[0].m'))
+        await A.click('.goals [data-act="sheet"]'); await A.wait_for_timeout(900)
+        print('goals sheet:', (await text(A, '#sheetBody'))[:220])
+        await A.screenshot(path=S + 'v2_sheet_goals.png')
+        await A.click('[data-act="closeSheet"]'); await A.wait_for_timeout(400)
+        # culture : le champ passe à l'orge
+        ch = await A.evaluate('(() => { const b = window.__mk.me.b.find(b => b.type === "champ"); return [b.id, b.gx + 1, b.gz + 1]; })()')
+        pt = await A.evaluate(f'window.__mk.toScreen({ch[1]}, {ch[2]})')
+        await A.mouse.click(pt[0], pt[1]); await A.wait_for_timeout(900)
+        if 'Culture' in await text(A, '#hudBottom'):
+            await A.screenshot(path=S + 'v2_champ.png')
+            await A.click('[data-act="crop"][data-c="orge"]')
+        else:
+            print('field panel not opened by tap, using the action directly')
+            await A.evaluate(f'window.__mk.act({{type: "crop", id: {ch[0]}, c: "orge"}})')
+        for i in range(30):
+            await A.wait_for_timeout(1000)
+            if await A.evaluate('window.__mk.busy') == 0: break
+        await A.wait_for_timeout(1500)
+        t2 = tree(); v2 = t2['v2']['villages'][vid]
+        print('field crop on server:', [b.get('crop') for b in arr(v2['b']) if b['id'] == ch[0]], '| panel:', (await text(A, '#hudBottom'))[:160])
+        await A.screenshot(path=S + 'v2_orge.png')
+        await A.click('[data-act="desel"]') if await A.is_visible('[data-act="desel"]') else None
         T = await A.evaluate('window.__mk.now()')
         sa = await A.evaluate(f'window.__mk.simAt({T})'); sb = await B.evaluate(f'window.__mk.simAt({T})')
         print('after 2 days, A and B compute the same village:', sa == sb, '| A:', (sa or '')[:120])

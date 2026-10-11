@@ -6,10 +6,12 @@ const MIN = 60000, HOUR = 3600000, DAY = 24 * HOUR;
 const SEASON_LEN = 2 * DAY;      // une saison dure 2 jours réels
 
 /* ---------- ressources ---------- */
-const RES = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande'];
-const RES_LABEL = { bois: 'Bois', pierre: 'Pierre', ble: 'Blé', farine: 'Farine', pain: 'Pain', viande: 'Viande' };
+const RES = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere'];
+const RES_LABEL = { bois: 'Bois', pierre: 'Pierre', ble: 'Blé', farine: 'Farine', pain: 'Pain', viande: 'Viande', orge: 'Orge', biere: 'Bière' };
 const FOOD = ['pain', 'viande'];
 const EAT_DAY = 24;              // rations mangées par villageois et par jour (une par heure)
+/* Bière : servie à la taverne, chaque villageois en boit 3 par jour ; tant qu'il y en a, le moral monte. */
+const BEER = { day: 3, mor: 8 };
 
 /* ---------- saisons ---------- */
 const SEASONS = [
@@ -62,9 +64,10 @@ const BLD = {
   maison: { name: 'Maison', size: 2, max: 3, cost: { bois: 60, pierre: 20 }, mul: 1.8, work: 40, house: 3, cat: 'hab', desc: 'Loge 3 villageois, un de plus par niveau. L’hiver, chaque maison brûle du bois.' },
   bucheron: { name: 'Cabane de bûcheron', size: 2, max: 3, cost: { bois: 40 }, mul: 2, work: 30, spec: 'buch', jobs: 2, out: { bois: 14 }, job: 'Bûcheron', cat: 'prod', desc: 'Les bûcherons y coupent le bois de la forêt.' },
   carriere: { name: 'Carrière', size: 2, max: 3, cost: { bois: 60 }, mul: 2, work: 40, spec: 'mine', jobs: 2, out: { pierre: 10 }, job: 'Carrier', cat: 'prod', desc: 'On y taille la pierre de la montagne.' },
-  champ: { name: 'Champ de blé', size: 2, max: 3, cost: { bois: 30 }, mul: 2, work: 20, spec: 'agri', jobs: 2, out: { ble: 16 }, seasonal: 'champ', job: 'Fermier', cat: 'prod', desc: 'Donne du blé, surtout en été et en automne. Rien en hiver.' },
+  champ: { name: 'Champ', size: 2, max: 3, cost: { bois: 30 }, mul: 2, work: 20, spec: 'agri', jobs: 2, out: { ble: 16 }, seasonal: 'champ', job: 'Fermier', cat: 'prod', desc: 'Donne du blé ou de l’orge (au choix), surtout en été et en automne. Rien en hiver.' },
   moulin: { name: 'Moulin', size: 2, max: 3, cost: { bois: 80, pierre: 40 }, mul: 2, work: 80, spec: 'arti', jobs: 1, inp: { ble: 12 }, out: { farine: 12 }, job: 'Meunier', hall: 2, cat: 'prod', desc: 'Moud le blé en farine.' },
   boulangerie: { name: 'Boulangerie', size: 2, max: 3, cost: { bois: 80, pierre: 60 }, mul: 2, work: 90, spec: 'arti', jobs: 1, inp: { farine: 10 }, out: { pain: 14 }, job: 'Boulanger', hall: 2, cat: 'prod', desc: 'Cuit la farine en pain, la meilleure nourriture du village.' },
+  brasserie: { name: 'Brasserie', size: 2, max: 3, cost: { bois: 90, pierre: 50 }, mul: 2, work: 90, spec: 'arti', jobs: 1, inp: { orge: 8 }, out: { biere: 6 }, job: 'Brasseur', hall: 2, cat: 'prod', desc: 'Brasse l’orge en bière. Servie à la taverne, elle remonte le moral.' },
   chasse: { name: 'Pavillon de chasse', size: 2, max: 3, cost: { bois: 50 }, mul: 2, work: 40, spec: 'chasse', jobs: 2, out: { viande: 7 }, seasonal: 'chasse', job: 'Chasseur', cat: 'prod', desc: 'Les chasseurs rapportent de la viande, un peu moins en hiver.' },
   entrepot: { name: 'Entrepôt', size: 2, max: 3, cost: { bois: 100, pierre: 40 }, mul: 2, work: 60, store: 600, cat: 'stock', desc: '+600 de place par niveau, pour chaque ressource.' },
   taverne: { name: 'Taverne', size: 3, max: 3, cost: { bois: 150, pierre: 80 }, mul: 2.2, work: 120, mor: 10, hall: 2, cat: 'vie', desc: 'Remonte le moral, attire de nouveaux villageois, et c’est là qu’on fait la fête.' },
@@ -73,16 +76,16 @@ const BLD = {
   fontaine: { name: 'Fontaine', size: 2, max: 1, cost: { pierre: 120 }, work: 60, deco: 4, hall: 2, cat: 'deco', desc: 'La fierté du village : +4 de moral.' },
   statue: { name: 'Statue', size: 1, max: 1, cost: { pierre: 80, bois: 20 }, work: 40, deco: 3, hall: 3, cat: 'deco', desc: 'Statue d’un héros de légende : +3 de moral.' },
 };
-const SHOP = ['maison', 'bucheron', 'carriere', 'champ', 'chasse', 'moulin', 'boulangerie', 'entrepot', 'taverne', 'banc', 'fleurs', 'fontaine', 'statue'];
+const SHOP = ['maison', 'bucheron', 'carriere', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'banc', 'fleurs', 'fontaine', 'statue'];
 const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['deco', 'Décorations']];
 const LIMITS = {
   halle: [1, 1, 1, 1, 1],
   maison: [3, 5, 7, 9, 12], bucheron: [1, 2, 2, 3, 3], carriere: [1, 1, 2, 2, 3], champ: [2, 3, 4, 5, 6],
-  moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
+  moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], brasserie: [0, 1, 1, 1, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
   taverne: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
 };
 const DECO_MAX = 15;             // le moral apporté par les décorations est plafonné
-const FEAST = { cost: { pain: 40, viande: 40 }, mor: 15, len: DAY, cd: 3 * DAY };
+const FEAST = { cost: { pain: 30, viande: 30, biere: 20 }, mor: 15, len: DAY, cd: 3 * DAY };
 
 /* ---------- outils ---------- */
 function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -99,6 +102,10 @@ const maxLvlOf = (type, hl) => type === 'halle' ? BLD.halle.max : Math.min(BLD[t
 const limitOf = (type, hl) => LIMITS[type][Math.max(1, Math.min(5, hl)) - 1];
 const countOf = (v, type) => v.b.filter(b => b.type === type).length;
 const jobsOf = b => BLD[b.type].jobs ? BLD[b.type].jobs + (b.lvl - 1) : 0;
+/* Ce que produit un bâtiment : un champ donne la culture qu'on y a semée (blé par défaut). */
+const cropOf = b => b.crop === 'orge' ? 'orge' : 'ble';
+const outOf = b => b.type === 'champ' ? { [cropOf(b)]: BLD.champ.out.ble } : BLD[b.type].out;
+const hasTavern = v => v.b.some(b => b.type === 'taverne' && b.lvl > 0);
 const lvlMul = lvl => 1 + 0.15 * (Math.max(1, lvl) - 1);
 const houseOf = b => BLD[b.type].house && b.lvl > 0 ? BLD[b.type].house + (b.lvl - 1) : 0;
 const housingOf = v => v.b.reduce((a, b) => a + houseOf(b), 0);
@@ -144,6 +151,7 @@ function moraleParts(v, t) {
   const out = [];
   const tav = v.b.find(b => b.type === 'taverne' && b.lvl > 0);
   if (tav) out.push(['Taverne', BLD.taverne.mor + 4 * (tav.lvl - 1)]);
+  if (tav && (v.r.biere || 0) >= 1) out.push(['Bière à la taverne', BEER.mor]);
   let deco = 0; for (const b of v.b) if (BLD[b.type].deco && b.lvl > 0) deco += BLD[b.type].deco;
   if (deco) out.push(['Décorations', Math.min(DECO_MAX, deco)]);
   const food = foodOf(v);
@@ -158,6 +166,46 @@ function moraleParts(v, t) {
 }
 const moraleOf = (v, t) => Math.max(0, Math.min(100, 50 + moraleParts(v, t).reduce((a, p) => a + p[1], 0)));
 const moraleF = m => 0.75 + m / 200;                                  // 0 → 75 %, 50 → 100 %, 100 → 125 %
+
+/* ---------- objectifs du village : trois à la fois, dans l'ordre, chacun avec sa récompense ---------- */
+const built = (v, type) => v.b.filter(b => b.type === type && b.lvl > 0).length;
+const cntOf = (v, k) => (v.cnt && v.cnt[k]) || 0;
+function bestInJob(v) {
+  let m = 0;
+  for (const p of v.vil) {
+    const b = p.job === 'bat' ? null : p.job != null && v.b.find(x => x.id === p.job);
+    const s = p.job === 'bat' ? 'constr' : b ? BLD[b.type].spec : null;
+    if (s) m = Math.max(m, p.st[s]);
+  }
+  return m;
+}
+const GOALS = [
+  { id: 'carriere', name: 'Une carrière', txt: 'Construire une carrière, pour avoir de la pierre.', prog: v => [built(v, 'carriere'), 1], rew: { bois: 60 } },
+  { id: 'maisons', name: 'Trois maisons', txt: 'Avoir trois maisons construites.', prog: v => [built(v, 'maison'), 3], rew: { pierre: 40 } },
+  { id: 'accueil', name: 'Un nouveau visage', txt: 'Accueillir un voyageur au village.', prog: v => [cntOf(v, 'acc'), 1], rew: { viande: 40 } },
+  { id: 'halle2', name: 'La halle grandit', txt: 'Agrandir la halle du village au niveau 2.', prog: v => [hallLvl(v), 2], rew: { bois: 150, pierre: 100 } },
+  { id: 'pain', name: 'Du pain pour tous', txt: 'Construire un moulin et une boulangerie.', prog: v => [Math.min(1, built(v, 'moulin')) + Math.min(1, built(v, 'boulangerie')), 2], rew: { pain: 60 } },
+  { id: 'taverne', name: 'La taverne', txt: 'Construire la taverne.', prog: v => [built(v, 'taverne'), 1], rew: { bois: 100, pierre: 60 } },
+  { id: 'biere', name: 'Santé !', txt: 'Semer de l’orge dans un champ et construire une brasserie.', prog: v => [(v.b.some(b => b.type === 'champ' && b.lvl > 0 && b.crop === 'orge') ? 1 : 0) + Math.min(1, built(v, 'brasserie')), 2], rew: { orge: 40 } },
+  { id: 'pop8', name: 'Huit villageois', txt: 'Loger huit villageois.', prog: v => [v.vil.length, 8], rew: { bois: 120, pierre: 60 } },
+  { id: 'hiver', name: 'Un hiver au chaud', txt: 'Passer un hiver entier sans faim ni froid.', prog: v => [cntOf(v, 'win'), 1], rew: { pain: 80, bois: 100 } },
+  { id: 'fete', name: 'Une grande fête', txt: 'Offrir une fête à la taverne.', prog: v => [cntOf(v, 'fete'), 1], rew: { pierre: 100 } },
+  { id: 'deco', name: 'Un village coquet', txt: 'Avoir cinq décorations (bancs, fleurs, fontaine, statue).', prog: v => [v.b.filter(b => BLD[b.type].deco && b.lvl > 0).length, 5], rew: { pierre: 80 } },
+  { id: 'entrepot', name: 'De la place', txt: 'Agrandir un entrepôt au niveau 2.', prog: v => [v.b.some(b => b.type === 'entrepot' && b.lvl >= 2) ? 1 : 0, 1], rew: { bois: 120 } },
+  { id: 'maitre', name: 'Un maître', txt: 'Un villageois atteint 10/10 dans son métier.', prog: v => [bestInJob(v), 10], rew: { bois: 150, pierre: 150 } },
+  { id: 'halle3', name: 'Une vraie bourgade', txt: 'Agrandir la halle du village au niveau 3.', prog: v => [hallLvl(v), 3], rew: { bois: 300, pierre: 200 } },
+  { id: 'pop12', name: 'Douze villageois', txt: 'Loger douze villageois.', prog: v => [v.vil.length, 12], rew: { pain: 100, viande: 100 } },
+  { id: 'fetes3', name: 'Le village en fête', txt: 'Offrir trois fêtes à la taverne.', prog: v => [cntOf(v, 'fete'), 3], rew: { biere: 60 } },
+  { id: 'halle4', name: 'Une petite ville', txt: 'Agrandir la halle du village au niveau 4.', prog: v => [hallLvl(v), 4], rew: { bois: 500, pierre: 350 } },
+  { id: 'pop16', name: 'Seize villageois', txt: 'Loger seize villageois.', prog: v => [v.vil.length, 16], rew: { pain: 150, viande: 150 } },
+  { id: 'hivers3', name: 'Trois hivers au chaud', txt: 'Passer trois hivers sans faim ni froid.', prog: v => [cntOf(v, 'win'), 3], rew: { bois: 300, pierre: 300 } },
+  { id: 'halle5', name: 'La capitale de la vallée', txt: 'Agrandir la halle du village au niveau 5.', prog: v => [hallLvl(v), 5], rew: { bois: 800, pierre: 600 } },
+];
+const GOAL_BY = Object.fromEntries(GOALS.map(g => [g.id, g]));
+const goalsOf = v => GOALS.filter(g => !(v.goals || []).includes(g.id)).slice(0, 3);
+const goalProg = (v, g) => { const [c, n] = g.prog(v); return [Math.min(c, n), n]; };
+const goalDone = (v, g) => { const [c, n] = g.prog(v); return c >= n; };
+const rewTxt = r => Object.keys(r).map(k => '+' + r[k] + ' ' + RES_LABEL[k].toLowerCase()).join(', ');
 
 /* ---------- héros ---------- */
 /* Un héros affecté à un bâtiment : +25 % si c'est la spécialité de sa race, sinon +10 %. */
@@ -203,8 +251,9 @@ function newVillage(vid, name, col, t, uid, pname) {
   const v = {
     v: VERSION, vid, name, c: col, born: t, t, seed, tick: 0, nid: 1, q: 0,
     members: { [uid]: { name: pname, t, hi: 1 } }, heroes: {},
-    r: { bois: 160, pierre: 80, ble: 0, farine: 0, pain: 60, viande: 40 },
+    r: { bois: 160, pierre: 80, ble: 0, farine: 0, pain: 60, viande: 40, orge: 0, biere: 0 },
     b: [], vil: [], cands: [], log: [], hunger: 0, cold: 0, feast: 0, feastCd: 0, ws: seasonIdx({ born: t }, t),
+    goals: [], cnt: { acc: 0, fete: 0, win: 0 }, wok: 0,
   };
   const add = (type, gx, gz) => { const b = { id: v.nid++, type, lvl: 1, gx, gz, up: null }; v.b.push(b); return b; };
   add('halle', 10, 10);
@@ -228,8 +277,12 @@ function stepVillage(v) {
   const add = (k, n) => { v.r[k] = Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
   /* Saison qui change */
   if (si !== v.ws) {
+    const prev = v.ws, warm = prev === 3 && si === 0 && v.wok;
     v.ws = si;
-    addLog(v, t, S.name + ' arrive sur la vallée.' + (S.cold ? ' Les champs dorment : pensez aux réserves de nourriture et de bois.' : si === 0 ? ' Les champs repartent.' : ''), 'season');
+    if (!v.cnt) v.cnt = { acc: 0, fete: 0, win: 0 };
+    if (warm) v.cnt.win = (v.cnt.win || 0) + 1;
+    v.wok = S.cold ? 1 : 0;                        // début de l'hiver : réussi tant que personne n'a faim ni froid
+    addLog(v, t, S.name + ' arrive sur la vallée.' + (S.cold ? ' Les champs dorment : pensez aux réserves de nourriture et de bois.' : si === 0 ? ' Les champs repartent.' + (warm ? ' L’hiver s’est passé sans faim ni froid : bravo !' : '') : ''), 'season');
   }
   /* Production */
   for (const b of v.b) {
@@ -253,7 +306,8 @@ function stepVillage(v) {
     if (d.inp) for (const r in d.inp) { const need = d.inp[r] * f; if (need > 0 && (v.r[r] || 0) < need) f *= (v.r[r] || 0) / need; }
     if (f <= 0) continue;
     for (const r in (d.inp || {})) v.r[r] = Math.max(0, (v.r[r] || 0) - d.inp[r] * f);
-    for (const r in d.out) add(r, d.out[r] * f);
+    const out = outOf(b);
+    for (const r in out) add(r, out[r] * f);
   }
   /* Chantiers : les bâtisseurs se partagent entre les chantiers ouverts */
   const open = sites(v).slice(0, sitesMax(v));
@@ -284,13 +338,15 @@ function stepVillage(v) {
     if (rest > 0) { const a2 = Math.min((v.r.pain || 0) - a, rest); a += a2; rest -= a2; }
     if (rest > 0) { const c2 = Math.min((v.r.viande || 0) - c, rest); c += c2; rest -= c2; }
     v.r.pain = Math.max(0, (v.r.pain || 0) - a); v.r.viande = Math.max(0, (v.r.viande || 0) - c);
-    if (rest > 1e-9) v.hunger = Math.min(3 * 1440, (v.hunger || 0) + 1);
+    if (rest > 1e-9) { v.hunger = Math.min(3 * 1440, (v.hunger || 0) + 1); if (S.cold) v.wok = 0; }
     else if (v.hunger > 0) v.hunger = Math.max(0, v.hunger - 0.5);
   }
+  /* Bière : on la boit à la taverne */
+  if ((v.r.biere || 0) > 0 && v.vil.length && hasTavern(v)) v.r.biere = Math.max(0, v.r.biere - v.vil.length * BEER.day / 1440);
   /* Hiver : chaque maison brûle du bois */
   if (S.cold) {
     let wood = 0; for (const b of v.b) if (b.type === 'maison' && b.lvl > 0) wood += 2 * h;
-    if ((v.r.bois || 0) >= wood) { v.r.bois -= wood; v.cold = 0; } else { v.r.bois = 0; v.cold = 1; }
+    if ((v.r.bois || 0) >= wood) { v.r.bois -= wood; v.cold = 0; } else { v.r.bois = 0; v.cold = 1; v.wok = 0; }
   } else v.cold = 0;
   /* Famine : au bout d'un jour sans manger, quelqu'un s'en va */
   if (v.hunger >= 1440 && v.vil.length) {
@@ -328,12 +384,13 @@ function ratesOf(v, t) {
     const ws = workersOf(v, b.id); if (!ws.length) continue;
     const sf = d.seasonal ? S[d.seasonal] : 1;
     let k = 0; for (const p of ws) k += skillF(p.st[d.spec]) * ((TRAITS[p.tr] || {}).prod || 1);
-    const f = k * lvlMul(b.lvl) * mf * sf * heroBonus(v, b.id, d.spec);
+    const f = k * lvlMul(b.lvl) * mf * sf * heroBonus(v, b.id, d.spec), o = outOf(b);
     for (const r in (d.inp || {})) out[r] -= d.inp[r] * f;
-    for (const r in d.out) out[r] += d.out[r] * f;
+    for (const r in o) out[r] += o[r] * f;
   }
   let eat = 0; for (const p of v.vil) eat += EAT_DAY * ((TRAITS[p.tr] || {}).eat || 1) / 24;
   out.food = -eat;
+  if (hasTavern(v)) out.biere -= v.vil.length * BEER.day / 24;
   if (S.cold) out.bois -= 2 * v.b.filter(b => b.type === 'maison' && b.lvl > 0).length;
   return out;
 }
@@ -350,8 +407,8 @@ function bldRate(v, b, t) {
   const d = BLD[b.type]; if (!d.spec || b.lvl < 1) return null;
   const S = SEASONS[seasonIdx(v, t)], mf = moraleF(moraleOf(v, t)), sf = d.seasonal ? S[d.seasonal] : 1;
   let k = 0; for (const p of workersOf(v, b.id)) k += skillF(p.st[d.spec]) * ((TRAITS[p.tr] || {}).prod || 1);
-  const f = k * lvlMul(b.lvl) * mf * sf * heroBonus(v, b.id, d.spec), o = {};
-  for (const r in d.out) o[r] = d.out[r] * f;
+  const f = k * lvlMul(b.lvl) * mf * sf * heroBonus(v, b.id, d.spec), o = {}, base = outOf(b);
+  for (const r in base) o[r] = base[r] * f;
   return o;
 }
 
@@ -386,6 +443,7 @@ function applyV(v, a, who) {
       const c = costOf(a.b, 1), m = missingTxt(v, c); if (m) return fail(m);
       pay(v, c);
       const b = { id: v.nid++, type: a.b, lvl: 0, gx: a.gx, gz: a.gz, up: { to: 1, need: workOf(a.b, 1), done: 0, q: ++v.q } };
+      if (a.b === 'champ') b.crop = a.crop === 'orge' ? 'orge' : 'ble';
       v.b.push(b);
       addLog(v, t, nm + ' lance un chantier : ' + d.name.toLowerCase() + '.', 'site');
       return { ok: true, id: b.id };
@@ -436,6 +494,8 @@ function applyV(v, a, who) {
       const c = v.cands.splice(i, 1)[0];
       c.t = t; c.xp = {}; for (const s of SPEC) c.xp[s] = 0; c.job = null;
       v.vil.push(c);
+      if (!v.cnt) v.cnt = { acc: 0, fete: 0, win: 0 };
+      v.cnt.acc = (v.cnt.acc || 0) + 1;
       addLog(v, t, nm + ' accueille ' + c.name + ' au village.', 'arrive');
       return { ok: true, name: c.name };
     }
@@ -459,8 +519,29 @@ function applyV(v, a, who) {
       if (v.feastCd > t) return fail('Prochaine fête possible dans quelques temps.');
       const m = missingTxt(v, FEAST.cost); if (m) return fail(m);
       pay(v, FEAST.cost); v.feast = t + FEAST.len; v.feastCd = t + FEAST.cd;
+      if (!v.cnt) v.cnt = { acc: 0, fete: 0, win: 0 };
+      v.cnt.fete = (v.cnt.fete || 0) + 1;
       addLog(v, t, nm + ' offre une fête à la taverne : tout le village est de bonne humeur !', 'feast');
       return { ok: true };
+    }
+    case 'crop': {
+      const b = v.b.find(x => x.id === a.id); if (!b || b.type !== 'champ') return fail('Ce n’est pas un champ.');
+      if (a.c !== 'ble' && a.c !== 'orge') return fail('Culture inconnue.');
+      if (cropOf(b) === a.c) return { ok: true };
+      b.crop = a.c;
+      addLog(v, t, nm + ' sème ' + (a.c === 'orge' ? 'de l’orge' : 'du blé') + ' dans un champ.', 'crop');
+      return { ok: true };
+    }
+    case 'claim': {
+      /* Récompense d'un objectif atteint (si l'autre joueur l'a déjà prise, il n'y a rien à faire). */
+      if (!v.goals) v.goals = [];
+      if (v.goals.includes(a.id)) return { ok: true, already: true };
+      const g = goalsOf(v).find(x => x.id === a.id); if (!g) return fail('Cet objectif n’est pas encore disponible.');
+      if (!goalDone(v, g)) return fail('Objectif pas encore atteint.');
+      for (const k in g.rew) v.r[k] = (v.r[k] || 0) + g.rew[k];
+      v.goals.push(g.id);
+      addLog(v, t, nm + ' récupère la récompense « ' + g.name + ' » : ' + rewTxt(g.rew) + '.', 'goal');
+      return { ok: true, g: g.id };
     }
   }
   return fail('Action inconnue.');

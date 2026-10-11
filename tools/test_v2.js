@@ -1,7 +1,7 @@
 /* Essais des règles du nouveau jeu (village commun). Usage : node tools/test_v2.js */
 const fs = require('fs'), path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '../src2/p2_rules.js'), 'utf8');
-const R = new Function(src + '\nreturn { VERSION, BLD, RES, SEASONS, SPEC, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate };')();
+const R = new Function(src + '\nreturn { VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone };')();
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
 const H = 3600000, D = 24 * H, T0 = Date.UTC(2026, 9, 12, 8, 0, 0);
@@ -86,7 +86,51 @@ ok(Math.abs(after / before - 1.25) < 1e-9, 'une elfe au pavillon de chasse : +25
 /* 10. Fête */
 ok(!R.applyV(R.clone(v), { type: 'feast' }, who).ok, 'pas de fête sans taverne');
 
-/* 11. Rapidité : simuler 3 jours */
+/* 11. Objectifs du village */
+let vg = R.clone(v);
+ok(R.goalsOf(vg).map(g => g.id).join(',') === 'carriere,maisons,accueil', 'trois premiers objectifs : carrière, maisons, voyageur');
+ok(!R.applyV(R.clone(vg), { type: 'claim', id: 'carriere' }, who).ok, 'pas de récompense avant d’avoir atteint l’objectif');
+ok(!R.applyV(R.clone(vg), { type: 'claim', id: 'halle2' }, who).ok, 'pas de récompense pour un objectif pas encore affiché');
+const sp = R.freeSpot(vg, 'carriere'); R.applyV(vg, { type: 'build', b: 'carriere', gx: sp[0], gz: sp[1] }, who);
+R.simulateVillage(vg, vg.t + 3 * H);
+ok(R.goalDone(vg, R.goalsOf(vg)[0]), 'objectif « Une carrière » atteint quand elle est construite');
+const bois1 = vg.r.bois;
+r = R.applyV(vg, { type: 'claim', id: 'carriere' }, who);
+ok(r.ok && Math.round(vg.r.bois - bois1) === 60 && vg.log.some(l => l.k === 'goal'), 'récompense : +60 bois, notée au journal');
+ok(R.goalsOf(vg).map(g => g.id).join(',') === 'maisons,accueil,halle2', 'l’objectif suivant apparaît (halle niveau 2)');
+const bois2 = vg.r.bois;
+ok(R.applyV(vg, { type: 'claim', id: 'carriere' }, who2).ok && vg.r.bois === bois2, 'récompense prise une seule fois, même si les deux joueurs appuient');
+
+/* 12. Bière : orge dans un champ, brasserie, bière servie à la taverne */
+let vb = R.clone(v);
+vb.b.find(x => x.type === 'halle').lvl = 2;
+ok(R.applyV(vb, { type: 'crop', id: vb.b.find(x => x.type === 'champ').id, c: 'orge' }, who).ok, 'on sème de l’orge dans le champ');
+ok(!R.applyV(R.clone(vb), { type: 'crop', id: vb.b.find(x => x.type === 'halle').id, c: 'orge' }, who).ok, 'pas de culture ailleurs que dans un champ');
+for (const [type, gx, gz] of [['brasserie', 2, 2], ['taverne', 18, 2]]) vb.b.push({ id: vb.nid++, type, lvl: 1, gx, gz, up: null });
+const brass = vb.b.find(x => x.type === 'brasserie'), brewer = vb.vil.find(p => p.job === 'bat');
+ok(R.applyV(vb, { type: 'job', vid: brewer.id, to: brass.id }, who).ok, 'un villageois devient brasseur');
+const ble0 = vb.r.ble;
+R.simulateVillage(vb, vb.t + 6 * H);
+ok(vb.r.ble === ble0 && vb.r.biere > 1, 'le champ donne de l’orge, la brasserie en fait de la bière (' + vb.r.biere.toFixed(1) + ')');
+ok(R.moraleParts(vb, vb.t).some(p => p[0] === 'Bière à la taverne'), 'bière à la taverne : le moral monte');
+const nb = R.clone(vb); nb.b.find(x => x.type === 'brasserie').lvl = 1; for (const p of nb.vil) if (p.job === brass.id) p.job = null;
+const beer0 = nb.r.biere; R.simulateVillage(nb, nb.t + 2 * H);
+ok(nb.r.biere < beer0, 'les villageois boivent la bière (' + beer0.toFixed(1) + ' → ' + nb.r.biere.toFixed(1) + ')');
+const vfe = R.clone(vb); vfe.r.pain = 100; vfe.r.viande = 100; vfe.r.biere = 0;
+ok(!R.applyV(vfe, { type: 'feast' }, who).ok, 'pas de fête sans bière');
+vfe.r.biere = 50;
+ok(R.applyV(vfe, { type: 'feast' }, who).ok && vfe.cnt.fete === 1, 'fête avec de la bière, comptée pour les objectifs');
+
+/* 13. Hiver au chaud (ou pas) */
+let vh1 = R.clone(v); vh1.r.pain = 3000; vh1.r.viande = 3000; vh1.r.bois = 3000;
+R.simulateVillage(vh1, T0 + 8 * D + H);
+ok(vh1.cnt.win === 1 && vh1.log.some(l => /sans faim ni froid/.test(l.m)), 'un hiver passé sans faim ni froid est compté');
+let vh2 = R.clone(v); vh2.r.pain = 3000; vh2.r.viande = 3000; vh2.r.bois = 3000;
+R.simulateVillage(vh2, T0 + 6 * D + 2 * H); vh2.r.bois = 0; for (const p of vh2.vil) if (p.job === vh2.b.find(x => x.type === 'bucheron').id) p.job = null;
+R.simulateVillage(vh2, T0 + 8 * D + H);
+ok(vh2.cnt.win === 0, 'un hiver où l’on a eu froid ne compte pas');
+
+/* 14. Rapidité : simuler 3 jours */
 const t0 = Date.now(); R.simulateVillage(R.clone(v3), v3.t + 3 * D); const ms = Date.now() - t0;
 ok(ms < 1500, 'simulation de 3 jours en ' + ms + ' ms');
 console.log(JSON.stringify(v3).length + ' octets pour un village de ' + v3.vil.length + ' villageois');
