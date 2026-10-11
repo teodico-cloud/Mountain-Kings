@@ -2,7 +2,7 @@
 /* Tout est synthétisé avec WebAudio (aucun fichier) : luth (corde pincée), flûte, bodhrán, tambourin, vielle. */
 const SND = (() => {
   let ctx = null, master = null, musBus = null, sfxBus = null, rev = null, noise = null, unlocked = false;
-  const S = Object.assign({ music: true, sfx: true, mv: 0.5, sv: 0.8 }, (() => { try { return JSON.parse(localStorage.getItem('mk.sound')) || {}; } catch (e) { return {}; } })());
+  const S = Object.assign({ music: true, sfx: true, mv: 0.4, sv: 0.8 }, (() => { try { return JSON.parse(localStorage.getItem('mk.sound')) || {}; } catch (e) { return {}; } })());
   const save = () => { try { localStorage.setItem('mk.sound', JSON.stringify(S)); } catch (e) { /* réglage non mémorisé */ } };
   const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
   const NOTE = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
@@ -33,7 +33,7 @@ const SND = (() => {
   function applyVolumes() {
     if (!ctx) return;
     const t = ctx.currentTime;
-    musBus.gain.setTargetAtTime(S.music ? S.mv * 1.35 : 0, t, 0.15);
+    musBus.gain.setTargetAtTime(S.music ? S.mv * 1.0 : 0, t, 0.15);
     sfxBus.gain.setTargetAtTime(S.sfx ? S.sv : 0, t, 0.05);
   }
   /* Le navigateur n'autorise le son qu'après un premier geste du joueur. */
@@ -138,61 +138,119 @@ const SND = (() => {
     }
     return steps;
   }
-  const CH = { D: ['D3', 'A3', 'D4', 'F#4'], G: ['G2', 'D3', 'G3', 'B3'], C: ['C3', 'G3', 'C4', 'E4'], Dm: ['D3', 'A3', 'D4', 'F4'], Bb: ['Bb2', 'F3', 'Bb3', 'D4'], A: ['A2', 'E3', 'A3', 'C#4'], Cb: ['C3', 'G3', 'C4', 'E4'] };
-  /* Village : une gigue en ré, joyeuse (6/8). */
+  const CH = { D: ['D3', 'A3', 'D4', 'F#4'], G: ['G2', 'D3', 'G3', 'B3'], C: ['C3', 'G3', 'C4', 'E4'], Dm: ['D3', 'A3', 'D4', 'F4'], Bb: ['Bb2', 'F3', 'Bb3', 'D4'], A: ['A2', 'E3', 'A3', 'C#4'],
+    F: ['F2', 'C3', 'F3', 'A3'], Am: ['A2', 'E3', 'A3', 'C4'], Em: ['E2', 'B2', 'E3', 'G3'], Eb: ['Eb3', 'Bb3', 'Eb4', 'G4'] };
+  const chordOf = n => CH[n].map(midi);
+  /* Village 1 : une gigue en ré, joyeuse (6/8). */
   const JIG_A = parse('A4 D5 D5 F#5 D5 D5 | A4 D5 F#5 E5 D5 B4 | A4 D5 D5 F#5 E5 F#5 | G5 F#5 E5 D5 B4 G4 | A4 D5 D5 F#5 D5 D5 | A4 D5 F#5 A5 F#5 D5 | G5 E5 C5 E5 F#5 E5 | D5:3 D5 A4 F#4');
   const JIG_B = parse('A5 F#5 D5 A5 F#5 D5 | G5 E5 C5 G5 E5 C5 | A5 F#5 D5 F#5 E5 D5 | C5 E5 G5 E5 D5 C5 | A5 F#5 D5 A5 F#5 D5 | G5 E5 C5 E5 F#5 G5 | A5 G5 F#5 E5 D5 C5 | D5:3 D5:3');
-  const JIG_CH_A = ['D', 'D', 'D', 'G', 'D', 'D', 'C', 'D'], JIG_CH_B = ['D', 'C', 'D', 'C', 'D', 'C', 'D', 'D'];
-  /* Raid : un air tendu en ré mineur (4/4). */
+  const JIG_CH = ['D', 'D', 'D', 'G', 'D', 'D', 'C', 'D', 'D', 'C', 'D', 'C', 'D', 'C', 'D', 'D'];
+  /* Village 2 : un air lent des mines (3/4). */
+  const AIR = parse('D5:4 E5:2 | F5:4 E5:2 | D5:2 C5:2 A4:2 | D5:6 | F5:4 G5:2 | A5:4 G5:2 | F5:2 E5:2 C5:2 | D5:6 | A5:4 C6:2 | B5:4 A5:2 | G5:2 F5:2 E5:2 | F5:4 E5:2 | D5:4 E5:2 | F5:2 E5:2 C5:2 | D5:4 A4:2 | D5:6');
+  const AIR_CH = ['Dm', 'F', 'C', 'Dm', 'F', 'Am', 'C', 'Dm', 'Am', 'G', 'C', 'F', 'Dm', 'C', 'Am', 'Dm'];
+  /* Village 3 : la ritournelle de la halle, au luth seul (6/8 lent). */
+  const HALL = parse('D5 F#5 A5 F#5 D5 F#5 | E5 G5 B5 G5 E5 G5 | F#5 A5 D6 A5 F#5 A5 | E5:3 A4:3 | D5 F#5 A5 F#5 D5 F#5 | G5 B5 D6 B5 G5 B5 | A5 F#5 E5 D5 C#5 E5 | D5:6');
+  const HALL_CH = ['D', 'Em', 'D', 'A', 'D', 'G', 'A', 'D'];
+  /* Raid 1 : un air tendu en ré mineur (4/4). */
   const WAR_1 = parse('D5:4 F5:2 E5:2 | D5:6 A4:2 | Bb4:4 D5:2 F5:2 | E5:6 C5:2 | D5:2 E5:2 F5:2 G5:2 | A5:6 G5:2 | F5:4 D5:2 Bb4:2 | C#5:6 E5:2');
   const WAR_2 = parse('A5:4 G5:2 F5:2 | E5:2 F5:2 D5:4 | F5:4 D5:2 Bb4:2 | C5:2 E5:2 G5:4 | F5:2 E5:2 D5:2 E5:2 | F5:2 G5:2 A5:4 | Bb5:4 A5:2 F5:2 | E5:4 C#5:2 A4:2');
   const WAR_CH = ['Dm', 'Dm', 'Bb', 'C', 'Dm', 'Dm', 'Bb', 'A'];
-  const THEMES = {
-    village: {
-      dt: 60 / 104 / 3, drone: ['D3', 'A3'], droneVol: 0.022,
-      play(th, step, t) {
-        const loopLen = 192, s = step % loopLen, pass = Math.floor(step / loopLen), dest = th.g;
-        const part = s < 96 ? 'A' : 'B', ps = s % 48, bar = Math.floor(ps / 6), b = ps % 6;
-        const mel = (part === 'A' ? JIG_A : JIG_B)[ps], chord = CH[(part === 'A' ? JIG_CH_A : JIG_CH_B)[bar]].map(midi);
-        const fluteLead = (pass + (part === 'B' ? 1 : 0) + Math.floor(s / 48)) % 2 === 0;
-        if (mel) {
-          if (fluteLead) flute(dest, mel.m, t, mel.len * this.dt * 0.95, 0.085);
-          else lute(dest, mel.m, t, 0.32, 0.15);
-        }
-        if (b === 0) lute(dest, chord[0], t, 0.3, -0.2);
-        if (b === 2 || b === 5) { lute(dest, chord[2], t, 0.13, -0.1); lute(dest, chord[3], t + 0.012, 0.12, 0.05); }
-        if (b === 3) lute(dest, chord[1], t, 0.18, -0.2);
-        if (b === 0) drum(dest, t, 0.28, 'low');
-        else if (b === 3) drum(dest, t, 0.17, 'low');
-        else if (b === 2 || b === 5) drum(dest, t, 0.06, 'tap');
-        if (bar % 4 === 3 && b === 4) drum(dest, t, 0.09, 'tap');
-        if (part === 'B' && b % 3 !== 0) tamb(dest, t, 0.045);
-      },
-    },
-    battle: {
-      dt: 60 / 128 / 2, drone: ['D2', 'A2'], droneVol: 0.03,
-      play(th, step, t) {
-        const s = step % 128, dest = th.g, bar = Math.floor(s / 8) % 8, b = s % 8, I = th.intensity;
-        const ch = CH[WAR_CH[bar]].map(midi), root = ch[0], fifth = ch[1], third = ch[3] - 12;
-        const pat = [root, root, fifth, root, third, root, fifth, root];
-        lute(dest, pat[b] + 12, t, b === 0 ? 0.28 : 0.17, -0.15);
-        if (I > 0.6) {
-          const mel = (s < 64 ? WAR_1 : WAR_2)[s % 64];
-          if (mel) flute(dest, mel.m, t, mel.len * this.dt * 0.95, 0.075);
-        }
-        if (b === 0 || b === 3 || b === 6) drum(dest, t, (b === 0 ? 0.34 : 0.22) * (0.6 + 0.4 * I), 'tom');
-        if (b === 4) drum(dest, t, 0.16 * I + 0.05, 'low');
-        if (I > 0.6 && (b === 2 || b === 7)) drum(dest, t, 0.07, 'tap');
-        if (I > 0.6 && bar % 4 === 3 && b >= 4) drum(dest, t + this.dt / 2, 0.12, 'tom');
-        if (I > 0.6 && b % 2 === 1) tamb(dest, t, 0.03);
-      },
-    },
+  /* Raid 2 : les tambours du Nord (ostinato grave, cor lointain). */
+  const NORTH = parse('D4:8 | Eb4:8 | D4:6 C4:2 | D4:8 | F4:8 | Eb4:6 D4:2 | C4:4 Eb4:4 | D4:8');
+  const PIECES = {
+    village: [
+      { name: 'gigue', dt: 60 / 96 / 3, len: 192, drone: ['D3', 'A3'], droneVol: 0.012,
+        play(th, s, t, V) {
+          const half = s < 96 ? 0 : 1, ps = s % 96, bar = Math.floor(ps / 6), b = ps % 6, dest = th.g;
+          const mel = (half ? JIG_B : JIG_A)[ps % 48], chord = chordOf(JIG_CH[(half * 8 + bar % 8) % 16]);
+          const fluteLead = V.flute ? (half === 0 || V.both) : (half === 1 && V.both);
+          if (mel) { if (fluteLead) flute(dest, mel.m + V.tr, t, mel.len * this.dt * 0.95, 0.05); else lute(dest, mel.m + V.tr, t, 0.2, 0.15); }
+          if (b === 0) lute(dest, chord[0] + V.tr, t, 0.17, -0.2);
+          if (b === 3) lute(dest, chord[1] + V.tr, t, 0.1, -0.2);
+          if ((b === 2 || b === 5) && bar % 2 === 0) lute(dest, chord[3] + V.tr, t, 0.07, 0.05);
+          if (V.drum && b === 0) drum(dest, t, 0.12, 'low');
+          if (V.drum && b === 3 && bar % 2 === 1) drum(dest, t, 0.07, 'low');
+        } },
+      { name: 'air', dt: 60 / 80 / 2, len: 96,
+        play(th, s, t, V) {
+          const bar = Math.floor(s / 6), b = s % 6, dest = th.g, chord = chordOf(AIR_CH[bar]), mel = AIR[s];
+          if (mel) { if (V.flute && bar >= 4) flute(dest, mel.m + V.tr, t, mel.len * this.dt * 0.97, 0.045); else lute(dest, mel.m + V.tr, t, 0.18, 0.1); }
+          if (b === 0) lute(dest, chord[0] + V.tr, t, 0.15, -0.25);
+          if (b === 2) lute(dest, chord[2] + V.tr, t, 0.07, -0.1);
+          if (b === 4) lute(dest, chord[3] + V.tr, t, 0.06, 0);
+        } },
+      { name: 'halle', dt: 60 / 70 / 3, len: 96,
+        play(th, s, t, V) {
+          const ps = s % 48, bar = Math.floor(ps / 6), b = ps % 6, dest = th.g, chord = chordOf(HALL_CH[bar]), mel = HALL[ps];
+          if (mel) lute(dest, mel.m + V.tr - (s >= 48 && V.low ? 12 : 0), t, 0.16, 0.12);
+          if (b === 0) lute(dest, chord[0] + V.tr, t, 0.15, -0.2);
+          if (b === 3) lute(dest, chord[1] + V.tr, t, 0.08, -0.2);
+        } },
+    ],
+    battle: [
+      { name: 'guerre', dt: 60 / 128 / 2, len: 128, drone: ['D2', 'A2'], droneVol: 0.018,
+        play(th, s, t, V) {
+          const bar = Math.floor(s / 8) % 8, b = s % 8, dest = th.g, I = th.intensity;
+          const ch = chordOf(WAR_CH[bar]), root = ch[0], fifth = ch[1], third = ch[3] - 12;
+          const pat = [root, root, fifth, root, third, root, fifth, root];
+          lute(dest, pat[b] + 12, t, b === 0 ? 0.17 : 0.1, -0.15);
+          if (I > 0.6 && (s >= 64 || V.flute)) { const mel = (s < 64 ? WAR_1 : WAR_2)[s % 64]; if (mel) flute(dest, mel.m, t, mel.len * this.dt * 0.95, 0.045); }
+          if (b === 0 || b === 3 || b === 6) drum(dest, t, (b === 0 ? 0.2 : 0.12) * (0.5 + 0.5 * I), 'tom');
+          if (I > 0.6 && b === 4) drum(dest, t, 0.09, 'low');
+          if (I > 0.6 && bar % 4 === 3 && b >= 4) drum(dest, t + this.dt / 2, 0.07, 'tom');
+        } },
+      { name: 'nord', dt: 60 / 112 / 2, len: 128,
+        play(th, s, t, V) {
+          const ps = s % 64, bar = Math.floor(ps / 8), b = ps % 8, dest = th.g, I = th.intensity, mel = NORTH[ps];
+          const os = [50, 50, 51, 50, 53, 50, 51, 48][(bar + b) % 8];
+          if (b % 2 === 0) lute(dest, os, t, 0.12, -0.2);
+          if (mel && s >= 64 && I > 0.6) horn(dest, [mel.m - 12], t, mel.len * this.dt * 0.6, 0.035);
+          if (b === 0 || b === 5) drum(dest, t, 0.18 * (0.5 + 0.5 * I), 'tom');
+          if (I > 0.6 && (b === 2 || b === 7)) drum(dest, t, 0.08, 'low');
+        } },
+    ],
   };
+  /* Ambiance entre les morceaux : vent, oiseaux, forge au village ; vent, tambours et cor lointains en raid. */
+  function windNode(dest, vol, dark) {
+    const s = ctx.createBufferSource(); s.buffer = noise; s.loop = true;
+    const lp = filt('lowpass', dark ? 380 : 620, 0.4), g = ctx.createGain(), lfo = ctx.createOscillator(), lg = ctx.createGain();
+    g.gain.value = vol; lfo.frequency.value = 0.07; lg.gain.value = vol * 0.6; lfo.connect(lg); lg.connect(g.gain);
+    s.connect(lp); lp.connect(g); g.connect(dest); s.start(); lfo.start();
+    return { stop() { const t = ctx.currentTime; g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value, t); g.gain.linearRampToValueAtTime(0.0001, t + 1.5); s.stop(t + 1.6); lfo.stop(t + 1.6); } };
+  }
+  function bird(dest, t) {
+    const base = 2600 + Math.random() * 1800, n = 2 + Math.floor(Math.random() * 3), pan = Math.random() * 1.6 - 0.8;
+    for (let i = 0; i < n; i++) tone(dest, 'sine', base * (1 + Math.random() * 0.2), base * (1.15 + Math.random() * 0.3), t + i * 0.11, 0.01, 0.012, 0.07, pan);
+  }
+  function ambience(th, ahead) {
+    if (th.nextAmb > ahead) return;
+    const t = Math.max(th.nextAmb, ctx.currentTime + 0.05);
+    if (th.name === 'village') {
+      const r = Math.random();
+      if (r < 0.75) bird(th.g, t);
+      else { for (let i = 0; i < 3; i++) for (const f of [1420, 2880]) tone(th.g, 'sine', f, null, t + i * 0.5, 0.001, 0.008 / (f / 1420), 0.25, 0.6); }
+      th.nextAmb = t + 2 + Math.random() * 5;
+    } else {
+      if (Math.random() < 0.6) { for (let i = 0; i < 3; i++) drum(th.g, t + i * 0.45, 0.06, 'tom'); }
+      else horn(th.g, [45, 45], t, 0.9, 0.02);
+      th.nextAmb = t + 7 + Math.random() * 9;
+    }
+  }
   let theme = null, want = null, wantI = 1, timer = null;
+  const lastPiece = {};
   function music(name, intensity) {
     want = name || null; if (intensity != null) wantI = intensity;
     if (theme && theme.name === want) theme.intensity = wantI;
     if (ctx && unlocked) switchTheme();
+  }
+  function startPiece(th, t) {
+    const pool = PIECES[th.name];
+    let i = Math.floor(Math.random() * pool.length);
+    if (pool.length > 1 && i === lastPiece[th.name]) i = (i + 1) % pool.length;
+    lastPiece[th.name] = i;
+    const def = pool[i];
+    th.piece = { def, step: 0, V: { flute: Math.random() < 0.6, both: Math.random() < 0.4, drum: Math.random() < 0.5, low: Math.random() < 0.5, tr: [0, 0, -2, 2][Math.floor(Math.random() * 4)] }, drone: def.drone ? drone(th.g, def.drone.map(midi), def.droneVol) : null };
+    th.t = t;
   }
   function switchTheme() {
     if (!ctx || !unlocked) return;
@@ -200,25 +258,37 @@ const SND = (() => {
     if (theme && theme.name === target) return;
     stopTheme();
     if (!target) return;
-    const def = THEMES[target], g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, ctx.currentTime); g.gain.linearRampToValueAtTime(1, ctx.currentTime + 1.2);
+    const g = ctx.createGain(), t0 = ctx.currentTime;
+    g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(1, t0 + 2);
     g.connect(musBus);
-    const send = ctx.createGain(); send.gain.value = 0.5; g.connect(send); send.connect(rev);
-    theme = { name: target, def, g, step: 0, t: ctx.currentTime + 0.2, intensity: wantI, drone: drone(g, def.drone.map(midi), def.droneVol) };
+    const send = ctx.createGain(); send.gain.value = 0.55; g.connect(send); send.connect(rev);
+    theme = { name: target, g, piece: null, gapEnd: t0 + (target === 'battle' ? 0.3 : 3 + Math.random() * 4), t: t0, intensity: wantI, nextAmb: t0 + 1, wind: windNode(g, target === 'battle' ? 0.02 : 0.012, target === 'battle') };
     if (!timer) timer = setInterval(tick, 40);
   }
   function stopTheme() {
     if (!theme) return;
     const th = theme, t = ctx.currentTime; theme = null;
-    th.g.gain.cancelScheduledValues(t); th.g.gain.setValueAtTime(th.g.gain.value, t); th.g.gain.linearRampToValueAtTime(0.0001, t + 1);
-    th.drone.stop();
-    setTimeout(() => th.g.disconnect(), 2600);
+    th.g.gain.cancelScheduledValues(t); th.g.gain.setValueAtTime(th.g.gain.value, t); th.g.gain.linearRampToValueAtTime(0.0001, t + 1.2);
+    if (th.piece && th.piece.drone) th.piece.drone.stop();
+    th.wind.stop();
+    setTimeout(() => th.g.disconnect(), 2800);
   }
   function tick() {
     if (!theme || !ctx || ctx.state !== 'running') return;
-    const ahead = ctx.currentTime + 0.3;
-    if (theme.t < ctx.currentTime - 1) theme.t = ctx.currentTime + 0.05; // retour après une pause
-    while (theme.t < ahead) { theme.def.play(theme, theme.step, theme.t); theme.t += theme.def.dt; theme.step++; }
+    const th = theme, now = ctx.currentTime, ahead = now + 0.3;
+    if (th.t < now - 1) th.t = now + 0.05; // retour après une pause
+    if (!th.piece && now >= th.gapEnd - 0.35) startPiece(th, Math.max(now + 0.05, th.gapEnd));
+    while (th.piece && th.t < ahead) {
+      const P = th.piece;
+      if (P.step >= P.def.len) {
+        if (P.drone) P.drone.stop();
+        th.piece = null;
+        th.gapEnd = th.t + (th.name === 'battle' ? 4 + Math.random() * 8 : 14 + Math.random() * 26);
+        break;
+      }
+      P.def.play(th, P.step, th.t, P.V); th.t += P.def.dt; P.step++;
+    }
+    ambience(th, ahead);
   }
 
   /* ---------- bruitages ---------- */
@@ -289,15 +359,16 @@ const SND = (() => {
     const off = new OfflineAudioContext(2, Math.floor(44100 * sec), 44100);
     ctx = off; for (const k in plucks) delete plucks[k];
     master = ctx.createGain(); master.connect(ctx.destination);
-    musBus = ctx.createGain(); musBus.gain.value = S.mv * 1.35; musBus.connect(master);
+    musBus = ctx.createGain(); musBus.gain.value = S.mv * 1.0; musBus.connect(master);
     sfxBus = ctx.createGain(); sfxBus.gain.value = S.sv; sfxBus.connect(master);
     rev = ctx.createConvolver(); rev.buffer = impulse(1.8, 3); const rg = ctx.createGain(); rg.gain.value = 0.28; rev.connect(rg); rg.connect(master);
     noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate); const nd = noise.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
     try {
       if (kind === 'music') {
-        const def = THEMES[name], g = ctx.createGain(); g.connect(musBus); const th = { def, g, intensity: 1 };
-        drone(g, def.drone.map(midi), def.droneVol);
-        for (let st = 0, t = 0.05; t < sec - 0.3; st++, t += def.dt) def.play(th, st, t);
+        const def = PIECES.village.concat(PIECES.battle).find(p => p.name === name), g = ctx.createGain(); g.connect(musBus);
+        const th = { g, intensity: 1, name }, V = { flute: true, both: true, drum: true, low: false, tr: 0 };
+        if (def.drone) drone(g, def.drone.map(midi), def.droneVol);
+        for (let st = 0, t = 0.05; t < sec - 0.3 && st < def.len; st++, t += def.dt) def.play(th, st, t, V);
       } else FX[name](sfxBus, 0.05);
       const buf = await off.startRendering(), d = buf.getChannelData(0);
       let peak = 0, sum = 0; for (let i = 0; i < d.length; i++) { const v = Math.abs(d[i]); if (v > peak) peak = v; sum += v * v; }

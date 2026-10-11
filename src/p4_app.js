@@ -58,6 +58,7 @@ IC.chasseresse = IC.archer; IC.berserker = IC.axe;
 IC.wall = '<svg viewBox="0 0 24 24"><path d="M2 9h4V6h3v3h6V6h3v3h4v11H2z" fill="currentColor"/><path d="M2 14h20M8 9v5M16 9v5M12 14v6" stroke="#fff" stroke-opacity=".35" stroke-width="1.2"/></svg>';
 IC.help = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M9.3 9.2a2.8 2.8 0 1 1 3.9 2.6c-.8.4-1.2.9-1.2 1.8v.6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.2" fill="#fff"/></svg>';
 IC.sound = '<svg viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>';
+IC.bolt = '<svg viewBox="0 0 24 24"><path d="M13.8 1.5 4.2 13.6h6.3L9 22.5l10-12.4h-6.4z" fill="currentColor"/></svg>';
 const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k] || ''}</span>`;
 /* Vignette d'une troupe ou d'un héros (image rendue depuis le modèle 3D, icône en secours). */
 const thumb = (k, cls) => `<span class="thumb${HEROES[k] ? ' hero' : ''}${cls ? ' ' + cls : ''}">${ico(k, '')}<img src="thumbs/${k}.png" alt="" draggable="false" onerror="this.remove()"></span>`;
@@ -346,7 +347,7 @@ function deployTap(cx, cy) {
     const lvl = (me.heroes[heroK] || {}).lvl || 1;
     if (F.kind === 'guest') emitDuo({ k: 'dep', id: duo.id, t: UNIT_KEYS.indexOf(heroK), x: x0, z: z0, l: lvl });
     else if (!deploy(F.B, heroK, x0, z0, 0, false, lvl)) return;
-    F.hero = { k: heroK, lvl, uid: F.kind === 'guest' ? null : F.B.units[F.B.units.length - 1].id, pw: false };
+    F.hero = { k: heroK, lvl, uid: F.kind === 'guest' ? null : F.B.units[F.B.units.length - 1].id, pw: false, t0: performance.now() };
     F.deployed = true;
     F.selType = TROOP_KEYS.find(k => F.avail[k] > 0) || null;
     SND.sfx('hero'); if (gl) { V3.wave(x0, z0, 0xffd27a, 1.6, 0.6); V3.dustRing(x0, z0, 0.5); }
@@ -382,7 +383,12 @@ function usePower() {
 }
 function heroAlive(F) {
   if (!F.hero) return false;
-  if (F.kind === 'guest') return F.units.some(u => u.type === F.hero.k && u.owner === 1);
+  if (F.kind === 'guest') {
+    /* L'invitée voit son héros arriver avec la synchro suivante de l'hôte : en attendant (3 s max), on le compte comme vivant. */
+    const on = F.units.some(u => u.type === F.hero.k && u.owner === 1);
+    if (on) F.hero.seen = true;
+    return on || (!F.hero.seen && performance.now() - (F.hero.t0 || 0) < 3000);
+  }
   const u = F.B.units.find(q => q.id === F.hero.uid); return !!u && !u.dead;
 }
 function shotSound(k, x, z) { SND.sfx(k === 'stone' ? 'catapult' : k === 'bolt' ? 'bolt' : 'shoot', { pan: gl && x != null ? V3.panOf(x, z) : 0 }); }
@@ -802,24 +808,29 @@ function renderBottom() {
       <button class="btn primary grow" data-act="scoutGo">${ico('axe', '')}Attaquer</button></div></div>`;
   } else if (mode === 'fight' && fight) {
     const F = fight;
-    if (F.kind === 'replay') h = `<div class="glass card"><div class="row split"><span class="note">Les orques attaquent ton village. Regarde ce qui a tenu, et ce qui a cédé.</span><button class="btn" data-act="endFight">Quitter</button></div></div>`;
+    if (F.kind === 'replay') h = `<div class="fightwrap"><div class="glass fightbar"><span class="rnote">Les orques attaquent ton village. Regarde ce qui a tenu, et ce qui a cédé.</span><button class="btn fend" data-act="endFight">Quitter</button></div></div>`;
     else {
-      let tb = '';
-      for (const k of TROOP_KEYS) { const n = F.avail[k] || 0; if (!n && !(F.used[k] > 0)) continue; tb += `<button class="tbtn${F.selType === k ? ' on' : ''}${n ? '' : ' empty'}" data-act="troop" data-u="${k}">${thumb(k, 'sm')}<span class="n">${n}</span><span class="nm">${TROOPS[k].plural}</span></button>`; }
-      if (F.hero) {
-        const alive = heroAlive(F), H = HEROES[F.hero.k];
-        tb += `<button class="tbtn hero${!F.hero.pw && alive ? ' power' : ' empty'}" data-act="power">${thumb(F.hero.k, 'sm')}<span class="n">${!alive ? 'K.O.' : F.hero.pw ? 'Utilisé' : 'Pouvoir'}</span><span class="nm">${esc(H.power)}</span></button>`;
-      } else for (const k of F.heroes) tb += `<button class="tbtn hero${F.selType === 'h:' + k ? ' on' : ''}" data-act="troop" data-u="h:${k}">${thumb(k, 'sm')}<span class="n">Héros</span><span class="nm">${esc(HEROES[k].name)}</span></button>`;
+      /* Barre compacte : vignettes avec le nombre en pastille, bouton ×5, bouton de fin. Une courte aide n'apparaît que quand elle sert. */
       const left = leftToDeploy(F), heroSel = F.selType && F.selType.startsWith('h:');
-      const tip = !left ? (F.hero && !F.hero.pw && heroAlive(F) ? 'Touche le héros en bas pour lancer son pouvoir.' : 'Toutes tes troupes sont sur le terrain.')
-        : heroSel ? 'Touche le terrain pour faire entrer ' + esc(HEROES[F.selType.slice(2)].name) + ' (un seul héros par raid).'
-        : 'Touchez le terrain, hors de la zone rouge, pour déployer' + (F.selType && F.selType !== 'belier' ? ' (par ' + F.batch + ')' : '') + '.';
-      h = `<div class="glass fightbar"><p class="tip">${tip}</p>
-        <div class="troopbar">${tb || '<span class="tip">Aucune troupe.</span>'}${TROOP_KEYS.some(k => F.avail[k] > 0) ? `<button class="tbtn" data-act="batch"><span class="n">×${F.batch}</span><span class="nm">Groupe</span></button>` : ''}</div>
-        <div class="row" style="padding:0 6px 6px"><button class="btn grow" data-act="endFight">${F.kind === 'solo' ? (F.deployed ? 'Terminer le raid' : 'Renoncer') : (left ? 'J’ai fini de déployer' : 'En attente de la fin')}</button></div></div>`;
+      let tb = '';
+      for (const k of TROOP_KEYS) { const n = F.avail[k] || 0; if (!n && !(F.used[k] > 0)) continue; tb += `<button class="tbtn${F.selType === k ? ' on' : ''}${n ? '' : ' empty'}" data-act="troop" data-u="${k}" aria-label="${esc(TROOPS[k].plural)} : ${n}">${thumb(k, 'sm')}<span class="n">${n}</span></button>`; }
+      if (F.hero) {
+        const alive = heroAlive(F), H = HEROES[F.hero.k], ready = alive && !F.hero.pw;
+        tb += `<button class="tbtn hero${ready ? ' power' : ' empty'}" data-act="power" aria-label="${esc(H.power)}${ready ? '' : alive ? ' (utilisé)' : ' (K.O.)'}">${thumb(F.hero.k, 'sm')}${ready ? `<span class="n pw">${ico('bolt', '')}</span>` : alive ? '' : '<span class="n ko">K.O.</span>'}</button>`;
+      } else for (const k of F.heroes) tb += `<button class="tbtn hero${F.selType === 'h:' + k ? ' on' : ''}" data-act="troop" data-u="h:${k}" aria-label="${esc(HEROES[k].name)}">${thumb(k, 'sm')}</button>`;
+      const tip = heroSel ? 'Touche le terrain pour faire entrer ' + esc(HEROES[F.selType.slice(2)].name) + ' (un seul héros par raid).'
+        : left && !F.deployed ? 'Choisis une troupe, puis touche le terrain hors de la zone rouge.'
+        : !left && F.hero && !F.hero.pw && heroAlive(F) ? 'Touche le héros pour lancer son pouvoir.' : '';
+      const endTxt = F.kind === 'solo' ? (F.deployed ? 'Terminer le raid' : 'Renoncer') : (left ? 'J’ai fini de déployer' : 'En attente de la fin');
+      h = `<div class="fightwrap">${tip ? `<p class="ftip">${tip}</p>` : ''}<div class="glass fightbar">
+        <div class="troopbar">${tb || '<span class="tip">Aucune troupe.</span>'}</div>
+        ${TROOP_KEYS.some(k => F.avail[k] > 0) ? `<button class="tbtn grp" data-act="batch" aria-label="Déployer par ${F.batch}"><b>×${F.batch}</b><small>groupe</small></button>` : ''}
+        <button class="btn fend" data-act="endFight">${endTxt}</button></div></div>`;
     }
   }
+  const tbar = els.bottom.querySelector('.troopbar'), sx = tbar ? tbar.scrollLeft : 0;
   setHTML(els.bottom, h);
+  const tbar2 = els.bottom.querySelector('.troopbar'); if (tbar2 && sx) tbar2.scrollLeft = sx;
 }
 
 /* ---------- feuilles ---------- */
@@ -979,11 +990,11 @@ function sheetHelp() {
     ul(['Les troupes s’entraînent à la caserne, une à la fois par caserne, et logent dans les tavernes.', 'Une troupe utilisée en raid est perdue, qu’elle survive ou non.']));
   h += sec('Héros', HERO_KEYS.map(k => { const H = HEROES[k]; return `<div class="item troop">${thumb(k)}<div style="display:grid;gap:4px"><b>${esc(H.name)}, ${esc(H.title)}</b><p class="pm"><b class="plus">+</b> ${esc(H.plus)}</p><p class="pm"><b class="minus">−</b> ${esc(H.minus)}</p><p class="pw">${ico('roi', 'c-tro')}<span><b>${esc(H.power)}</b> : ${esc(H.pdesc)}</span></p></div></div>`; }).join('') +
     ul(['Construis la Salle des Héros (halle du clan niveau 2), puis recrute les héros avec des vivres.', 'Le niveau de la salle fixe le niveau maximum des héros. L’entraînement prend du temps : le héros ne peut pas combattre pendant ce temps.',
-      'Un seul héros par raid. En bataille, touche sa vignette puis le terrain pour le faire entrer, puis touche-la encore pour lancer son pouvoir (une fois par raid).',
+      'Un seul héros par raid. En bataille, touche sa vignette puis le terrain pour le faire entrer, puis touche-la encore quand l’éclair jaune apparaît pour lancer son pouvoir (une fois par raid).',
       'Un héros ne meurt jamais pour de bon : après un combat, il se repose, d’autant plus longtemps qu’il a été blessé.']));
   h += sec('Raids solo', ul([
     'Choisis un camp orque : les cercles rouges montrent la portée de ses défenses. « Autre camp » en propose un nouveau contre quelques vivres.',
-    'En bataille, choisis une troupe en bas puis touche le terrain, hors de la zone rouge. Le bouton ×5 déploie par groupes.',
+    'En bataille, choisis une troupe en bas (le chiffre sur sa vignette dit combien il en reste), puis touche le terrain, hors de la zone rouge. Le bouton ×5 déploie par groupes de 5 ; touche-le pour passer à 1 par 1.',
     `${ico('sabre', 'st-on')} Les sabres notent ta réussite : 1 à 50 % de destruction, 2 à 75 %, 3 à 100 %. Chaque sabre augmente le butin.`,
     'Tu peux terminer le raid à tout moment : tu gardes le butin déjà gagné.']));
   h += sec('Raids à deux', ul([
@@ -1288,7 +1299,7 @@ window.addEventListener('resize', applyOrientation);
 window.addEventListener('orientationchange', () => setTimeout(applyOrientation, 200));
 
 /* ---------- démarrage ---------- */
-if (window.MK_TEST) window.__mk = { get me() { return me; }, get mode() { return mode; }, get fight() { return fight; }, toScreen: (x, z) => gl ? V3.toScreen(x, z) : null, canDeploy: (x, z) => !!fight && canDeploy(fight.zoneB, x, z), snd: SND };
+if (window.MK_TEST) window.__mk = { get me() { return me; }, get mode() { return mode; }, get fight() { return fight; }, toScreen: (x, z) => gl ? V3.toScreen(x, z) : null, canDeploy: (x, z) => !!fight && canDeploy(fight.zoneB, x, z), snd: SND, ground: () => gl ? V3._ground() : null, fx: () => gl ? V3._fx() : null, bench: () => gl ? V3._bench() : null };
 async function boot() {
   const cv = $('#gl');
   gl = typeof THREE !== 'undefined' && V3.init(cv);

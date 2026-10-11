@@ -13,7 +13,7 @@ Jeu coop sur téléphone (Téo et sa compagne) : village nain 3D, raids solo con
   Ordre de concaténation : p0, p2, p3, p5, p4.
 - `docs/` : site publié par GitHub Pages (`https://teodico-cloud.github.io/Mountain-Kings/`). `docs/models/` et `docs/lib/` sont des fichiers fixes ; le reste est généré.
 - `tools/build.py` : génère `docs/index.html`, `game.js`, `sw.js` (cache hors ligne + mises à jour auto), `manifest.json`, icônes, `database.rules.json`.
-- `tools/fakeserver.py` + `tools/fakefb.js` : faux Firebase pour tester en local (`python3 tools/build.py --test`, puis `tools/test_ui.py` et `tools/test_duo.py`). Le build de test expose `window.__mk` pour les essais. Toujours reconstruire SANS `--test` avant de committer.
+- `tools/fakeserver.py` + `tools/fakefb.js` : faux Firebase pour tester en local (`python3 tools/build.py --test`, puis `tools/test_ui.py` et `tools/test_duo.py`). Le build de test expose `window.__mk` pour les essais. Toujours reconstruire SANS `--test` avant de committer. Avec le rendu logiciel (swiftshader) ces essais sont lents (≈ 10 min pour `test_ui`, 15 min pour `test_duo`) : les lancer en arrière-plan avec `python3 -u` et un fichier de log.
 - `tools/test_engine.js` : essais du moteur (remparts, chemins, héros) avec node.
 - `tools/make_thumbs.py` : vignettes `docs/thumbs/*.png` rendues depuis les modèles 3D (à relancer si les modèles changent).
 - `tools/models_pipeline.py` : conversion des modèles KayKit (CC0) vers `docs/models/`.

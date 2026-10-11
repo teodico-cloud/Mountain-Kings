@@ -96,10 +96,14 @@ async def main():
         print('scout:', (await text(pg, '#hudTop'))[:160])
         await pg.click('[data-act="scoutGo"]'); await pg.wait_for_timeout(1500)
         await pg.screenshot(path=S + 'u_fight0.png')
-        for (x, y) in [(120, 200), (110, 230), (130, 170)]:
-            await pg.mouse.click(x, y); await pg.wait_for_timeout(250)
+        js = '''() => { const out = []; for (let i = 0; i <= 96; i++) { const t = i / 96 * 24;
+          for (const [x, z] of [[0.7, t], [t, 23.3], [t, 0.7], [23.3, t]]) { if (!window.__mk.canDeploy(x, z)) continue; const p = window.__mk.toScreen(x, z); if (p[1] > 90 && p[1] < 255 && p[0] > 30 && p[0] < 814) out.push([x, z, p[0], p[1]]); } } return out; }'''
+        spots = await pg.evaluate(js)
+        print('deploy spots:', len(spots))
+        for sp in spots[:3]:
+            await pg.mouse.click(sp[2], sp[3]); await pg.wait_for_timeout(250)
         await pg.click('[data-act="troop"][data-u="h:berserker"]'); await pg.wait_for_timeout(200)
-        await pg.mouse.click(120, 205); await pg.wait_for_timeout(300)
+        await pg.mouse.click(spots[1][2], spots[1][3]); await pg.wait_for_timeout(300)
         print('fight bar:', (await text(pg, '#hudBottom'))[:200])
         await pg.wait_for_timeout(6000)
         await pg.click('[data-act="power"]'); await pg.wait_for_timeout(700)

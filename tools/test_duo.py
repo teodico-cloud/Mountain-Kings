@@ -21,7 +21,7 @@ async def page(b, name, logs):
     return ctx, pg
 
 async def text(pg, sel):
-    try: return (await pg.inner_text(sel, timeout=2000)).replace('\n', ' | ')
+    try: return (await pg.inner_text(sel, timeout=8000)).replace('\n', ' | ')
     except Exception as e: return f'<none {sel}>'
 
 async def main():
@@ -71,7 +71,7 @@ async def main():
         await A.screenshot(path=S + 't_home_A.png')
 
         # Cadeau de Alice vers Léa
-        await A.click('[data-act="sheet"][data-s="duo"]'); await A.wait_for_timeout(500)
+        await A.click('.nav [data-s="duo"]'); await A.wait_for_timeout(500)
         await A.screenshot(path=S + 't_duo_sheet.png')
         await A.click('[data-act="gift"]'); await A.wait_for_timeout(400)
         await A.click('[data-act="giftAdj"][data-r="bois"][data-d="100"]'); await A.wait_for_timeout(200)
@@ -79,7 +79,7 @@ async def main():
         print('B toast after gift:', await text(B, '#toast'), '| dons left:', tree().get('dons'))
 
         # Raid à deux : Alice invite Léa
-        await A.click('[data-act="sheet"][data-s="duo"]'); await A.wait_for_timeout(500)
+        await A.click('.nav [data-s="duo"]'); await A.wait_for_timeout(500)
         await A.click('[data-act="duoInvite"]'); await A.wait_for_timeout(2000)
         print('B invite:', (await text(B, '#hudTop'))[-200:])
         await B.click('[data-act="duoAccept"]'); await B.wait_for_timeout(3000)
@@ -135,7 +135,7 @@ async def main():
         # Léa ferme le jeu : Alice doit la voir hors ligne
         await cb.close(); await A.wait_for_timeout(4000)
         print('presence after B closed:', list(tree().get('presence', {}).keys()))
-        await A.click('[data-act="sheet"][data-s="village"]'); await A.wait_for_timeout(500)
+        await A.click('.nav [data-s="village"]'); await A.wait_for_timeout(500)
         await A.screenshot(path=S + 't_village_sheet.png')
         # Rechargement : Alice reste connectée et retrouve son village
         await A.reload(); await A.wait_for_timeout(4000)
