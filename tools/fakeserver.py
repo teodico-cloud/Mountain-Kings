@@ -6,11 +6,12 @@ from urllib.parse import urlparse, parse_qs
 ROOT = sys.argv[1]
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8790
 LOG = sys.argv[3] if len(sys.argv) > 3 else None
-lock = threading.Lock()
+lock = threading.RLock()
 tree = {}
 clients = {}   # cid -> Queue
 ondisc = {}    # cid -> [paths]
 writes = []    # journal des écritures (pour vérifier ce qui passe par le réseau)
+seq = 0        # numéro de la dernière écriture (sert aux transactions)
 
 def parts(p): return [k for k in str(p or '').split('/') if k]
 def prune(n):
@@ -33,11 +34,18 @@ def set_at(p, v):
 def broadcast(msg):
     data = json.dumps(msg)
     for q in list(clients.values()): q.put(data)
-def do_set(p, v, frm):
+def do_set(p, v, frm, cas=False):
+    global seq
     with lock:
+        seq += 1
         set_at(p, v)
-        writes.append({'path': p, 'size': len(json.dumps(v)), 'from': frm})
-        broadcast({'path': p, 'v': v, 'from': frm})
+        writes.append({'path': p, 'size': len(json.dumps(v)), 'from': frm, 'seq': seq})
+        broadcast({'path': p, 'v': v, 'from': frm, 'seq': seq, 'cas': cas})
+        return seq
+def related(a, b):
+    a, b = parts(a), parts(b)
+    n = min(len(a), len(b))
+    return a[:n] == b[:n]
 
 class H(SimpleHTTPRequestHandler):
     def __init__(self, *a, **k): super().__init__(*a, directory=ROOT, **k)
@@ -55,6 +63,8 @@ class H(SimpleHTTPRequestHandler):
         u = urlparse(self.path); q = parse_qs(u.query)
         if u.path == '/fb/tree':
             with lock: return self.ok(tree)
+        if u.path == '/fb/state':
+            with lock: return self.ok({'tree': tree, 'seq': seq})
         if u.path == '/fb/writes':
             with lock: return self.ok(writes)
         if u.path == '/fb/events':
@@ -78,6 +88,17 @@ class H(SimpleHTTPRequestHandler):
         u = urlparse(self.path); q = parse_qs(u.query); cid = q.get('cid', [''])[0]
         if u.path == '/fb/op':
             m = self.body(); do_set(m['path'], m['v'], cid); return self.ok()
+        if u.path == '/fb/cas':
+            # Transaction : n'écrit que si rien n'a touché ce chemin depuis la version vue par le client.
+            m = self.body()
+            with lock:
+                stale = any(w['seq'] > m['base'] and related(w['path'], m['path']) for w in writes)
+                if stale:
+                    b = json.dumps({'ok': False, 'seq': seq}).encode()
+                    self.send_response(409); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(b))); self.end_headers(); self.wfile.write(b)
+                    return
+                n = do_set(m['path'], m['v'], cid, True)
+            return self.ok({'ok': True, 'seq': n})
         if u.path == '/fb/ondisc':
             m = self.body(); ondisc.setdefault(cid, []).append(m['path']); return self.ok()
         self.send_error(404)

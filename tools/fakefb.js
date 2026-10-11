@@ -2,8 +2,8 @@
    et la connexion Google (utilisateur choisi par ?u=nom dans l'adresse). */
 (function () {
   const cid = Math.random().toString(36).slice(2, 10);
-  let tree = {}, ready = false;
-  const waiters = [], listeners = [], ondisc = [];
+  let tree = {}, ready = false, lastSeq = 0;
+  const waiters = [], listeners = [], ondisc = [], seqWait = [];
   const TIMESTAMP = { '.sv': 'timestamp' };
   const parts = p => String(p || '').split('/').filter(Boolean);
   const getAt = p => { let n = tree; for (const k of parts(p)) { if (n == null || typeof n !== 'object') return null; n = n[k]; } return n === undefined ? null : n; };
@@ -59,6 +59,23 @@
     const c = clean(v);
     return whenReady().then(() => { apply(p, c); return post('/fb/op?cid=' + cid, { path: p, v: c }); }).then(r => { if (!r.ok) throw new Error('write failed'); });
   }
+  const waitSeq = n => lastSeq >= n ? Promise.resolve() : new Promise(r => seqWait.push({ n, r }));
+  /* Transaction : relit la valeur, applique fn, et réessaie si quelqu'un a écrit entre-temps. */
+  async function transaction(path, fn) {
+    await whenReady();
+    for (let i = 0; i < 40; i++) {
+      const cur = getAt(path), base = lastSeq;
+      const nv = fn(cur == null ? null : out(JSON.parse(JSON.stringify(cur))));
+      if (nv === undefined) return { committed: false, snapshot: snap(parts(path).pop() || null, cur, makeRef(path)) };
+      const c = clean(nv);
+      const r = await post('/fb/cas?cid=' + cid, { path, v: c, base });
+      const j = await r.json();
+      await waitSeq(j.seq);
+      if (r.ok) return { committed: true, snapshot: snap(parts(path).pop() || null, getAt(path), makeRef(path)) };
+      await new Promise(res => setTimeout(res, 20 + Math.random() * 60));
+    }
+    throw new Error('transaction failed');
+  }
   let pushN = 0;
   const pushKey = () => ('0000000000' + Date.now().toString(36)).slice(-10) + ('000' + (pushN++ % 46656).toString(36)).slice(-3) + cid.slice(0, 4);
   function addListener(path, type, cb, q) {
@@ -77,6 +94,7 @@
       set: v => write(path, v),
       remove: () => write(path, null),
       once: () => whenReady().then(() => snap(r.key, getAt(path), r)),
+      transaction: fn => transaction(path, fn),
       on(type, cb) { addListener(path, type, cb); return cb; },
       off(type, cb) { removeListener(path, type, cb); },
       orderByChild: f => ({ equalTo: val => ({ on(type, cb) { addListener(path, type, cb, { f, v: val }); return cb; }, off(type, cb) { removeListener(path, type, cb); } }) }),
@@ -84,10 +102,15 @@
     };
     return r;
   }
-  fetch('/fb/tree').then(r => r.json()).then(t => {
-    tree = t || {};
+  fetch('/fb/state').then(r => r.json()).then(st => {
+    tree = st.tree || {}; lastSeq = st.seq || 0;
     const es = new EventSource('/fb/events?cid=' + cid);
-    es.onmessage = e => { const m = JSON.parse(e.data); if (m.from !== cid) apply(m.path, m.v); };
+    es.onmessage = e => {
+      const m = JSON.parse(e.data);
+      if (m.from !== cid || m.cas) apply(m.path, m.v);
+      if (m.seq > lastSeq) lastSeq = m.seq;
+      for (let i = seqWait.length - 1; i >= 0; i--) if (lastSeq >= seqWait[i].n) { seqWait[i].r(); seqWait.splice(i, 1); }
+    };
     es.onopen = () => { if (!ready) { ready = true; waiters.splice(0).forEach(f => f()); } };
   });
   window.__fakeDb = { tree: () => tree, cid };
