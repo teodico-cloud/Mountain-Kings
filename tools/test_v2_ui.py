@@ -97,7 +97,7 @@ async def main():
         print('both phones saved after', i + 1, 's')
         t = tree(); v = t['v2']['villages'][vid]
         heroes = v.get('heroes', {})
-        print('server after both: members', [m['name'] for m in v['members'].values()], '| hero Téo at', heroes.get('uid_alice', {}).get('at'), '| villager', vb, 'job', [p.get('job') for p in arr(v['vil']) if p['id'] == vb], '| log tail:', [l['m'] for l in arr(v['log'])][-4:])
+        print('server after both: members', [m['name'] for m in v['members'].values()], '| hero Téo at', next((h.get('at') for h in heroes.values() if h.get('own') == 'uid_alice'), 'none'), '| villager', vb, 'job', [p.get('job') for p in arr(v['vil']) if p['id'] == vb], '| log tail:', [l['m'] for l in arr(v['log'])][-4:])
         sa = await A.evaluate('JSON.stringify([window.__mk.me.heroes, window.__mk.me.vil.map(p => p.job)])')
         sb = await B.evaluate('JSON.stringify([window.__mk.me.heroes, window.__mk.me.vil.map(p => p.job)])')
         print('A and B see the same village:', sa == sb)

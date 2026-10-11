@@ -1229,7 +1229,11 @@ const V3 = (() => {
     return out.reverse();
   }
   /* Apparence : la race donne le modèle, le métier ou la classe donne l'équipement. */
-  const P_DEF = { humain: { m: 'knight', h: 1.06, w: 1.0 }, nain: { m: 'barbarian', h: 0.9, w: 1.3 }, elfe: { m: 'rogue', h: 1.12, w: 0.9 } };
+  /* Modèles provisoires (KayKit) en attendant les modèles Meshy de chaque race et classe. */
+  const P_DEF = { humain: { m: 'knight', h: 1.06, w: 1.0 }, nain: { m: 'barbarian', h: 0.9, w: 1.3 }, elfe: { m: 'rogue', h: 1.12, w: 0.9 },
+    orque: { m: 'barbarian', tex: 'orc_barbarian', h: 1.14, w: 1.18 }, halfelin: { m: 'knight', h: 0.74, w: 1.08 }, mortvivant: { m: 'rogue', tint: 0x9db3a2, h: 1.05, w: 0.86 } };
+  const CLASS_GEAR = { guerrier: ['1H_Sword', 'Round_Shield'], paladin: ['1H_Sword', 'Badge_Shield', 'Knight_Helmet'], rodeur: ['2H_Crossbow'], mage: ['Throwable'],
+    voleur: ['Knife', 'Knife_Offhand'], pretre: ['Throwable', 'Knight_Cape'], druide: ['Throwable', 'Barbarian_Cape'], necro: ['Throwable', 'Rogue_Cape'] };
   const JOB_GEAR = { bucheron: ['1H_Axe'], carriere: ['2H_Axe'], champ: [], chasse: ['1H_Crossbow'], moulin: ['Mug'], boulangerie: ['Mug'], brasserie: ['Mug'], bat: ['1H_Axe'] };
   const JOB_WORK = { bucheron: '1H_Melee_Attack_Chop', carriere: '2H_Melee_Attack_Chop', bat: '1H_Melee_Attack_Chop', chasse: '2H_Ranged_Shoot' };
   const HERO_GEAR = {
@@ -1256,11 +1260,15 @@ const V3 = (() => {
     if (!src || !THREE.SkeletonUtils) return null;
     const obj = THREE.SkeletonUtils.clone(src.scene);
     const hero = p.kind === 'hero';
-    const gear = hero ? ((HERO_GEAR[p.cls] || {})[p.race] || []) : (JOB_GEAR[p.job] || []);
+    const gear = hero ? ((HERO_GEAR[p.cls] || {})[p.race] || CLASS_GEAR[p.cls] || []) : (JOB_GEAR[p.job] || []);
     const have = new Set();
     obj.traverse(o => {
       if (GEAR_NAMES.has(o.name)) { o.visible = gear.includes(o.name); if (o.visible) have.add(o.name); }
-      if (o.isMesh) { o.castShadow = true; o.receiveShadow = false; o.frustumCulled = false; }
+      if (o.isMesh) {
+        o.castShadow = true; o.receiveShadow = false; o.frustumCulled = false;
+        if (def.tex && LIB.tex[def.tex] && !GEAR_NAMES.has(o.name)) o.material = skinMat(o.material, def.tex);
+        else if (def.tint && !GEAR_NAMES.has(o.name)) o.material = tintMat(o.material, def.tint);
+      }
     });
     for (const n of gear) {
       const G = LIB.gear[n]; if (have.has(n) || !G) continue;
@@ -1405,6 +1413,12 @@ const V3 = (() => {
     const key = orig.uuid + '|' + texName;
     if (!skinMats.has(key)) { const m = orig.clone(); m.map = LIB.tex[texName]; m.needsUpdate = true; skinMats.set(key, m); }
     return skinMats.get(key);
+  }
+  const tintMats = new Map();
+  function tintMat(orig, color) {
+    const key = orig.uuid + '|' + color;
+    if (!tintMats.has(key)) { const m = orig.clone(); m.color = m.color.clone().multiply(new THREE.Color(color)); m.needsUpdate = true; tintMats.set(key, m); }
+    return tintMats.get(key);
   }
   function makeUnitModel(type, col, orc) {
     const def = HEROES[type] ? U_DEF.hero[type] : (orc ? U_DEF.orc : U_DEF.dwarf)[type];

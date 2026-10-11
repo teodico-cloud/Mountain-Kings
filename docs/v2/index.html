@@ -335,6 +335,15 @@ ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:v
 .btn.gclaim{min-height:30px;padding:4px 9px;font-size:12px;flex:none}
 .land .hud.top > .goalrow{order:5;flex-basis:100%}
 .item .head b.row .ic{width:17px;height:17px}
+/* Création de héros : 6 races, 8 classes en petites cartes, résumé du choix */
+.optgrid.hk .optc span{padding:7px 9px;gap:1px}
+.optgrid.hk .optc span b{font-size:13.5px}
+.optgrid.hk .optc span small{font-size:11px}
+.optgrid.c4{grid-template-columns:repeat(4,minmax(0,1fr))}
+.hsum{background:var(--surface-2);border-radius:12px;padding:9px 11px;font-size:12.5px;line-height:1.45}
+.item p.muted{opacity:.55}
+.item .head b.row .chip.hero{font-size:11px;padding:1px 7px;margin-left:4px}
+@media (max-width:420px){ .optgrid.hk,.optgrid.c4{grid-template-columns:repeat(2,minmax(0,1fr))} }
 </style>
 <style>[hidden]{display:none!important}img{max-width:100%}</style>
 </head>
@@ -359,7 +368,7 @@ ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:v
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="game.js?v=e5569b3b1f"></script>
+<script src="game.js?v=3f601483ea"></script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js', { scope: './' }).then(r => {

@@ -100,7 +100,7 @@ function act(a, opts) {
   if (!test.ok) { if (!(opts && opts.quiet)) { toast(test.err); SND.sfx('error'); } return null; }
   pending.push(a); recompute(); renderAll(); refreshScene();
   scheduleCommit(150);
-  const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', claim: 'coin', crop: 'click' }[a.type];
+  const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click' }[a.type];
   if (fx && !(opts && opts.quiet)) SND.sfx(fx);
   return test;
 }
@@ -147,7 +147,7 @@ function onVillage(snap) {
     LS.set('mk2.log.' + vid, lastLogT);
   }
   if (needJoinLog && me && me.members[uid] && !me.members[uid].hi) { needJoinLog = false; act({ type: 'join' }, { quiet: true }); }
-  if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && me.heroes[uid] ? 'home' : 'hero');
+  if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
 const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal']);
@@ -355,11 +355,11 @@ function bldPanel() {
 function personPanel() {
   const v = me;
   if (selP && selP[0] === 'h') {
-    const k = selP.slice(1), hh = v.heroes[k]; if (!hh) return '';
-    const mine = k === uid, atB = hh.at != null && hh.at !== 'bat' ? v.b.find(x => x.id === hh.at) : null;
-    return `<div class="glass card"><h3><span class="row">${ico('crown', 'c-tro')}${esc(hh.name)}</span><span class="row"><small>${esc(raceName(hh.race, hh.sex))} ${esc(CLASSES[hh.cls].name.toLowerCase())} · niveau ${hh.lvl}</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>
-      <p class="note">${mine ? 'Ton héros' : 'Le héros de ' + esc((v.members[k] || {}).name || 'ton allié')} ${hh.at === 'bat' ? 'aide sur les chantiers.' : atB ? 'travaille : ' + esc(BLD[atB.type].name.toLowerCase()) + '.' : 'se promène dans le village.'}</p>
-      ${mine ? '<div class="row"><button class="btn small primary" data-act="sheet" data-s="hero">Affecter mon héros</button></div>' : ''}</div>`;
+    const hh = v.heroes[selP.slice(1)]; if (!hh) return '';
+    const mine = hh.own === uid, act = activeHero(v, hh.own) === hh;
+    return `<div class="glass card"><h3><span class="row">${ico('crown', 'c-tro')}${esc(hh.name)}</span><span class="row"><small>${esc(heroLine(hh))}</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>
+      <p class="note">${mine ? (act ? 'Ton héros actif' : 'Un de tes héros') : 'Héros de ' + esc((v.members[hh.own] || {}).name || 'ton allié')} : ${esc(heroJob(v, hh))}.</p>
+      <div class="row"><button class="btn small primary" data-act="sheet" data-s="hero" data-k="${hh.id}">${mine ? 'Fiche et travail' : 'Voir la fiche'}</button></div></div>`;
   }
   const id = selP ? +selP.slice(1) : null, p = v.vil.find(x => x.id === id); if (!p) return '';
   const sp = specOfJob(v, p), tr = TRAITS[p.tr];
@@ -372,7 +372,7 @@ function navBar() {
   const v = me;
   const idle = v.vil.some(p => p.job == null), canBuild = SHOP.some(k => (BLD[k].hall || 1) <= hallLvl(v) && countOf(v, k) < limitOf(k, hallLvl(v)) && !missingTxt(v, costOf(k, 1)));
   const unseen = v.log.some(l => l.t > (LS.get('mk2.read.' + vid) || 0) && AWAY_KINDS.has(l.k));
-  const myHero = v.heroes[uid];
+  const myHero = activeHero(v, uid);
   return `<nav class="glass nav" aria-label="Menus">
     <button data-act="sheet" data-s="build">${ico('hammer', '')}Construire${canBuild ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="people">${ico('people', '')}Villageois${v.cands.length || idle ? '<span class="dot"></span>' : ''}</button>
@@ -491,24 +491,56 @@ function sheetWorkers() {
   for (const p of list) h += `<button class="item opt" data-act="setjob" data-id="${p.id}" data-to="${b.id}" data-back="1"><div class="head"><b>${esc(p.name)}</b><small>${esc(jobName(v, p))}</small></div><p>${ico(SPEC_ICON[s], '')} ${esc(SPEC_LABEL[s])} : <b>${p.st[s]}/10</b> · ${esc(TRAITS[p.tr].name.toLowerCase())}</p></button>`;
   return h || '<p class="note">Personne de disponible.</p>';
 }
-function heroCard(k, hh, mine) {
-  const R = RACES[hh.race], C = CLASSES[hh.cls];
-  return `<div class="item hero-card"><div class="head"><b class="row">${ico('crown', 'c-tro')}${esc(hh.name)}</b><small>${esc(raceName(hh.race, hh.sex))} ${esc(C.name.toLowerCase())} · niveau ${hh.lvl}</small></div>
-    <p>${esc(R.desc)} ${esc(C.desc)}</p><p class="note">Au village : +25 % là où sa race excelle (${esc(SPEC_LABEL[R.spec].toLowerCase())}), +10 % ailleurs. Combats et compétences arrivent à l’étape suivante.</p>${mine ? '' : `<p class="note">Héros de ${esc((me.members[k] || {}).name || 'ton allié')}.</p>`}</div>`;
+/* ---------- héros : plusieurs par joueur, un actif (celui qui part en donjon) ---------- */
+const heroLine = hh => raceName(hh.race, hh.sex) + ' ' + className(hh.cls, hh.sex).toLowerCase() + ' · niveau ' + hh.lvl;
+function heroJob(v, hh) {
+  if (hh.at === 'bat') return 'aide sur les chantiers';
+  const b = hh.at != null && v.b.find(x => x.id === hh.at);
+  return b ? 'travaille : ' + BLD[b.type].name.toLowerCase() : 'se promène';
+}
+function heroCard(v, hh, on) {
+  const act = activeHero(v, hh.own) === hh;
+  return `<button class="item opt${on ? ' on' : ''}" data-act="sheet" data-s="hero" data-k="${hh.id}">
+    <div class="head"><b class="row">${ico('crown', act ? 'c-tro' : 'muted')}${esc(hh.name)}${act ? '<span class="chip hero">actif</span>' : ''}</b><small>${esc(heroLine(hh))}</small></div>
+    <p>Au village : ${esc(heroJob(v, hh))}.</p></button>`;
+}
+function heroDetail(v, hh, own) {
+  const R = RACES[hh.race], C = CLASSES[hh.cls], act = activeHero(v, hh.own) === hh;
+  const need = heroXpNeed(hh.lvl), xp = Math.min(100, (hh.xp || 0) / need * 100);
+  const lock = l => hh.lvl >= l ? '' : ' muted';
+  let h = `<div class="sec"><h4>Fiche de ${esc(hh.name)}</h4><div class="item feature">
+    <div class="head"><b>${esc(heroLine(hh))}</b><small>${esc(C.role)}</small></div>
+    <div class="bar"><i style="width:${xp.toFixed(0)}%"></i></div>
+    <p class="note">Expérience : ${fmtN(hh.xp || 0)} sur ${fmtN(need)}. Elle se gagnera dans les donjons.</p>
+    <p><b>Race :</b> ${esc(R.desc)} Au village : +25 % en ${esc(SPEC_LABEL[R.spec].toLowerCase())}, +10 % ailleurs. En combat : ${esc(R.passive)}</p>
+    <p><b>Classe :</b> ${esc(C.desc)}</p>
+    ${own && !act ? `<div class="row"><button class="btn small primary" data-act="heroAct" data-id="${hh.id}">Partir en donjon avec ${esc(hh.name)}</button></div>` : act ? `<p class="note">C’est ${own ? 'ton' : 'le'} héros actif : celui qui part en donjon.</p>` : ''}</div>
+    <div class="item"><b>Compétences</b>${C.skills.map((s, i) => `<p class="${lock(SKILL_LVLS[i])}"><b>${esc(s[0])}</b> · niveau ${SKILL_LVLS[i]} : ${esc(s[1])}</p>`).join('')}
+    <b>Passifs de classe</b>${C.passives.map((s, i) => `<p class="${lock(PASSIVE_LVLS[i])}"><b>${esc(s[0])}</b> · niveau ${PASSIVE_LVLS[i]} : ${esc(s[1])}</p>`).join('')}
+    <b>Spécialisation au niveau ${SPEC_LVL}</b><p class="${lock(SPEC_LVL)}">${C.specs.map(s => `<b>${esc(s[0])}</b> (${esc(s[1].replace(/\.$/, '').toLowerCase())})`).join(' ou ')}.</p></div>
+    <details class="help"><summary>Ce que chaque niveau débloque</summary><ul>${Object.keys(LEVELS).map(l => `<li>Niveau ${l} : ${esc(LEVELS[l])}</li>`).join('')}</ul><p class="note">À chaque niveau : plus de vie et de dégâts, et 1 point pour renforcer la compétence de son choix.</p></details></div>`;
+  if (own) {
+    const takenBy = to => { const o = heroesAt(v, to).filter(x => x.id !== hh.id); return o.length >= HERO_CAP(to) ? (o.length > 1 ? 'complet' : 'pris : ' + o[0].name) : ''; };
+    const opt = (to, label, bonus) => { const tk = to == null ? '' : takenBy(to), on = hh.at === to || (to == null && hh.at == null);
+      return `<button class="item opt${on ? ' on' : ''}${tk && !on ? ' off' : ''}" data-act="heroAt" data-id="${hh.id}" data-to="${to == null ? '' : to}"${tk && !on ? ' disabled' : ''}><div class="head"><b>${esc(label)}</b><small>${esc(tk && !on ? tk : bonus)}</small></div></button>`; };
+    h += `<div class="sec"><h4>Que fait ${esc(hh.name)} au village ?</h4>`;
+    h += opt(null, 'Se promener', 'aucun bonus');
+    h += opt('bat', 'Aider sur les chantiers', R.spec === 'constr' ? '+25 %' : '+10 %');
+    for (const b of v.b.filter(x => BLD[x.type].spec && x.lvl > 0)) h += opt(b.id, BLD[b.type].name, R.spec === BLD[b.type].spec ? '+25 %' : '+10 %');
+    h += '<p class="note">Un héros par bâtiment, deux sur les chantiers.</p></div>';
+  }
+  return h;
 }
 function sheetHero() {
-  const v = me, hh = v.heroes[uid];
-  if (!hh) return '<p class="note">Crée d’abord ton héros.</p><button class="btn primary" data-act="heroForm">Créer mon héros</button>';
-  let h = heroCard(uid, hh, true);
-  const R = RACES[hh.race];
-  const opt = (to, label, bonus) => `<button class="item opt${hh.at === to || (to == null && hh.at == null) ? ' on' : ''}" data-act="heroAt" data-to="${to == null ? '' : to}"><div class="head"><b>${esc(label)}</b><small>${bonus}</small></div></button>`;
-  h += `<div class="sec"><h4>Que fait ${esc(hh.name)} au village ?</h4>`;
-  h += opt(null, 'Se promener', 'aucun bonus');
-  h += opt('bat', 'Aider sur les chantiers', R.spec === 'constr' ? '+25 %' : '+10 %');
-  for (const b of v.b.filter(x => BLD[x.type].spec && x.lvl > 0)) h += opt(b.id, BLD[b.type].name, R.spec === BLD[b.type].spec ? '+25 %' : '+10 %');
-  h += '</div>';
-  const pk = partnerId(v);
-  if (pk && v.heroes[pk]) h += `<div class="sec"><h4>Le héros de ${esc(v.members[pk].name)}</h4>${heroCard(pk, v.heroes[pk], false)}</div>`;
+  const v = me, mine = heroesOf(v, uid), slots = heroSlots(v);
+  if (!mine.length) return '<p class="note">Crée d’abord ton héros.</p><button class="btn primary" data-act="heroForm">Créer mon héros</button>';
+  const sel = (sheetArg && v.heroes[sheetArg]) || activeHero(v, uid);
+  let h = `<div class="sec"><h4>Tes héros · ${mine.length} sur ${slots}</h4>${mine.map(x => heroCard(v, x, x === sel)).join('')}`;
+  if (mine.length < slots) h += `<button class="btn primary" data-act="newHero">${ico('crown', '')}Nouveau héros</button>`;
+  else if (mine.length < 4) h += `<p class="note">${hasTavern(v) ? 'Agrandissez la taverne' : 'Construisez la taverne'} pour loger un héros de plus (4 au plus).</p>`;
+  h += '</div>' + heroDetail(v, sel, sel.own === uid);
+  const pk = partnerId(v), ph = pk ? heroesOf(v, pk) : [];
+  if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
 const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble' };
@@ -521,7 +553,7 @@ function inviteLink() { return location.origin + location.pathname + '?join=' + 
 function sheetVillage() {
   const v = me, t = now(), si = seasonIdx(v, t), pk = partnerId(v);
   let h = '';
-  h += `<div class="sec"><h4>Habitants</h4><div class="item">${Object.entries(v.members).map(([k, m]) => `<div class="row split"><b class="row">${isOnline(k) || k === uid ? '<span class="dotx on"></span>' : '<span class="dotx"></span>'}${esc(m.name)}${k === uid ? ' (toi)' : ''}</b><small class="note">${v.heroes[k] ? esc(v.heroes[k].name) : 'pas encore de héros'}</small></div>`).join('')}</div>`;
+  h += `<div class="sec"><h4>Habitants</h4><div class="item">${Object.entries(v.members).map(([k, m]) => `<div class="row split"><b class="row">${isOnline(k) || k === uid ? '<span class="dotx on"></span>' : '<span class="dotx"></span>'}${esc(m.name)}${k === uid ? ' (toi)' : ''}</b><small class="note">${heroesOf(v, k).length ? esc(heroesOf(v, k).map(x => x.name).join(', ')) : 'pas encore de héros'}</small></div>`).join('')}</div>`;
   if (!pk) h += `<div class="item feature"><b class="row">${ico('link', 'c-tro')}Inviter ta partenaire</b><p>Envoie-lui ce lien : en l’ouvrant, elle rejoindra ce village et créera son héros.</p>
     <input type="text" readonly value="${esc(inviteLink())}" class="linkbox" aria-label="Lien d’invitation">
     <div class="row"><button class="btn small primary" data-act="copyLink">Copier le lien</button>${navigator.share ? '<button class="btn small" data-act="shareLink">Partager</button>' : ''}</div></div>`;
@@ -558,7 +590,7 @@ function sheetHelp() {
     + sec('Les villageois', ['Chacun a une note sur 10 dans six spécialités. Sa note dans son métier décide de ce qu’il produit : 1 donne 60 %, 5 normal, 10 donne 50 % de plus.', 'Ils progressent en pratiquant, de plus en plus lentement.', 'Leur caractère compte : un travailleur produit plus, un joyeux remonte le moral, un gourmand mange plus.', 'Des voyageurs se présentent s’il y a une place libre dans les maisons, à manger et un bon moral. Vous avez un jour pour les accueillir.'])
     + sec('Nourriture et saisons', ['Chaque villageois mange une ration par heure : du pain ou de la viande. Des repas variés remontent le moral.', 'Une saison dure 2 jours. En hiver, les champs ne donnent rien : faites des réserves en automne.', 'Sans nourriture, le moral s’effondre, et au bout d’un jour quelqu’un quitte le village.', 'Touchez un champ pour choisir sa culture : blé ou orge. L’orge devient bière à la brasserie ; servie à la taverne, la bière remonte le moral, et il en faut pour les fêtes.'])
     + sec('Construire', ['Les bâtisseurs font avancer les chantiers, plus vite s’ils sont doués en construction. Sans bâtisseur, ça avance quand même un peu.', 'Agrandir la halle débloque des bâtiments, plus de bâtisseurs et plus de chantiers à la fois.'])
-    + sec('Vos héros', ['Au village, votre héros se promène. Affectez-le à un bâtiment : +25 % là où sa race excelle (nain : minage, elfe : chasse, humain : construction), +10 % ailleurs.', 'Les donjons, les combats et l’équipement arrivent aux prochaines étapes.']);
+    + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10. Les donjons arrivent à l’étape suivante.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
@@ -595,25 +627,35 @@ function joinHTML() {
     <p class="err" id="jErr" hidden></p>
     <button class="btn primary" type="submit"${busy ? ' disabled' : ''}>${busy ? 'Arrivée…' : 'Rejoindre le village'}</button></form>`;
 }
-function heroHTML() {
-  const used = me ? Object.values(me.heroes).map(h => h && h.col) : [];
+/* Résumé de la race et de la classe choisies, mis à jour à chaque choix. */
+function heroSummary(race, cls, sex) {
+  const R = RACES[race], C = CLASSES[cls]; if (!R || !C) return '';
+  return `<b>${esc(raceName(race, sex))}</b> : ${esc(R.desc)} Au village : +25 % en ${esc(SPEC_LABEL[R.spec].toLowerCase())}. En combat : ${esc(R.passive)}<br>
+    <b>${esc(className(cls, sex))}</b> (${esc(C.role.toLowerCase())}) : ${esc(C.desc)} Compétences : ${C.skills.map(s => esc(s[0])).join(', ')}.`;
+}
+function heroHTML(extra) {
+  const used = me ? heroesOf(me, uid).map(h => h.col) : [];
   const pick = COLORS.find(c => !used.includes(c)) || COLORS[1];
   const card = (name, val, title, txt, checked) => `<label class="optc"><input type="radio" name="${name}" value="${val}"${checked ? ' checked' : ''}><span><b>${esc(title)}</b><small>${esc(txt)}</small></span></label>`;
   return `<form id="heroForm" novalidate style="display:grid;gap:12px">
-    <p class="eyebrow">${esc(me ? me.name : '')}</p><h2>Crée ton héros</h2>
-    <p class="note">Tu ne joues qu’un héros : il partira en donjon et deviendra plus fort. Au village, il se promène et donne un coup de main.</p>
+    <p class="eyebrow">${esc(me ? me.name : '')}</p><h2>${extra ? 'Un nouveau héros' : 'Crée ton héros'}</h2>
+    <p class="note">${extra ? 'Il rejoint ta compagnie. À la taverne, tu choisis quel héros part en donjon ; les autres travaillent au village.' : 'Ton héros partira en donjon et deviendra plus fort. Au village, il se promène et donne un coup de main. Plus tard, la taverne t’en fera recruter d’autres.'}</p>
     <div class="hf2"><div class="col">
       <label>Nom du héros<input type="text" id="hName" maxlength="18" placeholder="Ex. Brokk" autocomplete="off"></label>
       <fieldset class="fs"><legend>Homme ou femme</legend><div class="optrow">${card('hSex', 'm', 'Homme', '', true)}${card('hSex', 'f', 'Femme', '', false)}</div></fieldset>
       <fieldset class="fs"><legend>Couleur</legend>${swatches('hCol', pick)}</fieldset>
-      <p class="note">D’autres races et classes arriveront plus tard.</p>
+      <p class="note hsum" id="hSum">${heroSummary(RACE_KEYS[0], CLASS_KEYS[0], 'm')}</p>
     </div><div class="col">
-      <fieldset class="fs"><legend>Race</legend><div class="optgrid">${RACE_KEYS.map((k, i) => card('hRace', k, RACES[k].name, RACES[k].desc + ' Bonus : ' + SPEC_LABEL[RACES[k].spec].toLowerCase() + '.', i === 0)).join('')}</div></fieldset>
-      <fieldset class="fs"><legend>Classe</legend><div class="optgrid">${CLASS_KEYS.map((k, i) => card('hCls', k, CLASSES[k].name, CLASSES[k].desc, i === 0)).join('')}</div></fieldset>
+      <fieldset class="fs"><legend>Race</legend><div class="optgrid hk">${RACE_KEYS.map((k, i) => card('hRace', k, RACES[k].name, SPEC_LABEL[RACES[k].spec], i === 0)).join('')}</div></fieldset>
+      <fieldset class="fs"><legend>Classe</legend><div class="optgrid hk c4">${CLASS_KEYS.map((k, i) => card('hCls', k, CLASSES[k].name, CLASSES[k].role, i === 0)).join('')}</div></fieldset>
     </div></div>
     <p class="err" id="hErr" hidden></p>
-    <button class="btn primary" type="submit">Entrer au village</button></form>`;
+    <div class="row">${extra ? '<button class="btn grow" type="button" data-act="closeModal">Annuler</button>' : ''}<button class="btn primary grow" type="submit">${extra ? 'Recruter' : 'Entrer au village'}</button></div></form>`;
 }
+document.addEventListener('change', e => {
+  if (!e.target.closest || !e.target.closest('#heroForm')) return;
+  const el = $('#hSum'); if (el) el.innerHTML = heroSummary(radio('hRace'), radio('hCls'), radio('hSex'));
+});
 function renderModal() {
   let h = '';
   const M = modal;
@@ -626,6 +668,7 @@ function renderModal() {
   } else if (M && M.kind === 'dberr') h = `<h2>La vallée ne répond pas</h2><p>Impossible de joindre le serveur du jeu. Vérifie ta connexion internet, puis réessaie.</p><button class="btn primary" data-act="reload">Réessayer</button>`;
   else if (M && M.kind === 'denied') h = `<h2>Accès refusé</h2><p>Le serveur a refusé l’accès au village. Les règles de la base de données ne sont peut-être pas encore à jour, ou ce village a déjà ses deux habitants.</p><button class="btn primary" data-act="reload">Réessayer</button>`;
   else if (M && M.kind === 'info') h = `<h2>${esc(M.title)}</h2><p>${esc(M.text)}</p><button class="btn primary" data-act="closeModal">Compris</button>`;
+  else if (M && M.kind === 'newhero' && me) h = heroHTML(true);
   else if (M && M.kind === 'nogl') h = `<h2>La 3D ne s’affiche pas</h2><p>Cet appareil ou ce navigateur ne permet pas l’affichage 3D. Les menus marchent quand même, mais la carte du village reste vide.</p><button class="btn primary" data-act="closeModal">Compris</button>`;
   else if (M && M.kind === 'cand' && me) {
     const c = me.cands.find(x => x.id === M.id);
@@ -691,7 +734,12 @@ const ACT = {
   unjob: b => act({ type: 'job', vid: +b.dataset.id, to: null }),
   accept: b => { const r = act({ type: 'accept', id: +b.dataset.id }); if (r) { toast('Bienvenue à ' + r.name + ' ! Donnez-lui un métier.'); if (modal && modal.kind === 'cand') modal = null; renderAll(); } },
   refuse: b => { if (act({ type: 'refuse', id: +b.dataset.id })) { if (modal && modal.kind === 'cand') modal = null; renderAll(); } },
-  heroAt: b => { const to = b.dataset.to === '' ? null : b.dataset.to === 'bat' ? 'bat' : +b.dataset.to; if (act({ type: 'heroAt', to })) toast(to == null ? 'Ton héros se promène.' : 'Ton héros se met au travail.'); },
+  heroAt: b => {
+    const to = b.dataset.to === '' ? null : b.dataset.to === 'bat' ? 'bat' : +b.dataset.to, hh = me.heroes[b.dataset.id];
+    if (act({ type: 'heroAt', hid: b.dataset.id, to })) toast((hh ? hh.name : 'Ton héros') + (to == null ? ' se promène.' : ' se met au travail.'));
+  },
+  heroAct: b => { const hh = me.heroes[b.dataset.id]; if (act({ type: 'heroAct', hid: b.dataset.id }) && hh) toast(hh.name + ' partira en donjon.'); },
+  newHero: () => { closeSheet(true); modal = { kind: 'newhero' }; renderAll(); },
   heroForm: () => { closeSheet(true); setMode('hero'); },
   feast: () => { if (act({ type: 'feast' })) toast('C’est la fête à la taverne !'); },
   claim: b => act({ type: 'claim', id: b.dataset.id }),
@@ -706,7 +754,7 @@ const ACT = {
   install: () => { const e = installEvt; if (!e) return; installEvt = null; e.prompt(); (e.userChoice || Promise.resolve()).finally(() => renderAll()); },
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
-const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'claim', 'crop']);
+const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (!QUIET.has(b.dataset.act)) SND.sfx('click');
@@ -730,8 +778,10 @@ document.addEventListener('submit', e => {
   } else {
     const name = cleanName($('#hName').value, 18);
     if (!name) { formErr('#hErr', 'Donne un nom à ton héros.'); return; }
+    const extra = !!(modal && modal.kind === 'newhero');
     const r = act({ type: 'hero', name, race: radio('hRace'), cls: radio('hCls'), sex: radio('hSex'), col: safeColor(radio('hCol')) });
-    if (r) { setMode('home'); modal = { kind: 'welcome', name }; renderAll(); }
+    if (r && extra) { modal = null; toast(name + ' rejoint ta compagnie !'); openSheet('hero', r.id); }
+    else if (r) { setMode('home'); modal = { kind: 'welcome', name }; renderAll(); }
   }
 });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { resim(); renderAll(); refreshScene(); } });

@@ -1,7 +1,7 @@
 /* Essais des règles du nouveau jeu (village commun). Usage : node tools/test_v2.js */
 const fs = require('fs'), path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '../src2/p2_rules.js'), 'utf8');
-const R = new Function(src + '\nreturn { VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone };')();
+const R = new Function(src + '\nreturn { VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone };')();
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
 const H = 3600000, D = 24 * H, T0 = Date.UTC(2026, 9, 12, 8, 0, 0);
@@ -74,7 +74,7 @@ ok(R.moraleOf(vf, vf.t) < 40, 'moral en berne pendant la famine (' + R.moraleOf(
 /* 9. Héros */
 let vh = R.clone(v); vh.members.u2 = { name: 'Léa', t: T0 };
 ok(R.applyV(vh, { type: 'hero', name: 'Brokk', race: 'nain', cls: 'guerrier', col: '#2F8A63' }, who).ok, 'création du héros de Téo');
-ok(!R.applyV(vh, { type: 'hero', name: 'Bis', race: 'nain', cls: 'guerrier' }, who).ok, 'un seul héros par joueur');
+ok(!R.applyV(vh, { type: 'hero', name: 'Bis', race: 'nain', cls: 'guerrier' }, who).ok, 'pas de deuxième héros sans taverne');
 ok(R.applyV(vh, { type: 'join' }, who2).ok && vh.log.some(l => l.k === 'join'), 'arrivée de Léa annoncée');
 ok(R.applyV(vh, { type: 'hero', name: 'Aelith', race: 'elfe', cls: 'rodeur' }, who2).ok, 'création du héros de Léa');
 const chasse = vh.b.find(x => x.type === 'chasse');
@@ -82,6 +82,18 @@ const before = R.bldRate(vh, chasse, vh.t).viande;
 R.applyV(vh, { type: 'heroAt', to: chasse.id }, who2);
 const after = R.bldRate(vh, chasse, vh.t).viande;
 ok(Math.abs(after / before - 1.25) < 1e-9, 'une elfe au pavillon de chasse : +25 %');
+ok(!R.applyV(R.clone(vh), { type: 'heroAt', to: chasse.id }, who).ok, 'un seul héros par bâtiment');
+ok(R.RACE_KEYS.length === 6 && R.CLASS_KEYS.length === 8 && R.CLASS_KEYS.every(k => R.CLASSES[k].skills.length === 3 && R.CLASSES[k].passives.length === 2 && R.CLASSES[k].specs.length === 2), '6 races et 8 classes, chacune avec 3 compétences, 2 passifs, 2 spécialisations');
+/* Plusieurs héros : un emplacement de plus par niveau de taverne */
+vh.b.push({ id: vh.nid++, type: 'taverne', lvl: 1, gx: 18, gz: 2, up: null });
+ok(R.heroSlots(vh) === 2, 'taverne niveau 1 : 2 emplacements de héros');
+r = R.applyV(vh, { type: 'hero', name: 'Grosh', race: 'orque', cls: 'necro', sex: 'm' }, who);
+ok(r.ok && R.heroesOf(vh, 'u1').length === 2 && R.activeHero(vh, 'u1').name === 'Brokk', 'deuxième héros (orque nécromancien), Brokk reste le héros actif');
+ok(!R.applyV(R.clone(vh), { type: 'hero', name: 'Trois', race: 'halfelin', cls: 'voleur' }, who).ok, 'pas de troisième héros avec une taverne niveau 1');
+ok(R.applyV(vh, { type: 'heroAct', hid: r.id }, who).ok && R.activeHero(vh, 'u1').name === 'Grosh', 'Grosh devient le héros actif');
+ok(!R.applyV(R.clone(vh), { type: 'heroAct', hid: r.id }, who2).ok, 'on ne prend pas le héros de l’autre');
+const buch = vh.b.find(x => x.type === 'bucheron'), b0 = R.bldRate(vh, buch, vh.t).bois;
+ok(R.applyV(vh, { type: 'heroAt', hid: r.id, to: buch.id }, who).ok && Math.abs(R.bldRate(vh, buch, vh.t).bois / b0 - 1.25) < 1e-9, 'un orque à la cabane de bûcheron : +25 %');
 
 /* 10. Fête */
 ok(!R.applyV(R.clone(v), { type: 'feast' }, who).ok, 'pas de fête sans taverne');

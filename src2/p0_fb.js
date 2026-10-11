@@ -24,8 +24,16 @@ function normVillage(v) {
   v.goals = fbArr(v.goals);
   v.cnt = Object.assign({ acc: 0, fete: 0, win: 0 }, v.cnt);
   v.members = fbObj(v.members);
-  v.heroes = fbObj(v.heroes);
-  for (const k of Object.keys(v.heroes)) v.heroes[k] = Object.assign({ lvl: 1, xp: 0, at: null }, v.heroes[k]);
+  /* Héros : un dossier par héros (h12…), avec son propriétaire. L'ancien format (un héros par joueur, rangé sous son uid) est converti. */
+  const H = {};
+  for (const [k, h0] of Object.entries(fbObj(v.heroes))) {
+    if (!h0 || typeof h0 !== 'object') continue;
+    const old = !h0.own, id = old ? 'h_' + k : (h0.id || k);
+    const h = Object.assign({ lvl: 1, xp: 0, sp: 0, spec: null, at: null, n: 0 }, h0, { id, own: old ? k : h0.own, sk: Object.assign({}, h0.sk) });
+    H[id] = h;
+    if (old && v.members[k] && !v.members[k].hero) v.members[k].hero = id;
+  }
+  v.heroes = H;
   v.r = Object.assign({ orge: 0, biere: 0 }, v.r);
   return v;
 }

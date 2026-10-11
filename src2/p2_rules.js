@@ -31,18 +31,64 @@ const skillF = s => 0.5 + Math.max(1, Math.min(10, s | 0)) / 10;     // 1 → 60
 const xpNeed = s => 6 * s;                                           // heures de travail pour passer à la note suivante
 
 /* ---------- races, classes, caractères ---------- */
+/* Race : apparence, bonus au village (spec : +25 % là où le héros travaille) et passif en combat.
+   Les villageois ne sont que humains, nains ou elfes (VIL_RACES). */
 const RACES = {
-  humain: { name: 'Humain', fem: 'Humaine', plural: 'Humains', bonus: { constr: 1, agri: 1 }, spec: 'constr', desc: 'Polyvalent : bâtisseur et cultivateur.' },
-  nain: { name: 'Nain', fem: 'Naine', plural: 'Nains', bonus: { mine: 2 }, spec: 'mine', desc: 'Né dans la roche : excellent mineur.' },
-  elfe: { name: 'Elfe', fem: 'Elfe', plural: 'Elfes', bonus: { chasse: 2 }, spec: 'chasse', desc: 'Œil perçant : chasseur hors pair.' },
+  humain: { name: 'Humain', fem: 'Humaine', plural: 'Humains', bonus: { constr: 1, agri: 1 }, spec: 'constr', desc: 'Polyvalent : bâtisseur et cultivateur.', passive: 'Apprend vite : +10 % d’expérience.' },
+  nain: { name: 'Nain', fem: 'Naine', plural: 'Nains', bonus: { mine: 2 }, spec: 'mine', desc: 'Né dans la roche : excellent mineur.', passive: 'Robuste : +15 % de vie.' },
+  elfe: { name: 'Elfe', fem: 'Elfe', plural: 'Elfes', bonus: { chasse: 2 }, spec: 'chasse', desc: 'Œil perçant : chasseur hors pair.', passive: 'Agile : se déplace et esquive mieux (+10 %).' },
+  orque: { name: 'Orque', fem: 'Orque', plural: 'Orques', bonus: { buch: 2 }, spec: 'buch', desc: 'Force brute : abat les arbres comme personne.', passive: 'Rage : jusqu’à +25 % de dégâts quand il est blessé.' },
+  halfelin: { name: 'Halfelin', fem: 'Halfeline', plural: 'Halfelins', bonus: { agri: 2 }, spec: 'agri', desc: 'Petit et malin : il a la main verte.', passive: 'Chanceux : plus de coups critiques et de meilleurs coffres.' },
+  mortvivant: { name: 'Mort-vivant', fem: 'Morte-vivante', plural: 'Morts-vivants', bonus: { arti: 2 }, spec: 'arti', desc: 'Infatigable : un artisan patient (moulin, boulangerie, brasserie).', passive: 'Increvable : se relève une fois par donjon.' },
 };
-const RACE_KEYS = ['humain', 'nain', 'elfe'];
+const RACE_KEYS = ['humain', 'nain', 'elfe', 'orque', 'halfelin', 'mortvivant'];
+/* Classe : rôle en donjon, 3 compétences (niveaux 1, 3 et 5), 2 passifs (niveaux 4 et 7), 2 spécialisations (niveau 10). */
 const CLASSES = {
-  guerrier: { name: 'Guerrier', desc: 'Encaisse les coups et protège ses alliés.' },
-  rodeur: { name: 'Rôdeur', desc: 'Arc ou arbalète : il frappe de loin.' },
-  mage: { name: 'Mage', desc: 'Feu et glace : il touche des groupes entiers.' },
+  guerrier: { name: 'Guerrier', fem: 'Guerrière', role: 'Encaisse', desc: 'Au contact, il encaisse les coups et protège son allié.',
+    skills: [['Charge', 'Fonce sur un ennemi et l’étourdit.'], ['Tourbillon', 'Frappe tout autour de lui.'], ['Cri de guerre', 'Attire les monstres sur lui et encaisse mieux.']],
+    passives: [['Peau dure', '+10 % d’armure.'], ['Second souffle', 'Récupère un peu de vie à chaque monstre vaincu.']],
+    specs: [['Berserker', 'Frappe plus fort, encaisse un peu moins.'], ['Protecteur', 'Encaisse encore mieux et protège son allié.']] },
+  paladin: { name: 'Paladin', fem: 'Paladine', role: 'Encaisse et soigne', desc: 'Armure lourde et lumière sacrée : il frappe et se soigne.',
+    skills: [['Marteau sacré', 'Frappe un ennemi et l’étourdit.'], ['Bouclier de lumière', 'Protège un allié des coups.'], ['Consécration', 'Une zone qui brûle les monstres et soigne.']],
+    passives: [['Foi', '+10 % de soins.'], ['Aura', 'L’allié proche encaisse mieux.']],
+    specs: [['Croisé', 'Plus de dégâts sacrés.'], ['Gardien', 'Des soins et des boucliers plus forts.']] },
+  rodeur: { name: 'Rôdeur', fem: 'Rôdeuse', role: 'Tire de loin', desc: 'Arc ou arbalète : il frappe de loin.',
+    skills: [['Roulade', 'Saute en arrière en tirant.'], ['Pluie de flèches', 'Blesse tout dans une zone.'], ['Tir perçant', 'Une flèche qui traverse une ligne d’ennemis.']],
+    passives: [['Œil de faucon', '+10 % de portée.'], ['Pied léger', '+10 % de vitesse.']],
+    specs: [['Tireur d’élite', 'Des tirs plus puissants.'], ['Dompteur', 'Un familier bien plus fort.']] },
+  mage: { name: 'Mage', fem: 'Mage', role: 'Frappe en zone', desc: 'Feu et glace : il touche des groupes entiers.',
+    skills: [['Boule de feu', 'Explose sur un groupe.'], ['Nova de glace', 'Gèle les monstres autour de lui.'], ['Téléportation', 'Se met à l’abri un peu plus loin.']],
+    passives: [['Concentration', 'Ses compétences reviennent 10 % plus vite.'], ['Bouclier de mana', 'Encaisse 10 % de dégâts en moins.']],
+    specs: [['Pyromancien', 'Le feu brûle plus longtemps.'], ['Cryomancien', 'La glace gèle plus longtemps.']] },
+  voleur: { name: 'Voleur', fem: 'Voleuse', role: 'Frappe vite', desc: 'Dagues et ruses : il frappe vite au contact.',
+    skills: [['Pas de l’ombre', 'Apparaît derrière un ennemi.'], ['Lames empoisonnées', 'Ses coups empoisonnent.'], ['Bombe fumigène', 'Devient invisible un instant.']],
+    passives: [['Coups précis', '+10 % de coups critiques.'], ['Esquive', '+10 % de chances d’esquiver.']],
+    specs: [['Assassin', 'Des coups critiques dévastateurs.'], ['Saboteur', 'Des pièges et des bombes.']] },
+  pretre: { name: 'Prêtre', fem: 'Prêtresse', role: 'Soigne', desc: 'La lumière qui soigne et qui punit.',
+    skills: [['Lumière sacrée', 'Soigne un héros.'], ['Châtiment', 'Frappe un ennemi de lumière.'], ['Prière', 'Soigne les deux héros.']],
+    passives: [['Bénédiction', '+10 % de vie pour les deux héros.'], ['Ferveur', 'Soins +15 %.']],
+    specs: [['Lumière', 'Des soins puissants.'], ['Ombre', 'Des dégâts d’ombre.']] },
+  druide: { name: 'Druide', fem: 'Druidesse', role: 'Change de forme', desc: 'Il prend la forme d’un ours pour encaisser ou d’un loup pour frapper.',
+    skills: [['Forme d’ours', 'Encaisse beaucoup mieux.'], ['Forme de loup', 'Frappe très vite.'], ['Racines', 'Immobilise les monstres.']],
+    passives: [['Régénération', 'Récupère de la vie peu à peu.'], ['Instinct', '+10 % de dégâts en forme animale.']],
+    specs: [['Gardien sauvage', 'L’ours devient un roc.'], ['Fauve', 'Le loup devient redoutable.']] },
+  necro: { name: 'Nécromancien', fem: 'Nécromancienne', role: 'Invoque', desc: 'Il fait se battre des squelettes à sa place.',
+    skills: [['Squelettes', 'Trois squelettes se battent pour lui.'], ['Drain de vie', 'Vole la vie d’un ennemi.'], ['Explosion de cadavre', 'Fait exploser un monstre vaincu.']],
+    passives: [['Armée des morts', 'Squelettes +20 % de vie.'], ['Moisson', 'Chaque monstre vaincu recharge un peu ses compétences.']],
+    specs: [['Maître des os', 'Plus de squelettes, plus solides.'], ['Faucheur', 'Drains et malédictions plus forts.']] },
 };
-const CLASS_KEYS = ['guerrier', 'rodeur', 'mage'];
+const CLASS_KEYS = ['guerrier', 'paladin', 'rodeur', 'mage', 'voleur', 'pretre', 'druide', 'necro'];
+const className = (cls, sex) => sex === 'f' && CLASSES[cls].fem ? CLASSES[cls].fem : CLASSES[cls].name;
+/* Progression du héros, niveau par niveau (jusqu'au 10 pour l'instant). Chaque niveau : plus de vie et de dégâts, et 1 point de compétence. */
+const HERO_MAX_LVL = 10;
+const SKILL_LVLS = [1, 3, 5], PASSIVE_LVLS = [4, 7], SPEC_LVL = 10;
+const LEVELS = { 1: '1re compétence', 2: '4e potion par donjon', 3: '2e compétence', 4: '1er passif de classe', 5: '3e compétence', 6: 'Le familier', 7: '2e passif de classe', 8: 'Emplacement du bijou', 9: '2 points de compétence d’un coup', 10: 'Spécialisation : 2 voies au choix' };
+const heroXpNeed = lvl => Math.round(100 * Math.pow(lvl, 1.6));       // expérience pour passer au niveau suivant
+/* Emplacements de héros par joueur : 1, plus 1 par niveau de taverne (4 au plus). */
+const heroSlots = v => { const t = v.b.find(b => b.type === 'taverne' && b.lvl > 0); return Math.min(4, 1 + (t ? t.lvl : 0)); };
+const heroesOf = (v, uid) => Object.values(v.heroes || {}).filter(h => h && h.own === uid).sort((a, b) => (a.n || 0) - (b.n || 0));
+const activeHero = (v, uid) => { const m = v.members && v.members[uid], h = m && m.hero && v.heroes[m.hero]; return h && h.own === uid ? h : heroesOf(v, uid)[0] || null; };
+const HERO_CAP = t => t === 'bat' ? 2 : 1;                             // héros au plus par bâtiment (2 sur les chantiers)
 const TRAITS = {
   travailleur: { name: 'Travailleur', desc: 'Produit 15 % de plus.', prod: 1.15 },
   paresseux: { name: 'Paresseux', desc: 'Produit 15 % de moins.', prod: 0.85 },
@@ -420,12 +466,22 @@ function applyV(v, a, who) {
       return { ok: true };
     }
     case 'hero': {
+      /* Nouveau héros : 1 emplacement au départ, puis 1 de plus par niveau de taverne (4 au plus). */
       if (!v.members[who.uid]) return fail('Tu ne fais pas partie de ce village.');
-      if (v.heroes[who.uid]) return fail('Ton héros existe déjà.');
+      const mine = heroesOf(v, who.uid);
+      if (mine.length >= heroSlots(v)) return fail(mine.length >= 4 ? 'Tu as déjà 4 héros, le maximum.' : 'Plus de place : agrandissez la taverne pour loger un héros de plus.');
       if (!RACES[a.race] || !CLASSES[a.cls]) return fail('Choisis une race et une classe.');
       const name = String(a.name || '').trim().slice(0, 18); if (!name) return fail('Donne un nom à ton héros.');
-      v.heroes[who.uid] = { name, race: a.race, cls: a.cls, sex: a.sex === 'f' ? 'f' : 'm', col: COLORS.includes(a.col) ? a.col : COLORS[0], lvl: 1, xp: 0, at: null };
-      addLog(v, t, name + ', ' + raceName(a.race, a.sex).toLowerCase() + ' ' + CLASSES[a.cls].name.toLowerCase() + ', arrive au village.', 'hero');
+      const n = v.nid++, id = 'h' + n, sex = a.sex === 'f' ? 'f' : 'm';
+      v.heroes[id] = { id, n, own: who.uid, name, race: a.race, cls: a.cls, sex, col: COLORS.includes(a.col) ? a.col : COLORS[0], lvl: 1, xp: 0, sp: 0, sk: {}, spec: null, at: null };
+      if (!activeHero(v, who.uid) || !v.members[who.uid].hero) v.members[who.uid].hero = id;
+      addLog(v, t, name + ', ' + raceName(a.race, sex).toLowerCase() + ' ' + className(a.cls, sex).toLowerCase() + ', ' + (mine.length ? 'rejoint la compagnie de ' + nm : 'arrive au village') + '.', 'hero');
+      return { ok: true, id };
+    }
+    case 'heroAct': {
+      /* Le héros qui part en donjon (on le choisit à la taverne). */
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      v.members[who.uid].hero = hh.id;
       return { ok: true };
     }
     case 'build': {
@@ -499,11 +555,15 @@ function applyV(v, a, who) {
       return { ok: true };
     }
     case 'heroAt': {
-      const hh = v.heroes[who.uid]; if (!hh) return fail('Crée d’abord ton héros.');
+      /* Affecter un de ses héros (le héros actif si aucun n'est précisé) : 1 héros par bâtiment, 2 sur les chantiers. */
+      const hh = a.hid ? v.heroes[a.hid] : activeHero(v, who.uid);
+      if (!hh) return fail('Crée d’abord ton héros.');
+      if (hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
       if (a.to != null && a.to !== 'bat') {
         const b = v.b.find(x => x.id === a.to);
         if (!b || !BLD[b.type].spec || b.lvl < 1) return fail('Ton héros ne peut pas aider ici.');
       }
+      if (a.to != null && a.to !== hh.at && heroesAt(v, a.to).filter(x => x.id !== hh.id).length >= HERO_CAP(a.to)) return fail(a.to === 'bat' ? 'Déjà deux héros sur les chantiers.' : 'Un héros travaille déjà ici.');
       hh.at = a.to == null ? null : a.to;
       return { ok: true };
     }
