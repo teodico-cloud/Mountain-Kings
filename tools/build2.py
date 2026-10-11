@@ -5,15 +5,22 @@ import json, os, sys, hashlib
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/'
 D = ROOT + 'src2/'
-SITE = ROOT + 'docs/v2/'
 TEST = '--test' in sys.argv
+# Les essais se construisent à part (.test/), pour ne jamais salir le site publié.
+SITE = ROOT + ('.test/v2/' if TEST else 'docs/v2/')
+if TEST:
+    os.makedirs(ROOT + '.test', exist_ok=True)
+    for d in ('lib', 'models', 'icons'):
+        if not os.path.exists(ROOT + '.test/' + d): os.symlink(ROOT + 'docs/' + d, ROOT + '.test/' + d)
+    os.makedirs(SITE, exist_ok=True)
+    if not os.path.exists(SITE + 'models'): os.symlink(ROOT + 'docs/v2/models', SITE + 'models')
 sys.path.insert(0, ROOT + 'tools'); import rules as RULES
 
 rd = lambda p: open(p, encoding='utf-8').read()
 head = rd(D + 'p1_head.html')
 js = "(() => {\n'use strict';\n" + rd(D + 'p0_fb.js') + "\n" + rd(D + 'p2_rules.js') + "\n" + rd(D + 'p3_render.js') + "\n" + rd(D + 'p5_audio.js') + "\n" + rd(D + 'p4_app.js') + "\n})();\n"
 build = hashlib.sha1(js.encode()).hexdigest()[:10]
-os.makedirs(SITE + 'models', exist_ok=True)
+if not TEST: os.makedirs(SITE + 'models', exist_ok=True)
 if os.path.exists(SITE + 'fakefb.js'): os.remove(SITE + 'fakefb.js')
 open(SITE + 'game.js', 'w', encoding='utf-8').write(js)
 
@@ -83,11 +90,11 @@ open(SITE + 'index.html', 'w', encoding='utf-8').write(index)
 # Cache hors ligne : le jeu, les bibliothèques et les modèles partagés, puis les modèles Meshy.
 DOCS = ROOT + 'docs/'
 shared_models = sorted('../models/' + f for f in os.listdir(DOCS + 'models') if not f.startswith('.'))
-own_models = sorted('models/' + f for f in os.listdir(SITE + 'models') if not f.startswith('.'))
+own_models = sorted('models/' + f for f in os.listdir(ROOT + 'docs/v2/models') if not f.startswith('.'))
 core = ['./', 'game.js?v=' + build, 'manifest.json', '../lib/three.min.js', '../lib/GLTFLoader.js', '../lib/SkeletonUtils.js',
         '../icons/icon-192.png', '../icons/favicon.png']
 models = shared_models + own_models
-mhash = hashlib.sha1(b''.join(open(SITE + m if m.startswith('models/') else DOCS + m[3:], 'rb').read() for m in models)).hexdigest()[:10]
+mhash = hashlib.sha1(b''.join(open(ROOT + 'docs/v2/' + m if m.startswith('models/') else DOCS + m[3:], 'rb').read() for m in models)).hexdigest()[:10]
 sw = f'''/* Mountain Kings (essai) : mise en cache pour un démarrage rapide et des mises à jour automatiques. */
 const CACHE = 'mk2-{build}';
 const MCACHE = 'mk2-models-{mhash}';

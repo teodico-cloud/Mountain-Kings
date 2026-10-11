@@ -8,7 +8,7 @@ S = os.environ.get('MK_SHOTS', '/tmp/mk_shots') + '/'
 os.makedirs(S, exist_ok=True)
 PORT = 8796
 URL = f'http://127.0.0.1:{PORT}/v2/'
-srv = subprocess.Popen([sys.executable, R + 'tools/fakeserver.py', R + 'docs', str(PORT)])
+srv = subprocess.Popen([sys.executable, R + 'tools/fakeserver.py', R + '.test', str(PORT)])
 time.sleep(1)
 def tree(): return json.load(urllib.request.urlopen(f'http://127.0.0.1:{PORT}/fb/tree'))
 def put(path, v):
