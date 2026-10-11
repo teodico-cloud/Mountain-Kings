@@ -14,7 +14,9 @@ const V3 = (() => {
   let shakeT = 0, shakeA = 0;
   let anims = [];
   let frameHook = null, tapHook = null, mood = '', groundMat = null, outerMat = null;
-  const LIB = { ok: false, b: {}, ch: {}, tex: {}, ver: 0, xbow: null, gear: {}, clips: {} };
+  const LIB = { ok: false, b: {}, ch: {}, tex: {}, ver: 0, xbow: null, gear: {}, clips: {}, m2: {} };
+  /* Modèles générés avec Meshy pour le nouveau jeu (remplacent les modèles provisoires au fur et à mesure). */
+  const M2_NAMES = ['taverne'];
   const C = { stone: 0x9a9488, stoneL: 0xb6b2a8, stoneD: 0x7d858b, wood: 0x9b7a54, woodD: 0x5f4127, woodL: 0xc49a63, timber: 0xdac9a6, roof: 0x8e3b2d, roofD: 0x5a3320, roofB: 0x5b4430, door: 0x3e2716, dirt: 0xa88a5c, field: 0x7a5a32, crop: 0x8fbf5a, gold: 0xd9b54c, red: 0x8c3b2d, cream: 0xede3d3, metal: 0xaeb4b8, rock: 0x8b9297, rockL: 0xcfd3d6, canvas: 0xe8dfc8, skin: 0xe6c29c };
 
   /* ---------- géométries et matériaux ---------- */
@@ -831,7 +833,9 @@ const V3 = (() => {
   function proto(name, team, orc) {
     const key = name + '|' + team + '|' + (orc ? 1 : 0);
     if (protos.has(key)) return protos.get(key);
-    const src = LIB.b[name]; if (!src) return null;
+    const m2 = name.indexOf('m2:') === 0;
+    const src = m2 ? LIB.m2[name.slice(3)] : LIB.b[name]; if (!src) return null;
+    if (m2) team = 0;
     const root = src.scene.clone(true);
     const tint = new THREE.Color(0.66, 0.56, 0.52);
     root.traverse(o => {
@@ -944,11 +948,11 @@ const V3 = (() => {
       const m = LIB.ok && s >= 2 && modelInst('scaffolding', 0, false, foot * 0.85, MODEL_RY);
       if (m) { g.add(m); info.top = m.userData.h + 0.2; }
       else { g.add(P('box', 0xb39669, s - 0.2, 0.06, s - 0.2, 0, 0, 0, 0, true)); g.add(makeScaffold(s, s < 2 ? 0.5 : 1.0)); info.top = s < 2 ? 0.8 : 1.4; }
-    } else if (PROC2[it.type]) {
+    } else if (PROC2[it.type] && !(LIB.ok && LIB.m2[it.type])) {
       const b = PROC2[it.type](it); g.add(b.g); info = b.info;
       if (it.up) g.add(makeScaffold(s, Math.min(2.4, info.top * 0.7)));
-    } else if (LIB.ok && B_MODEL[it.type]) {
-      const m = modelInst(B_MODEL[it.type], team, false, foot * (1 + 0.035 * (Math.min(5, it.lvl) - 1)), MODEL_RY);
+    } else if (LIB.ok && (LIB.m2[it.type] || B_MODEL[it.type])) {
+      const m = modelInst(LIB.m2[it.type] ? 'm2:' + it.type : B_MODEL[it.type], team, false, foot * (1 + 0.035 * (Math.min(5, it.lvl) - 1)), MODEL_RY);
       if (m) { g.add(m); info.top = m.userData.h; info.muzzle = Math.max(0.8, info.top * 0.8); }
       if (SMOKE.includes(it.type)) info.emit.push([0.15, info.top * 0.9, -0.15]);
       if (it.up) g.add(makeScaffold(s, Math.min(2.4, info.top * 0.6)));
@@ -1213,7 +1217,7 @@ const V3 = (() => {
     x.fillStyle = '#fff'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(text, 128 + 8, 32);
     const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
     const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: t, transparent: true, depthWrite: false, toneMapped: false }));
-    sp.scale.set(1.5, 0.375, 1); sp.renderOrder = 8;
+    sp.scale.set(2.2, 0.55, 1); sp.renderOrder = 8;
     return sp;
   }
   function makePerson(p) {
@@ -1242,7 +1246,7 @@ const V3 = (() => {
     if (hero) {
       const ring = new THREE.Mesh(geo('plane'), basic(p.col || COLORS[0], { transparent: true, opacity: 0.75, depthWrite: false }));
       ring.scale.set(0.85, 1, 0.85); ring.position.y = 0.02; ring.renderOrder = 2; g.add(ring);
-      const tag = nameTag(p.name || '', p.col); tag.position.y = def.h * 1.12 + 0.5; g.add(tag);
+      const tag = nameTag(p.name || '', p.col); tag.position.y = def.h * 1.12 + 0.8; g.add(tag);
       const halo = makeGlow(p.cls === 'mage' ? 0xb48cff : 0xffd27a, 1.3, 0.5); halo.material.opacity = 0.3; g.add(halo); g.userData.halo = halo;
     }
     play(g, 'idle');
@@ -1307,10 +1311,10 @@ const V3 = (() => {
     }
   }
   /* Habitant le plus proche de l'endroit touché (à l'écran). */
-  function pickPerson(cx, cy) {
+  function pickPerson(cx, cy, maxPx) {
     if (!camera || !people.size) return null;
-    const [lx, ly] = mapPt(cx, cy), w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
-    let best = null, bd = 30 * 30;
+    const [lx, ly] = mapPt(cx, cy), w = canvas.clientWidth || 1, h = canvas.clientHeight || 1, m = maxPx || 30;
+    let best = null, bd = m * m;
     for (const [k, r] of people) {
       projV.set(r.x - half, 0.6, r.z - half).project(camera);
       const sx = (projV.x + 1) / 2 * w, sy = (1 - projV.y) / 2 * h, d = (sx - lx) * (sx - lx) + (sy - ly) * (sy - ly);
@@ -1558,12 +1562,13 @@ const V3 = (() => {
 
   /* ---------- chargement des modèles ---------- */
   const MODEL_NAMES = ['castle', 'lumbermill', 'mine', 'windmill', 'market', 'barracks', 'tavern', 'tower_A', 'tower_B', 'tower_catapult', 'church', 'destroyed', 'scaffolding', 'trees_A_large', 'trees_A_medium', 'trees_B_large', 'tree_A', 'tree_B', 'mountain_A', 'mountain_B', 'mountain_C', 'hills_A', 'hills_C', 'rock_A', 'rock_C', 'rock_E'];
-  function loadModels(base, onProgress) {
+  function loadModels(base, onProgress, base2) {
     if (!ok || !THREE.GLTFLoader) return Promise.resolve(false);
     THREE.Cache.enabled = true;
     const loader = new THREE.GLTFLoader(), tl = new THREE.TextureLoader();
     const chars = ['barbarian', 'rogue', 'knight'], texs = ['orc_barbarian', 'orc_rogue', 'troll'];
-    const total = MODEL_NAMES.length + chars.length + texs.length;
+    const m2 = base2 ? M2_NAMES : [];
+    const total = MODEL_NAMES.length + chars.length + texs.length + m2.length;
     let done = 0;
     const tick = () => { done++; if (onProgress) onProgress(done, total); };
     const one = n => new Promise(res => loader.load(base + n + '.json', g => { LIB.b[n] = g; tick(); res(); }, undefined, () => { tick(); res(); }));
@@ -1573,7 +1578,8 @@ const V3 = (() => {
       tick(); res();
     }, undefined, () => { tick(); res(); }));
     const tx = n => new Promise(res => tl.load(base + n + '.png', t => { t.flipY = false; t.encoding = THREE.sRGBEncoding; LIB.tex[n] = t; tick(); res(); }, undefined, () => { tick(); res(); }));
-    return Promise.all([...MODEL_NAMES.map(one), ...chars.map(ch), ...texs.map(tx)]).then(() => {
+    const one2 = n => new Promise(res => loader.load(base2 + n + '.glb', g => { LIB.m2[n] = g; tick(); res(); }, undefined, () => { tick(); res(); }));
+    return Promise.all([...MODEL_NAMES.map(one), ...chars.map(ch), ...texs.map(tx), ...m2.map(one2)]).then(() => {
       if (!LIB.b.castle || !LIB.b.tower_A) return false;
       if (LIB.ch.rogue) LIB.ch.rogue.scene.traverse(o => { if (o.name === '2H_Crossbow' && o.parent && !LIB.xbow) LIB.xbow = { parent: o.parent.name, obj: o }; });
       /* Les personnages KayKit partagent le même squelette : armes et animations passent de l'un à l'autre. */
@@ -1584,6 +1590,7 @@ const V3 = (() => {
       }
       const matte = o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial) { o.material.roughness = 0.88; o.material.envMapIntensity = 0.55; } };
       for (const k in LIB.b) LIB.b[k].scene.traverse(matte);
+      for (const k in LIB.m2) LIB.m2[k].scene.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial) { o.material.envMapIntensity = 0.5; o.material.roughness = Math.max(0.75, o.material.roughness); } });
       for (const k in LIB.ch) LIB.ch[k].scene.traverse(matte);
       for (const k in LIB.tex) if (LIB.tex[k]) LIB.tex[k].anisotropy = 4;
       LIB.ok = true; LIB.ver++; protos.clear(); groundSig = '';

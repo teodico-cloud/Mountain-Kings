@@ -169,16 +169,8 @@ self.addEventListener('fetch', e => {{
 open(SITE + 'sw.js', 'w', encoding='utf-8').write(sw)
 if TEST: shutil.copy(ROOT + 'tools/fakefb.js', SITE + 'fakefb.js')
 
-rules = {'rules': {
-    'villages': {'.read': 'auth != null', '$uid': {'.write': 'auth != null && auth.uid === $uid'}},
-    'dons': {'.read': 'auth != null', '.indexOn': ['to'],
-             '$id': {'.write': "auth != null && (data.exists() ? (data.child('to').val() === auth.uid || data.child('from').val() === auth.uid) : newData.child('from').val() === auth.uid)"}},
-    'presence': {'.read': 'auth != null', '$uid': {'.write': 'auth != null && auth.uid === $uid'}},
-    'duo': {'inbox': {'$uid': {'.read': 'auth != null && auth.uid === $uid', '$msg': {'.write': 'auth != null'}}},
-            'live': {'.read': 'auth != null', '.write': 'auth != null'}},
-    'imported': {'.read': 'auth != null', '$k': {'.write': 'auth != null && (!data.exists() || data.val() === auth.uid) && newData.val() === auth.uid'}},
-}}
-json.dump(rules, open(OUT + 'database.rules.json', 'w'), indent=2)
+sys.path.insert(0, ROOT + 'tools'); import rules as RULES
+RULES.write(OUT + 'database.rules.json')
 json.dump({'hosting': {'public': 'docs', 'ignore': ['**/.*']}, 'database': {'rules': 'database.rules.json'}}, open(OUT + 'firebase.json', 'w'), indent=2)
 total = sum(os.path.getsize(SITE + f) for f in files)
 print('build', build, 'files', len(files), 'size %.1f MB' % (total / 1e6), 'test' if TEST else '')

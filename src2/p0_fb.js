@@ -58,7 +58,7 @@ function fbDb(rdb) {
 
 /* Présence dans le village commun : qui est connecté en ce moment. */
 function fbPresence(rdb, uid) {
-  let ref = null, mine = null, connected = false;
+  let ref = null, refPath = '', mine = null, connected = false;
   const TS = () => firebase.database.ServerValue.TIMESTAMP;
   function write() {
     if (!ref || !mine) return Promise.resolve();
@@ -67,7 +67,11 @@ function fbPresence(rdb, uid) {
   }
   rdb.ref('.info/connected').on('value', s => { connected = s.val() === true; if (connected) write().catch(() => {}); });
   return {
-    set(vid, data) { const p = ROOT + 'presence/' + vid + '/' + uid; if (!ref || ref.key !== uid || ref._p !== p) { ref = rdb.ref(p); ref._p = p; } mine = fbClean(data); return write().catch(() => {}); },
+    set(vid, data) {
+      const p = ROOT + 'presence/' + vid + '/' + uid;
+      if (!ref || refPath !== p) { if (ref) ref.remove().catch(() => {}); ref = rdb.ref(p); refPath = p; }
+      mine = fbClean(data); return write().catch(() => {});
+    },
     watch(vid, cb) {
       const r = rdb.ref(ROOT + 'presence/' + vid);
       const h = r.on('value', s => {

@@ -40,6 +40,39 @@
       "$k": {
         ".write": "auth != null && (!data.exists() || data.val() === auth.uid) && newData.val() === auth.uid"
       }
+    },
+    "v2": {
+      "users": {
+        "$uid": {
+          ".read": "auth != null && auth.uid === $uid",
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      },
+      "invites": {
+        "$vid": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() || root.child('v2/villages/' + $vid + '/members/' + auth.uid).exists())"
+        }
+      },
+      "villages": {
+        "$vid": {
+          ".read": "auth != null && data.child('members').child(auth.uid).exists()",
+          ".write": "auth != null && (data.child('members').child(auth.uid).exists() || (!data.exists() && newData.child('members').child(auth.uid).exists()))",
+          "members": {
+            "$uid": {
+              ".write": "auth != null && auth.uid === $uid && !data.exists() && data.parent().parent().exists() && data.parent().numChildren() < 2"
+            }
+          }
+        }
+      },
+      "presence": {
+        "$vid": {
+          ".read": "auth != null && root.child('v2/villages/' + $vid + '/members/' + auth.uid).exists()",
+          "$uid": {
+            ".write": "auth != null && auth.uid === $uid"
+          }
+        }
+      }
     }
   }
 }
