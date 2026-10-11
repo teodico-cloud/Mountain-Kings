@@ -93,10 +93,7 @@ class H(SimpleHTTPRequestHandler):
             m = self.body()
             with lock:
                 stale = any(w['seq'] > m['base'] and related(w['path'], m['path']) for w in writes)
-                if stale:
-                    b = json.dumps({'ok': False, 'seq': seq}).encode()
-                    self.send_response(409); self.send_header('content-type', 'application/json'); self.send_header('content-length', str(len(b))); self.end_headers(); self.wfile.write(b)
-                    return
+                if stale: return self.ok({'ok': False, 'seq': seq})
                 n = do_set(m['path'], m['v'], cid, True)
             return self.ok({'ok': True, 'seq': n})
         if u.path == '/fb/ondisc':

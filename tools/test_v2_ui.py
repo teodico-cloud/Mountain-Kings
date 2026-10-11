@@ -20,6 +20,10 @@ async def text(pg, sel):
     try: return (await pg.inner_text(sel, timeout=8000)).replace('\n', ' | ')
     except Exception: return f'<none {sel}>'
 
+async def close_modal(pg):
+    if await pg.is_visible('#modal') and await pg.is_visible('[data-act="closeModal"]'):
+        await pg.click('[data-act="closeModal"]'); await pg.wait_for_timeout(500)
+
 async def main():
     logs = []
     async with async_playwright() as p:
@@ -42,23 +46,27 @@ async def main():
         await A.fill('#hName', 'Brokk')
         await A.click('label.optc:has(input[value="nain"])'); await A.click('label.optc:has(input[value="guerrier"])')
         await A.click('#heroForm button[type=submit]'); await A.wait_for_timeout(6000)
-        print('A mode:', await A.evaluate('window.__mk.mode'), '| top:', (await text(A, '#hudTop'))[:200])
+        print('A mode:', await A.evaluate('window.__mk.mode'), '| top:', (await text(A, '#hudTop'))[:200], '| welcome:', (await text(A, '#mcard'))[:60] if await A.is_visible('#modal') else 'none')
+        await close_modal(A)
         await A.screenshot(path=S + 'v2_home.png')
         vid = await A.evaluate('window.__mk.vid')
         t = tree(); v = t['v2']['villages'][vid]
         print('server: members', list(v['members'].keys()), 'heroes', {k: h['name'] for k, h in v.get('heroes', {}).items()}, 'villagers', len(arr(v['vil'])), 'buildings', len(arr(v['b'])))
         # menus
         for s in ['build', 'people', 'hero', 'journal', 'village']:
+            await close_modal(A)
             await A.click(f'.nav [data-s="{s}"]'); await A.wait_for_timeout(900)
             await A.screenshot(path=S + f'v2_sheet_{s}.png')
             print('sheet', s, ':', (await text(A, '#sheetBody'))[:150])
             await A.click('[data-act="closeSheet"]'); await A.wait_for_timeout(300)
         # construire une maison
+        await close_modal(A)
         await A.click('.nav [data-s="build"]'); await A.wait_for_timeout(600)
         await A.click('[data-act="place"][data-type="maison"]'); await A.wait_for_timeout(800)
         await A.click('[data-act="placeOk"]'); await A.wait_for_timeout(1500)
         print('after build:', await A.evaluate('window.__mk.me.b.filter(b => b.up).map(b => b.type + ":" + b.up.need)'))
         # toucher la halle pour ouvrir son panneau
+        await close_modal(A)
         pt = await A.evaluate('window.__mk.toScreen(11.5, 11.5)')
         await A.mouse.click(pt[0], pt[1]); await A.wait_for_timeout(800)
         print('panel:', (await text(A, '#hudBottom'))[:160])
@@ -75,24 +83,44 @@ async def main():
         await B.click('label.optc:has(input[value="elfe"])'); await B.click('label.optc:has(input[value="rodeur"])')
         await B.click('#heroForm button[type=submit]'); await B.wait_for_timeout(6000)
         print('B mode:', await B.evaluate('window.__mk.mode'), '| top:', (await text(B, '#hudTop'))[:160])
+        await close_modal(B)
         await B.screenshot(path=S + 'v2_home_B.png')
         # actions en même temps : Téo affecte son héros, Léa change un métier
         vb = await B.evaluate('window.__mk.me.vil.find(p => p.job === "bat").id')
         chasse = await A.evaluate('window.__mk.me.b.find(b => b.type === "carriere" || b.type === "chasse").id')
         await asyncio.gather(A.evaluate(f'window.__mk.act({{type: "heroAt", to: {chasse}}})'), B.evaluate(f'window.__mk.act({{type: "job", vid: {vb}, to: null}})'))
-        await A.wait_for_timeout(4000)
+        for i in range(60):
+            await A.wait_for_timeout(1000)
+            if await A.evaluate('window.__mk.busy') == 0 and await B.evaluate('window.__mk.busy') == 0: break
+        await A.wait_for_timeout(2000)
+        print('both phones saved after', i + 1, 's')
         t = tree(); v = t['v2']['villages'][vid]
         heroes = v.get('heroes', {})
         print('server after both: members', [m['name'] for m in v['members'].values()], '| hero Téo at', heroes.get('uid_alice', {}).get('at'), '| villager', vb, 'job', [p.get('job') for p in arr(v['vil']) if p['id'] == vb], '| log tail:', [l['m'] for l in arr(v['log'])][-4:])
         sa = await A.evaluate('JSON.stringify([window.__mk.me.heroes, window.__mk.me.vil.map(p => p.job)])')
         sb = await B.evaluate('JSON.stringify([window.__mk.me.heroes, window.__mk.me.vil.map(p => p.job)])')
         print('A and B see the same village:', sa == sb)
-        # deux jours plus tard : on recule l'horloge du village pour simuler l'absence
-        v['t'] = v['t'] - 2 * 86400000; v['born'] = v['born'] - 2 * 86400000
+        # deux jours plus tard : on recule toutes les horloges du village (et ce que Téo a déjà lu) pour simuler son absence
+        D2 = 2 * 86400000
+        for k in ('t', 'born'): v[k] -= D2
+        for k in ('feast', 'feastCd'):
+            if v.get(k): v[k] -= D2
+        for coll in ('log', 'vil', 'cands'):
+            if isinstance(v.get(coll), dict): v[coll] = arr(v[coll])
+            for e in v.get(coll) or []:
+                if e and 't' in e: e['t'] -= D2
+        for m in v['members'].values(): m['t'] -= D2
+        await A.evaluate(f"""(() => {{ for (const k of ['mk2.log.{vid}', 'mk2.read.{vid}']) {{ const x = JSON.parse(localStorage.getItem(k) || '0'); if (x) localStorage.setItem(k, JSON.stringify(x - {D2})); }} }})()""")
         put('v2/villages/' + vid, v)
-        await A.wait_for_timeout(5000)
-        print('after 2 days: cands', await A.evaluate('window.__mk.me.cands.length'), 'season', await A.evaluate('window.__mk.me.ws'), '| modal:', (await text(A, '#mcard'))[:160] if await A.is_visible('#modal') else 'none')
+        await A.reload(timeout=120000, wait_until='domcontentloaded'); await A.wait_for_timeout(9000)
+        print('after 2 days: mode', await A.evaluate('window.__mk.mode'), '| cands', await A.evaluate('window.__mk.me && window.__mk.me.cands.length'), '| season', await A.evaluate('window.__mk.me && window.__mk.me.ws'), '| food', await A.evaluate('window.__mk.me && Math.round(window.__mk.me.r.pain + window.__mk.me.r.viande)'), '| modal:', (await text(A, '#mcard'))[:300] if await A.is_visible('#modal') else 'none')
         await A.screenshot(path=S + 'v2_after2days.png')
+        await close_modal(A)
+        await A.wait_for_timeout(1500)
+        print('after 2 days, next modal:', (await text(A, '#mcard'))[:200] if await A.is_visible('#modal') else 'none')
+        T = await A.evaluate('window.__mk.now()')
+        sa = await A.evaluate(f'window.__mk.simAt({T})'); sb = await B.evaluate(f'window.__mk.simAt({T})')
+        print('after 2 days, A and B compute the same village:', sa == sb, '| A:', (sa or '')[:120])
         await b.close()
     print('\n'.join(logs[:40]) or 'no page errors')
 

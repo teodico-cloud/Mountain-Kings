@@ -71,7 +71,7 @@
       const r = await post('/fb/cas?cid=' + cid, { path, v: c, base });
       const j = await r.json();
       await waitSeq(j.seq);
-      if (r.ok) return { committed: true, snapshot: snap(parts(path).pop() || null, getAt(path), makeRef(path)) };
+      if (r.ok && j.ok) return { committed: true, snapshot: snap(parts(path).pop() || null, getAt(path), makeRef(path)) };
       await new Promise(res => setTimeout(res, 20 + Math.random() * 60));
     }
     throw new Error('transaction failed');
