@@ -18,6 +18,12 @@ Jeu coop sur téléphone (Téo et sa compagne) : village nain 3D, raids solo con
 - `tools/make_thumbs.py` : vignettes `docs/thumbs/*.png` rendues depuis les modèles 3D (à relancer si les modèles changent).
 - `tools/models_pipeline.py` : conversion des modèles KayKit (CC0) vers `docs/models/`.
 
+## Façon de travailler (demandée par Téo)
+- Avant chaque implémentation : lui présenter ce qu'on veut faire, avec des propositions annexes, et attendre son accord avant de coder.
+
+## Refonte demandée (11 oct. 2026)
+Choix de Téo : remise à zéro (nouvelle sauvegarde, anciens villages archivés, pas effacés), un seul village commun aux deux joueurs, chacun joue un seul héros avec une classe au choix, gestion des ressources façon Medieval Dynasty, RPG (compétences, armes et armures avec rareté), combat semi-automatique (on choisit où va le héros et quand lancer les compétences), attaques en donjons avec boss, orques qui attaquent le village seulement en l'absence des joueurs (façon Dungeon Keeper : vol de ressources, pièges, gardes, rediffusion).
+
 ## Règles
 - Ne jamais committer un build `--test` (vérifier que `docs/index.html` charge gstatic firebasejs, pas `fakefb.js`).
 - Une sauvegarde de village doit rester compatible (`VERSION` dans `p2_rules.js`) : les joueurs ont des données réelles dans Firebase.
