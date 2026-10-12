@@ -40,9 +40,9 @@ function sheetDonjon() {
     ${pk && ph ? `<p class="note">${on ? 'À deux avec ' + esc(pname) + ' (' + esc(ph.name) + ') : les monstres sont plus solides, chacun gagne toute l’expérience, et vos combos font mal.' : 'Pour partir à deux, ' + esc(pname) + ' doit avoir le jeu ouvert en même temps que toi.'}</p>` : ''}</div>`;
   h += `<div class="sec"><h4>Niveau des donjons</h4><div class="row djlv">${lvls.map(l => `<button class="btn small${l === pick ? ' primary' : ''}" data-act="sheet" data-s="donjon" data-k="${l}" aria-pressed="${l === pick}">Niveau ${l}</button>`).join('')}</div>
     <p class="note">Niveau ${pick} : conseillé pour un héros de niveau ${pick}${hh.lvl < pick ? ' (le tien est plus faible : prudence)' : ''}. Chaque victoire ouvre le niveau suivant.</p></div>`;
-  h += `<div class="sec"><h4>La mine des gobelins</h4><div class="item"><p>Gobelins, archers, chamans qui soignent et trolls, avec le chef troll au fond. Récompenses : expérience, pierre et bois.</p>${btns('mine', pick, ' (niveau ' + pick + ')')}</div></div>`;
-  h += `<div class="sec"><h4>La crypte des rois</h4><div class="item"><p>Squelettes, goules rapides, spectres qui esquivent, nécromants qui relèvent les morts, golems d’os ; au fond, le roi squelette et sa tempête d’os.</p>${top >= DJ_OPEN.crypte ? btns('crypte', pick, ' (niveau ' + pick + ')') : locked('crypte')}</div></div>`;
-  h += `<div class="sec"><h4>Les Profondeurs</h4><div class="item"><p>Des étages sans fin, de plus en plus durs : la mine puis la crypte, un boss tous les 5 étages. À la fin de chaque étage, tu choisis : descendre plus bas, ou remonter avec tout le butin.${hh.deep ? ' Record de ' + esc(hh.name) + ' : <b>' + hh.deep + ' étage' + (hh.deep > 1 ? 's' : '') + '</b>.' : ''}</p>${top >= DJ_OPEN.prof ? btns('prof', hh.lvl, ' (départ niveau ' + hh.lvl + ')') : locked('prof')}</div></div>`;
+  h += `<div class="sec"><h4>La mine des gobelins</h4><div class="item"><p>Gobelins, archers, chamans qui soignent et trolls, avec le chef troll au fond. Récompenses : expérience, or, pierre, bois et objets (le chef troll laisse parfois une pièce de sa tenue).</p>${btns('mine', pick, ' (niveau ' + pick + ')')}</div></div>`;
+  h += `<div class="sec"><h4>La crypte des rois</h4><div class="item"><p>Squelettes, goules rapides, spectres qui esquivent, nécromants qui relèvent les morts, golems d’os ; au fond, le roi squelette et sa tempête d’os (et parfois une pièce de ses atours).</p>${top >= DJ_OPEN.crypte ? btns('crypte', pick, ' (niveau ' + pick + ')') : locked('crypte')}</div></div>`;
+  h += `<div class="sec"><h4>Les Profondeurs</h4><div class="item"><p>Des étages sans fin, de plus en plus durs : la mine puis la crypte, un boss tous les 5 étages (et la panoplie de l’abîme). À la fin de chaque étage, tu choisis : descendre plus bas, ou remonter avec tout le butin.${hh.deep ? ' Record de ' + esc(hh.name) + ' : <b>' + hh.deep + ' étage' + (hh.deep > 1 ? 's' : '') + '</b>.' : ''}</p>${top >= DJ_OPEN.prof ? btns('prof', hh.lvl, ' (départ niveau ' + hh.lvl + ')') : locked('prof')}</div></div>`;
   h += `<div class="sec"><h4>Comment ça marche</h4><ul class="help">
     <li>Pose le pouce sur la gauche de l’écran pour te déplacer. Ton héros attaque tout seul le monstre le plus proche (les soigneurs d’abord).</li>
     <li>À droite : tes compétences et ta potion. Une compétence se recharge après usage.</li>
@@ -196,10 +196,14 @@ function djBack() {
   if (!dj) return;
   const r = dj.res || djResult(dj.st), hid = dj.hid, name = (me && me.heroes[hid] || {}).name || 'Ton héros';
   const guest = dj.duo && dj.duo.role === 'guest';     // le butin et le prisonnier ne comptent qu'une fois : c'est l'hôte qui les rapporte
-  const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris, theme: r.theme || dj.st.d.theme, deep: r.deep || 0 }, { quiet: true });
+  const items = (r.items && r.items[hid]) || [], gems = (r.gems && r.gems[hid]) || {};
+  const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris, theme: r.theme || dj.st.d.theme, deep: r.deep || 0,
+    or: guest ? 0 : r.gold || 0, items, gems }, { quiet: true });
   djLeave();
   if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
   else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
+  else if (res && res.autoSold) toast('Sac plein : ' + res.autoSold + ' objet' + (res.autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + res.autoGold + ' or. Fais de la place dans ton sac (menu Héros).');
+  else if (res && res.items) toast(res.items + ' objet' + (res.items > 1 ? 's rangés' : ' rangé') + ' dans ton sac (menu Héros).');
   else if (!res) toast('Le retour n’a pas pu être enregistré.');
 }
 function djEnded() {
@@ -221,7 +225,9 @@ function djGuestQuit(lost) {
   const st = dj.st, run = dj.run, done = !!run && st.over === 'floor';
   if (run) dj.res = done ? djRunResult(run, true) : djRunResult(run, false, { xp: st.xp || 0, kills: st.kills || 0, secs: Math.round(st.t || 0), loot: {}, combos: st.combos || 0, fled: true });
   else dj.res = { win: false, fled: true, lvl: st.lvl, xp: Math.round((st.xp || 0) * 0.5), loot: {}, kills: st.kills || 0, secs: Math.round(st.t || 0), combos: st.combos || 0, theme: st.d.theme };
-  Object.assign(dj.res, { own: true, lost: !!lost, loot: {}, pris: false });
+  /* ses objets et ses pierres : ceux que l'hôte lui a signalés (toute la descente, dans les Profondeurs) */
+  const mine = { [dj.hid]: dj.myItems || [] }, mg = { [dj.hid]: dj.myGems || {} };
+  Object.assign(dj.res, { own: true, lost: !!lost, loot: {}, pris: false, gold: 0, items: djHalfItems(mine, done), gems: djHalfGems(mg, done) });
   if (!done) st.over = 'lose';
   if (!lost) liveRef('g2h').set({ bye: 1, t: now() }).catch(() => {});
   for (const u of dj.duo.unsub) u(); dj.duo.unsub = [];
@@ -251,13 +257,16 @@ function djResHTML() {
   const xpH = hh && hh.race === 'humain' ? Math.round(r.xp * 1.1) : r.xp;
   let up = 0, lv = hh ? hh.lvl : 1, xp = hh ? (hh.xp || 0) + xpH : 0;
   while (hh && lv < HERO_MAX_LVL && xp >= heroXpNeed(lv)) { xp -= heroXpNeed(lv); lv++; up++; }
-  const mm = Math.floor(r.secs / 60), ss = String(r.secs % 60).padStart(2, '0'), loot = r.loot || {};
+  const mm = Math.floor(r.secs / 60), ss = String(r.secs % 60).padStart(2, '0'), loot = r.loot || {}, lootAll = Object.assign({}, loot, r.gold ? { or: r.gold } : {});
+  const myItems = (r.items && r.items[dj.hid]) || [], myGems = (r.gems && r.gems[dj.hid]) || {};
   const where = r.prof ? 'Les Profondeurs · départ niveau ' + r.lvl : (DJ_THEMES[r.theme] || DJ_THEMES.mine).name + ' · niveau ' + r.lvl;
   return `<p class="eyebrow">${where}${duo ? ' · à deux' : ''}</p><h2>${title}</h2><p>${esc(lead)}</p>
     <div class="item"><div class="row split"><b>Expérience</b><span class="chip plus">+${fmtN(xpH)}</span></div>
       ${up ? `<p><b>${esc(hh.name)} passe au niveau ${lv} !</b> ${up > 1 ? up + ' niveaux d’un coup.' : ''} De nouveaux points de compétence l’attendent.</p>` : hh ? `<div class="bar"><i style="width:${Math.min(100, xp / heroXpNeed(lv) * 100).toFixed(0)}%"></i></div>` : ''}
-      ${r.own ? '<p class="note">Le butin reste avec ' + esc(mate) + ', qui le rapportera au village.</p>' : `<div class="row split"><b>Butin pour le village</b><span class="chips2">${Object.keys(loot).length ? rewChips(loot) : '<span class="note">rien</span>'}</span></div>
-      ${fromHost && Object.keys(loot).length ? '<p class="note">' + esc(mate) + ' le rapporte au village pour vous deux.</p>' : ''}`}
+      ${r.own ? '<p class="note">Le butin reste avec ' + esc(mate) + ', qui le rapportera au village.</p>' : `<div class="row split"><b>Butin pour le village</b><span class="chips2">${Object.keys(lootAll).length ? rewChips(lootAll) : '<span class="note">rien</span>'}</span></div>
+      ${fromHost && Object.keys(lootAll).length ? '<p class="note">' + esc(mate) + ' le rapporte au village pour vous deux.</p>' : ''}`}
+      ${myItems.length ? `<div class="row split"><b>Objets pour ton sac</b><small class="note">${myItems.length}${!r.win ? ' (les meilleurs)' : ''}</small></div>${itemListHTML(myItems, hh)}` : ''}
+      ${Object.keys(myGems).length ? `<div class="row split"><b>Pierres précieuses</b><span class="chips2">${Object.keys(myGems).map(k => gemChip(k, myGems[k])).join('')}</span></div>` : ''}
       ${r.pris && !r.own ? '<p><b>Un prisonnier délivré</b> : il vous attendra au village, prêt à s’installer.</p>' : ''}
       <p class="note">${r.kills} monstres vaincus${duo && r.combos ? ' · ' + r.combos + ' combo' + (r.combos > 1 ? 's' : '') : ''} · ${mm} min ${ss}${r.win && !r.prof ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
     <button class="btn primary" data-act="djBack">Retour au village</button>`;
@@ -285,7 +294,8 @@ function djFloorHTML() {
   const st = dj.st, run = dj.run;
   return `<p class="eyebrow">Les Profondeurs${dj.duo ? ' · à deux' : ''}</p><h2>Étage ${st.d.floor} terminé !</h2>
     <div class="item"><div class="row split"><b>Gagné jusqu’ici</b><span class="chip plus">+${fmtN(run.xp)} d’expérience</span></div>
-      <div class="row split"><b>Butin</b><span class="chips2">${Object.keys(run.loot).length ? rewChips(run.loot) : '<span class="note">rien encore</span>'}</span></div>
+      <div class="row split"><b>Butin</b><span class="chips2">${Object.keys(run.loot).length || run.gold ? rewChips(Object.assign({}, run.loot, run.gold ? { or: run.gold } : {})) : '<span class="note">rien encore</span>'}</span></div>
+      ${(run.items && run.items[dj.hid] || []).length ? `<div class="row split"><b>Objets trouvés</b><span class="chip">${run.items[dj.hid].length}</span></div>` : ''}
       <p class="note">${djNextLine()} ${dj.duo && !dj.duo.gone ? 'Si vous tombez tous les deux' : 'Si tu tombes'}, ${dj.duo && !dj.duo.gone ? 'vous ne gardez' : 'tu ne gardes'} que la moitié de tout.</p></div>
     <div class="row"><button class="btn grow" data-act="djUp">Remonter (tout garder)</button><button class="btn primary grow" data-act="djDown">${djIco('sword')}Descendre</button></div>`;
 }
@@ -293,7 +303,7 @@ function djFloorWaitHTML() {
   const run = dj.run;
   return `<p class="eyebrow">Les Profondeurs · à deux</p><h2>Étage ${dj.st.d.floor} terminé !</h2>
     <p>${esc(dj.duo.mateName || 'Ton partenaire')} choisit : descendre plus bas, ou remonter avec tout le butin…</p>
-    <div class="item"><div class="row split"><b>Gagné jusqu’ici</b><span class="chip plus">+${fmtN(run.xp)} d’expérience</span></div><p class="note">${djNextLine()}</p></div>
+    <div class="item"><div class="row split"><b>Gagné jusqu’ici</b><span class="chip plus">+${fmtN(run.xp)} d’expérience</span></div>${(dj.myItems || []).length ? `<div class="row split"><b>Tes objets</b><span class="chip">${dj.myItems.length}</span></div>` : ''}<p class="note">${djNextLine()}</p></div>
     <button class="btn" data-act="djLeaveFloor">Rentrer au village maintenant (tout garder)</button>`;
 }
 function djDescend() {
@@ -319,7 +329,7 @@ function djAscend() {
 /* Fin d'une descente (défaite ou fuite pendant un étage) : la moitié de tout, étage en cours compris. */
 function djRunLost() {
   const st = dj.st;
-  dj.res = djRunResult(dj.run, false, { xp: st.xp, kills: st.kills, secs: Math.round(st.t), loot: st.loot, combos: st.combos || 0, pris: !!(st.pris && st.pris.freed), fled: !!st.fled });
+  dj.res = djRunResult(dj.run, false, { xp: st.xp, kills: st.kills, secs: Math.round(st.t), loot: st.loot, combos: st.combos || 0, pris: !!(st.pris && st.pris.freed), fled: !!st.fled, gold: st.gold, items: st.items, gems: st.gems });
 }
 /* Chez l'invitée : l'hôte est descendu, on fabrique le même étage (même graine), puis l'instantané s'y applique. */
 function djGuestFloorGo(sn) {
@@ -448,6 +458,10 @@ function djEvents(st) {
       case 'storm': SND.sfx('storm'); break;
       case 'summon': if (e.boss) SND.sfx('alarm'); break;
       case 'combo': if (performance.now() - (dj.comboT || 0) > 250) { dj.comboT = performance.now(); SND.sfx('combo'); } break;
+      case 'item': if (mine) { SND.sfx(e.r >= 3 || e.set ? 'star' : 'coin'); if (e.r >= 2 || e.set) toast((e.set ? 'Pièce d’ensemble' : 'Objet ' + RARITY[e.r].name.toLowerCase()) + ' : ' + SLOT_ART[e.sl] + (e.r >= 4 ? ' légendaire !!!' : ' !')); } break;
+      case 'gem': if (mine) { SND.sfx('coin'); const G = gemOf(e.g); if (G) toast('Pierre précieuse : ' + G.name.toLowerCase() + ' !'); } break;
+      case 'echo': if (mine) SND.sfx('star'); break;
+      case 'sursis': if (mine) { SND.sfx('power'); toast('Dernier Rempart : tu tiens bon !'); } break;
       case 'wall': SND.sfx('wallbreak'); break;
       case 'trap': if (mine) SND.sfx('wallhit'); break;
       case 'revive': toast('Increvable : ton héros se relève !'); SND.sfx('power'); break;
@@ -496,6 +510,10 @@ function djSendSnap() {
   if (st.over) duo.sentFinal = true;
   const sn = djSnap(st, duo.evBuf.slice(-80), ++duo.snapN, djFinalRes() || 0); duo.evBuf = [];
   if (run) sn.ru = [run.done, Math.round(run.xp), run.kills, run.secs, run.combos, run.pris ? 1 : 0, run.start];
+  /* les objets et pierres trouvés par l'invitée (toute la descente dans les Profondeurs), seulement quand ça change */
+  const gid = duo.mateHid, cur = (st.items && st.items[gid]) || [], all = run ? ((run.items && run.items[gid]) || []).concat(cur) : cur;
+  const gems = run ? djAddGems(run.gems && run.gems[gid], st.gems && st.gems[gid]) : (st.gems && st.gems[gid]) || {}, sig = all.length + JSON.stringify(gems);
+  if (sig !== duo.giSig || duo.snapN % 20 === 0) { duo.giSig = sig; sn.gi = all.map(djPack); sn.gg = gems; }
   liveRef('h2g').set(sn).catch(() => {});
 }
 function djGuestFrame(dt, tNow) {
@@ -523,6 +541,8 @@ function djGuestSnap(sn) {
   const evs = djApplySnap(dj.st, sn, dj.hid);
   if (evs === null) return;
   if (dj.run && sn.ru) { const [done, xp, kills, secs, combos, pris] = sn.ru; Object.assign(dj.run, { done, xp, kills, secs, combos, pris: !!pris }); }
+  if (sn.gi) dj.myItems = sn.gi.map(djUnpack).filter(Boolean);
+  if (sn.gg) dj.myGems = Object.assign({}, sn.gg);
   duo.snapDt = Math.max(80, Math.min(400, duo.snapDt * 0.8 + (t - duo.lastSnapAt) * 0.2)); duo.lastSnapAt = t; duo.waitShown = false;
   dj.st.ev = evs; djEvents(dj.st);
 }

@@ -19,7 +19,7 @@ sys.path.insert(0, ROOT + 'tools'); import rules as RULES
 rd = lambda p: open(p, encoding='utf-8').read()
 head = rd(D + 'p1_head.html')
 # ordre : Firebase, règles du village, règles et combat des donjons, rendu 3D, sons, interface des donjons, interface
-js = "(() => {\n'use strict';\n" + "\n".join(rd(D + f) for f in ['p0_fb.js', 'p2_rules.js', 'p2d_donjon.js', 'p3_render.js', 'p5_audio.js', 'p4d_donjon.js', 'p4_app.js']) + "\n})();\n"
+js = "(() => {\n'use strict';\n" + "\n".join(rd(D + f) for f in ['p0_fb.js', 'p2_rules.js', 'p2e_equip.js', 'p2d_donjon.js', 'p3_render.js', 'p5_audio.js', 'p4d_donjon.js', 'p4e_equip.js', 'p4_app.js']) + "\n})();\n"
 build = hashlib.sha1(js.encode()).hexdigest()[:10]
 if not TEST: os.makedirs(SITE + 'models', exist_ok=True)
 if os.path.exists(SITE + 'fakefb.js'): os.remove(SITE + 'fakefb.js')

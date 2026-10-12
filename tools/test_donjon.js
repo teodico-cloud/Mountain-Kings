@@ -1,7 +1,7 @@
 /* Essais des donjons : fabrication, puis combats joués par un petit robot pour chaque classe. Usage : node tools/test_donjon.js [--long] */
 const fs = require('fs'), path = require('path');
-const src = fs.readFileSync(path.join(__dirname, '../src2/p2_rules.js'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, '../src2/p2d_donjon.js'), 'utf8');
-const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove, djFloorCfg, djFloor, djCarry, djRunAdd, djRunResult };')();
+const src = ['p2_rules.js', 'p2e_equip.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
+const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove, djFloorCfg, djFloor, djCarry, djRunAdd, djRunResult, genItem, mulberry32, gearOf, djPack, djUnpack, SLOTS, djHalfItems, itemInfo, djHurt };')();
 const LONG = process.argv.includes('--long');
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
@@ -284,6 +284,91 @@ function playDuo(seed, lvl, hA, hB, opts) {
   const applied = D.djApplySnap(ms2, sn2, 'hB') !== null;
   ok(sn2.fl === 2 && g2.seed === sn2.sd && applied && D.djApplySnap(ms, sn2, 'hB') === null, 'l’invitée refait le 2e étage avec la même graine ; l’ancienne copie refuse le nouvel instantané');
   ok(ms2.heroes.every((h, i) => Math.abs(h.hp - st2.heroes[i].hp) < 0.06) && ms2.mobs.length === st2.mobs.filter(m => !m.hidden && m.hp > 0).length, 'vie rapportée et monstres identiques sur les deux téléphones');
+}
+/* ---------- l'équipement en donjon ---------- */
+{
+  const sk = { s0: 1, s1: 1, s2: 1 }, base = hero('guerrier', 'nain', 5, { sk }), geared = Object.assign({}, base, { id: 'hgear', eq: {} });
+  for (const sl of ['arme', 'casque', 'armure', 'bottes']) geared.eq[sl] = D.genItem(D.mulberry32(sl.length * 31), { il: 5, r: 2, sl, cls: 'guerrier' });
+  const d = D.genDungeon(77, 5), a = D.djStart(d, [base], { seed: 77 }).heroes[0], b = D.djStart(d, [geared], { seed: 77 }).heroes[0];
+  ok(b.hpMax > a.hpMax && b.dmg > a.dmg, 'équipement rare de niveau 5 : vie ' + Math.round(a.hpMax) + ' → ' + Math.round(b.hpMax) + ', dégâts ' + a.dmg.toFixed(1) + ' → ' + b.dmg.toFixed(1));
+  /* butin d'une partie (robot) */
+  let items = 0, gold = 0, gemsN = 0, n = 0, rares = 0;
+  for (const seed of [101, 202, 303, 404, 505, 606]) {
+    const r = play([hero('guerrier', 'nain', 5, { sk })], 5, seed), l = (r.r.items && r.r.items.hguerriernain) || [];
+    n++; items += l.length; gold += r.r.gold; rares += l.filter(x => x.r >= 2).length;
+    for (const k in (r.r.gems.hguerriernain || {})) gemsN += r.r.gems.hguerriernain[k];
+  }
+  console.log('  butin moyen (robot, niveau 5) : ' + (items / n).toFixed(1) + ' objets (dont ' + (rares / n).toFixed(1) + ' rares ou mieux), ' + Math.round(gold / n) + ' or, ' + (gemsN / n).toFixed(1) + ' pierres');
+  ok(items / n >= 2 && items / n <= 9, 'objets par donjon : ' + (items / n).toFixed(1));
+  ok(gold / n > 100 && gold / n < 1500, 'or par donjon : ' + Math.round(gold / n));
+  /* défaite ou fuite : la meilleure moitié des objets */
+  const half = D.djHalfItems({ h: [{ r: 0, il: 1 }, { r: 3, il: 1 }, { r: 1, il: 1 }] }, false).h;
+  ok(half.length === 2 && half[0].r === 3 && half[1].r === 1, 'défaite ou fuite : on garde la meilleure moitié des objets');
+  /* pouvoirs légendaires et ensembles */
+  const leg = (cls, sl, pw, lvl) => { const it = D.genItem(D.mulberry32(5), { il: 5, r: 4, sl, cls }); it.pw = pw; return Object.assign(hero(cls, 'humain', lvl || 8, { sk }), { id: 'h' + pw, eq: { [sl]: it } }); };
+  {
+    const st = D.djStart(D.genDungeon(5, 1), [leg('guerrier', 'armure', 'sursis')], { seed: 5 }), h = st.heroes[0], m = st.mobs[0];
+    h.dodge = 0; h.b = {}; h.hp = 5; h.atkT = 99; st.ev.length = 0;
+    m.awake = true; m.x = h.x + 0.6; m.y = h.y; m.wind = 0.01; m.act = 'melee'; m.actTgt = h.id; m.atkT = 99; m.dmg = 9999; m.hp = m.hpMax = 1e6;
+    D.djStep(st, {});
+    const saved = st.ev.some(e => e.k === 'sursis') && !h.dead && h.hp === 1;
+    st.ev.length = 0; h.b = {}; h.atkT = 99; m.wind = 0.01; m.act = 'melee'; m.actTgt = h.id; m.x = h.x + 0.6; m.y = h.y;
+    D.djStep(st, {});
+    ok(saved && h.dead, 'Dernier Rempart : un coup fatal laisse à 1 point de vie, une seule fois');
+  }
+  {
+    const st = D.djStart(D.genDungeon(5, 1), [leg('paladin', 'armure', 'epines')], { seed: 5 }), h = st.heroes[0], m = st.mobs[0];
+    h.dodge = 0; h.atkT = 99; m.awake = true; m.x = h.x + 0.6; m.y = h.y; m.wind = 0.01; m.act = 'melee'; m.actTgt = h.id; m.atkT = 99; m.hp = m.hpMax = 1e6;
+    D.djStep(st, {});
+    ok(m.hp < m.hpMax && st.ev.some(e => e.k === 'hit' && e.id === m.id), 'Peau-de-Ronces : le monstre se blesse en frappant (' + Math.round(m.hpMax - m.hp) + ')');
+  }
+  {
+    const st = D.djStart(D.genDungeon(5, 1), [leg('guerrier', 'arme', 'chaine')], { seed: 5 }), h = st.heroes[0], [m1, m2] = st.mobs;
+    for (const [m, dx] of [[m1, 0.9], [m2, 1.9]]) { m.awake = true; m.x = h.x + dx; m.y = h.y; m.atkT = 99; m.hp = m.hpMax = 9999; }
+    for (const m of st.mobs.slice(2)) m.awake = false;
+    h.atkT = 0; let chained = false;
+    for (let i = 0; i < 40 && !chained; i++) { D.djStep(st, {}); chained = st.ev.some(e => e.k === 'chain'); st.ev.length = 0; }
+    ok(chained && m2.hp < 9999, 'Croc-de-Foudre : le coup touche aussi un 2e monstre');
+  }
+  {
+    const st = D.djStart(D.genDungeon(5, 1), [leg('mage', 'casque', 'echo')], { seed: 5 }), h = st.heroes[0];
+    let echoes = 0;
+    for (let i = 0; i < 60; i++) { h.cd[1] = 0; D.djCast(st, h, 1); echoes += st.ev.filter(e => e.k === 'echo').length; st.ev.length = 0; }
+    ok(echoes > 3 && echoes < 25, 'Écho des Anciens : ' + echoes + ' compétences aussitôt prêtes sur 60');
+  }
+  {
+    const st = D.djStart(D.genDungeon(5, 1), [leg('voleur', 'bijou', 'soif', 8)], { seed: 5 }), h = st.heroes[0], m = st.mobs[0];
+    h.hp = h.hpMax * 0.5; const h0 = h.hp; m.awake = true; m.hp = 1;
+    st.calmT = 0; D.djHurt(st, m, 50, h, false, 'basic');
+    ok(h.hp > h0 + h.hpMax * 0.025, 'Cœur assoiffé : chaque monstre vaincu rend 3 % de vie');
+  }
+  {
+    const set = (k, sl) => D.genItem(D.mulberry32(sl.length + 3), { il: 5, set: k, sl, cls: 'guerrier' });
+    const t4 = Object.assign(hero('guerrier', 'nain', 6, { sk }), { id: 'htroll', eq: {} }); for (const sl of ['arme', 'casque', 'armure', 'bottes']) t4.eq[sl] = set('troll', sl);
+    const st = D.djStart(D.genDungeon(5, 1), [t4], { seed: 5 }), h = st.heroes[0], m = st.mobs[0];
+    m.awake = true; m.x = h.x + 0.9; m.y = h.y; m.hp = m.hpMax = 1e6; m.atkT = 99; for (const o of st.mobs.slice(1)) o.awake = false;
+    let stuns = 0;
+    for (let i = 0; i < 1200; i++) { D.djStep(st, {}); stuns += st.ev.filter(e => e.k === 'cc' && e.c === 'stun').length; st.ev.length = 0; m.x = h.x + 0.9; m.y = h.y; }
+    ok(h.set4.troll && stuns >= 2, 'tenue du chef troll complète : les coups étourdissent parfois (' + stuns + ' fois en 60 s)');
+    const r4 = Object.assign(hero('mage', 'humain', 6, { sk }), { id: 'hroi', eq: {} }); for (const sl of ['casque', 'armure', 'bottes']) r4.eq[sl] = set('roi', sl); r4.eq.arme = D.genItem(D.mulberry32(9), { il: 5, set: 'roi', sl: 'arme', cls: 'mage' });
+    const s2 = D.djStart(D.genDungeon(5, 1), [r4], { seed: 5 }), h2 = s2.heroes[0], m2 = s2.mobs[0];
+    h2.cd = [5, 5, 5]; m2.awake = true; m2.hp = 1; D.djHurt(s2, m2, 10, h2, false, 'basic');
+    ok(h2.cd[0] === 4 && h2.skillMul > 1.1, 'atours du roi squelette : compétences plus fortes, et un monstre vaincu les rapproche d’une seconde');
+  }
+  /* familiers */
+  {
+    const pets = ['loup', 'faucon', 'sanglier', 'chouette'].map(p => D.djStart(D.genDungeon(5, 6), [Object.assign(hero('rodeur', 'elfe', 6, { sk }), { id: 'hp' + p, pet: p })], { seed: 5 }));
+    const [lo, fa, sa, ch] = pets.map(s2 => s2.heroes[0]), petOf = s2 => s2.allies.find(x => x.kind === 'pet');
+    ok(petOf(pets[0]).pt === 'loup' && petOf(pets[0]).dmg > petOf(pets[1]).dmg && fa.crit > lo.crit && sa.hpMax > lo.hpMax && ch.cdMul < lo.cdMul, 'familiers : loup qui mord fort, faucon (critiques), sanglier (vie), chouette (recharge)');
+  }
+  /* à deux : chacun ses objets ; les objets de l'invitée lui sont envoyés en forme courte */
+  {
+    const A = hero('guerrier', 'nain', 4, { id: 'hA', own: 'uA', sk: { s0: 1 } }), B = hero('mage', 'elfe', 4, { id: 'hB', own: 'uB', sk: { s0: 1 } });
+    const r = playDuo(4321, 3, A, B), res = D.djResult(r.st), la = res.items.hA || [], lb = res.items.hB || [];
+    ok(la.length + lb.length >= 2 && la.every(x => x.sl !== 'arme' || ['epee', 'hache'].includes(x.k)) && lb.every(x => x.sl !== 'arme' || ['baton', 'grimoire'].includes(x.k)), 'à deux : chacun ses objets (' + la.length + ' et ' + lb.length + '), les armes faites pour sa classe');
+    const one = lb[0] || la[0], back = D.djUnpack(JSON.parse(JSON.stringify(D.djPack(one))));
+    ok(JSON.stringify(D.itemInfo(back)) === JSON.stringify(D.itemInfo(one)), 'objet envoyé en forme courte : identique à l’arrivée');
+  }
 }
 console.log(fails ? fails + ' échec(s).' : 'Tout est bon.');
 process.exit(fails ? 1 : 0);

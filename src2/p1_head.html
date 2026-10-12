@@ -8,6 +8,7 @@
   --bg:#E8EDE9; --surface:#F6F8F5; --surface-2:#DCE4DE; --fg:#17231E; --muted:#55645C; --line:#C3CEC6;
   --accent:#2A684B; --accent-fg:#F3FAF6; --lantern:#AD6210; --lantern-soft:#F4E2C6; --danger:#A63D2C; --ok:#2B7449;
   --wood:#8B5A2B; --stone:#5F6E7B; --food:#9C7112; --shadow:rgba(23,35,30,.18);
+  --gold:#A8750C; --iron:#5A6773; --r0:#69727D; --r1:#2D8649; --r2:#2A64C4; --r3:#8243C6; --r4:#BC5C16; --rs:#0F8670;
   --hud:rgba(246,248,245,.9);
   --font-display:"Grenze Gotisch","Palatino Linotype","Book Antiqua",Georgia,serif;
   --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
@@ -17,12 +18,14 @@
     --bg:#0F1613; --surface:#16201C; --surface-2:#22302A; --fg:#E2EAE5; --muted:#93A49A; --line:#2E3D36;
     --accent:#6CBB91; --accent-fg:#0B1712; --lantern:#F0A548; --lantern-soft:#3A2B16; --danger:#EE8A75; --ok:#73C597;
     --wood:#D49C63; --stone:#A8B6C2; --food:#E3BC5C; --shadow:rgba(0,0,0,.5); --hud:rgba(22,32,28,.9); color-scheme:dark;
+    --gold:#F2C14E; --iron:#AEBBC7; --r0:#B4BCC6; --r1:#6FD38C; --r2:#86B7FF; --r3:#C9A0FF; --r4:#FFAD5C; --rs:#4FD8BF;
   }
 }
 :root[data-theme="dark"]{
   --bg:#0F1613; --surface:#16201C; --surface-2:#22302A; --fg:#E2EAE5; --muted:#93A49A; --line:#2E3D36;
   --accent:#6CBB91; --accent-fg:#0B1712; --lantern:#F0A548; --lantern-soft:#3A2B16; --danger:#EE8A75; --ok:#73C597;
   --wood:#D49C63; --stone:#A8B6C2; --food:#E3BC5C; --shadow:rgba(0,0,0,.5); --hud:rgba(22,32,28,.9); color-scheme:dark;
+  --gold:#F2C14E; --iron:#AEBBC7; --r0:#B4BCC6; --r1:#6FD38C; --r2:#86B7FF; --r3:#C9A0FF; --r4:#FFAD5C; --rs:#4FD8BF;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -32,6 +35,7 @@ h1,h2,h3,p{margin:0}
 #gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;background:#9cc6e8}
 .ic{display:inline-flex;width:18px;height:18px;flex:none}
 .ic svg{width:100%;height:100%}
+.c-or{color:var(--gold)} .c-fer{color:var(--iron)}
 .c-bois{color:var(--wood)} .c-pierre{color:var(--stone)} .c-vivres{color:var(--food)} .c-army{color:var(--danger)} .c-tro{color:var(--lantern)}
 
 /* HUD */
@@ -52,7 +56,8 @@ h1,h2,h3,p{margin:0}
 .chipb .ic{width:14px;height:14px}
 .chipb.alert{background:var(--danger);color:#fff;border-color:transparent}
 .chipb.live .dot{width:7px;height:7px;border-radius:50%;background:#3ccf73;box-shadow:0 0 0 2px rgba(60,207,115,.25)}
-.stock{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px}
+.stock{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px}
+.pill .fill.none{visibility:hidden}
 .pill{padding:6px 8px 7px;display:grid;gap:3px;min-width:0}
 .pill .v{display:flex;align-items:center;gap:5px;font-weight:800;font-size:14.5px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
 .pill .v small{font-size:10.5px;color:var(--muted);font-weight:700}
@@ -229,7 +234,7 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 .land .me{order:1;max-width:250px;padding:4px 10px 4px 4px}
 .land .crest{width:32px;height:32px}
 .land .idtxt b{font-size:19px}
-.land .stock{order:2;flex:1 1 360px;max-width:470px}
+.land .stock{order:2;flex:1 1 420px;max-width:560px;grid-template-columns:repeat(6,minmax(0,1fr))}
 .land .pill{padding:5px 8px 6px}
 .land .chips{order:3;flex:1 1 auto;max-width:none}
 .land .invite{order:4;flex-basis:100%;max-width:420px;margin-left:auto}
@@ -366,6 +371,31 @@ ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:v
 .item p.muted{opacity:.55}
 .item .head b.row .chip.hero{font-size:11px;padding:1px 7px;margin-left:4px}
 @media (max-width:420px){ .optgrid.hk,.optgrid.c4{grid-template-columns:repeat(2,minmax(0,1fr))} }
+/* ---------- équipement : raretés, sac, forge, marchand ---------- */
+.rc0{color:var(--r0)} .rc1{color:var(--r1)} .rc2{color:var(--r2)} .rc3{color:var(--r3)} .rc4{color:var(--r4)} .rcs{color:var(--rs)}
+.rtag{display:inline-block;font-size:10.5px;font-weight:800;padding:0 6px;border-radius:999px;border:1px solid currentColor;margin-right:3px;line-height:16px}
+.iname{font-size:15px;font-weight:800}
+.arr{font-weight:900;font-size:13px} .arr.up{color:var(--ok)} .arr.down{color:var(--danger)} .arr.eq{color:var(--muted)}
+.ic.sl{width:18px;height:18px;color:var(--muted)}
+.irow .head .row{gap:6px;min-width:0;flex-wrap:nowrap}
+.irow2{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;padding:5px 0;border-top:1px solid var(--line)}
+.irow2 small{font-size:12px;color:var(--muted);font-weight:700}
+.irow2 .row{gap:6px}
+.idet{border-style:dashed}
+.slotrow{appearance:none;border:0;border-top:1px solid var(--line);background:transparent;color:var(--fg);font:inherit;display:flex;align-items:center;gap:10px;padding:8px 2px;text-align:left;cursor:pointer;width:100%;min-height:48px}
+.slotrow:first-child{border-top:0}
+.slotrow.off{opacity:.55;cursor:default}
+.slotrow .ic.sl{width:22px;height:22px}
+.sltxt{display:grid;gap:1px;flex:1;min-width:0}
+.sltxt small{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);font-weight:800}
+.sltxt em{font-style:normal;font-size:12.5px;color:var(--muted)}
+.gemc{gap:6px} .gdot{display:inline-block;width:9px;height:9px;border-radius:2px;transform:rotate(45deg);box-shadow:0 0 0 1px rgba(0,0,0,.25)}
+.pow b{color:var(--r4)} .setp b{color:var(--rs)}
+.sockets{display:grid;gap:6px}
+.row.wrap{flex-wrap:wrap}
+.item.off{opacity:.6}
+.bagf .btn.small{padding:6px 8px}
+.bagf .ic.sl{width:15px;height:15px;color:inherit}
 </style>
 
 <div id="app">

@@ -57,8 +57,21 @@ const IC = {
   s3: '<svg viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/></g></svg>',
 };
 IC.biere = IC.mug;
+/* Équipement : or, fer, emplacements, sac, enclume, patte */
+Object.assign(IC, {
+  or: '<svg viewBox="0 0 20 20"><ellipse cx="10" cy="13.2" rx="7" ry="3" fill="currentColor" opacity=".7"/><rect x="3" y="9.4" width="14" height="3.8" fill="currentColor" opacity=".7"/><ellipse cx="10" cy="9.4" rx="7" ry="3" fill="currentColor"/><ellipse cx="10" cy="9.4" rx="4" ry="1.4" fill="#fff" opacity=".4"/></svg>',
+  fer: '<svg viewBox="0 0 20 20"><path d="M5 7.5h10l2.6 6.5H2.4z" fill="currentColor"/><path d="M5 7.5h10l-1 2.2H6z" fill="#fff" opacity=".35"/></svg>',
+  s_arme: '<svg viewBox="0 0 24 24"><path d="M14.5 3H21v6.5L10.7 19.8l-2.1-2.1L18.4 8V5.6H16L6.3 15.4l-2.1-2.1z" fill="currentColor"/><path d="m3 17.6 3.4 3.4M6.6 14.6l2.8 2.8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  s_casque: '<svg viewBox="0 0 24 24"><path d="M4 15a8 8 0 0 1 16 0v2H4z" fill="currentColor"/><path d="M12 7v10M4 17h16v3H4z" stroke="currentColor" stroke-width="2"/><path d="M8.5 13h2.5v3H8.5z" fill="#fff" opacity=".45"/></svg>',
+  s_armure: '<svg viewBox="0 0 24 24"><path d="M8 3 4 5.5 5.5 11 7 10v10h10V10l1.5 1L20 5.5 16 3l-1.5 2h-5z" fill="currentColor"/><path d="M12 6v13" stroke="#fff" stroke-opacity=".4" stroke-width="1.5"/></svg>',
+  s_bottes: '<svg viewBox="0 0 24 24"><path d="M7 2.5h6V14l6.5 2.5c1 .4 1.5 1.3 1.5 2.3V21H4v-3l3-2z" fill="currentColor"/><path d="M7 7h6" stroke="#fff" stroke-opacity=".4" stroke-width="1.5"/></svg>',
+  s_bijou: '<svg viewBox="0 0 24 24"><path d="M5 3c0 4 3 7 7 7s7-3 7-7" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M12 9.5 16.5 14 12 21l-4.5-7z" fill="currentColor"/><path d="M12 9.5 14 14l-2 5" fill="#fff" opacity=".35"/></svg>',
+  s_bag: '<svg viewBox="0 0 24 24"><path d="M8 7a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="2" fill="none"/><path d="M5 8h14l1.5 12.5H3.5z" fill="currentColor"/><path d="M9 12h6" stroke="#fff" stroke-opacity=".45" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  s_anvil: '<svg viewBox="0 0 24 24"><path d="M3 7h13c0 3 2 4.5 5 5v1h-6l-1 3h3v3H7v-3h3l-1-3H8C5 13 3 11 3 7z" fill="currentColor"/></svg>',
+  s_paw: '<svg viewBox="0 0 24 24"><g fill="currentColor"><ellipse cx="12" cy="16" rx="5" ry="4.2"/><ellipse cx="6" cy="10" rx="2" ry="2.6"/><ellipse cx="18" cy="10" rx="2" ry="2.6"/><ellipse cx="9.3" cy="6.3" rx="2" ry="2.6"/><ellipse cx="14.7" cy="6.3" rx="2" ry="2.6"/></g></svg>',
+});
 const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k] || ''}</span>`;
-const RES_SHOW = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere'];
+const RES_SHOW = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere', 'fer', 'or'];
 function chipsRes(c, have, cls) { return RES.filter(k => c[k]).map(k => `<span class="chip${have && (have[k] || 0) < c[k] ? ' short' : ''}${cls ? ' ' + cls : ''}">${ico(k)}${fmtN(c[k])}</span>`).join(''); }
 const SPEC_ICON = { buch: 'bois', mine: 'pierre', agri: 'ble', chasse: 'viande', arti: 'pain', constr: 'hammer' };
 
@@ -100,7 +113,8 @@ function act(a, opts) {
   if (!test.ok) { if (!(opts && opts.quiet)) { toast(test.err); SND.sfx('error'); } return null; }
   pending.push(a); recompute(); renderAll(); refreshScene();
   scheduleCommit(150);
-  const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click', skill: 'star', spec: 'hero' }[a.type];
+  const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click', skill: 'star', spec: 'hero',
+    equip: 'upgrade', unequip: 'click', sell: 'coin', melt: 'wallhit', craft: 'upgrade', improve: 'upgrade', socket: 'built', unsocket: 'click', fuse: 'star', buy: 'coin', pet: 'click' }[a.type];
   if (fx && !(opts && opts.quiet)) SND.sfx(fx);
   return test;
 }
@@ -150,8 +164,8 @@ function onVillage(snap) {
   if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
-const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj']);
-const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal']);
+const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge']);
+const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch']);
 /* Nouvelles du journal pendant qu'on joue : une bulle pour la plus récente. */
 function newsCheck() {
   if (!me || !me.log.length) return;
@@ -173,6 +187,8 @@ function items(v, editable) {
     return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined };
   });
   if (editable && place && place.kind === 'new') out.push({ key: 'ghost', id: 0, type: place.type, lvl: 1, gx: place.gx, gz: place.gz, up: null, col: safeColor(v.c) });
+  /* Le marchand ambulant : sa charrette, près de la halle, les jours où il est là */
+  if (merchHere(v, now())) { const hall = v.b.find(b => b.type === 'halle'), spot = freeSpot(v, 'marchand', hall ? hall.gx + 3 : 12, hall ? hall.gz + 1 : 11); if (spot) out.push({ key: 'merch', id: 0, type: 'marchand', lvl: 1, gx: spot[0], gz: spot[1], up: null, col: safeColor(v.c) }); }
   return out;
 }
 function peopleOf(v) {
@@ -225,6 +241,7 @@ function onTap(cx, cy) {
   const k = V3.pickBuilding(cx, cy);
   const pk = V3.pickPerson(cx, cy, 16) || (k ? null : V3.pickPerson(cx, cy, 30));
   if (pk) { selP = pk; sel = null; SND.sfx('click'); refreshScene(); renderAll(); return; }
+  if (k === 'merch') { sel = null; selP = null; SND.sfx('click'); openSheet('merch'); return; }
   sel = k && k[0] === 'm' ? +k.slice(1) : null; selP = null;
   refreshScene(); renderAll();
 }
@@ -264,17 +281,19 @@ function topHTML() {
   if (pk) chips += `<button class="glass chipb${isOnline(pk) ? ' live' : ''}" data-act="sheet" data-s="village">${isOnline(pk) ? '<span class="dot"></span>' : ''}${esc(v.members[pk].name)}${isOnline(pk) ? '' : ' (absent·e)'}</button>`;
   else chips += `<button class="glass chipb" data-act="sheet" data-s="village">${ico('link', 'c-tro')}Inviter</button>`;
   if (v.feast > t) chips += `<span class="glass chipb">${ico('mug', 'c-tro')}Fête · ${fmtDur(v.feast - t)}</span>`;
+  if (merchHere(v, t)) chips += `<button class="glass chipb live" data-act="sheet" data-s="merch">${ico('or')}Marchand · ${fmtDur(merchLeaves(v, t) - t)}</button>`;
   const head = `<div class="idrow"><button class="glass me" data-act="sheet" data-s="village"><span class="crest" style="background:${safeColor(v.c)}">${esc(initial(v.name))}</span>
     <span class="idtxt"><b>${esc(v.name)}</b><small>${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</small></span></button>
     <div class="chips">${chips}</div></div>`;
   const cap = capOf(v), food = foodOf(v), mor = moraleOf(v, t), pop = v.vil.length, house = housingOf(v);
-  const pill = (k, icon, val, sub, frac, cls, act) => `<button class="glass pill c-${icon}${cls ? ' ' + cls : ''}" data-act="sheet" data-s="${act}"><div class="v">${ico(icon)}<span>${val}${sub ? '<small>' + sub + '</small>' : ''}</span></div><div class="fill"><i style="width:${Math.max(0, Math.min(100, frac * 100)).toFixed(0)}%"></i></div></button>`;
+  const pill = (k, icon, val, sub, frac, cls, act) => `<button class="glass pill c-${icon}${cls ? ' ' + cls : ''}" data-act="sheet" data-s="${act}"><div class="v">${ico(icon)}<span>${val}${sub ? '<small>' + sub + '</small>' : ''}</span></div>${frac == null ? '<div class="fill none"></div>' : `<div class="fill"><i style="width:${Math.max(0, Math.min(100, frac * 100)).toFixed(0)}%"></i></div>`}</button>`;
   const stock = `<div class="stock">
     ${pill('bois', 'bois', fmtN(v.r.bois), '', v.r.bois / cap, v.r.bois >= cap ? 'full' : '', 'stock')}
     ${pill('pierre', 'pierre', fmtN(v.r.pierre), '', v.r.pierre / cap, v.r.pierre >= cap ? 'full' : '', 'stock')}
     ${pill('food', 'pain', fmtN(food), '', food / (2 * cap), food < 1 ? 'warn' : '', 'stock')}
     ${pill('pop', 'people', pop, '/' + house, house ? pop / house : 0, '', 'people')}
-    ${pill('mor', 'heart', mor, ' %', mor / 100, mor < 35 ? 'warn' : '', 'people')}</div>`;
+    ${pill('mor', 'heart', mor, ' %', mor / 100, mor < 35 ? 'warn' : '', 'people')}
+    ${pill('or', 'or', fmtN(v.r.or || 0), '', null, '', 'stock')}</div>`;
   return head + stock + goalsHTML();
 }
 /* Objectifs : trois à la fois, sous la barre du haut. Repliés quand un panneau est ouvert en bas. */
@@ -320,6 +339,7 @@ function bldLine(v, b, t) {
   if (b.type === 'taverne') return '+' + (BLD.taverne.mor + 4 * (b.lvl - 1)) + ' de moral, et +' + BEER.mor + ' de plus quand on y sert de la bière. Attire de nouveaux villageois ; on peut y offrir une fête.';
   if (d.deco) return '+' + d.deco + ' de moral (les décorations comptent jusqu’à +' + DECO_MAX + ').';
   if (b.type === 'halle') return buildersMax(v) + ' bâtisseurs au plus · ' + sitesMax(v) + ' chantiers à la fois · bâtiments jusqu’au niveau ' + Math.min(3, hallLvl(v) + 1) + '.';
+  if (b.type === 'forge') return 'Forge de niveau ' + b.lvl + ' : objets ' + (b.lvl >= 3 ? 'jusqu’à légendaires' : b.lvl >= 2 ? 'jusqu’à épiques' : 'jusqu’à rares') + ', améliorations jusqu’à +' + maxUpOf(b.lvl) + ', sacs de ' + bagMax(v) + ' places' + (b.lvl >= 2 ? ', fusion des pierres' : '') + '.';
   return d.desc;
 }
 function bldPanel() {
@@ -349,7 +369,7 @@ function bldPanel() {
       else { const c = costOf(b.type, to), miss = missingTxt(v, c); h += `<div class="row split"><span class="chips2">${chipsRes(c, v.r)}</span><button class="btn${miss ? ' off' : ' primary'}" data-act="upgrade" data-id="${b.id}">Niveau ${to}</button></div>`; }
     } else if (b.lvl > 0) h += '<p class="note">Niveau maximum atteint.</p>';
   }
-  h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button>${b.type !== 'halle' ? `<button class="btn small" data-act="demolish" data-id="${b.id}">Démolir</button>` : ''}${b.type === 'taverne' && b.lvl > 0 ? '<button class="btn small" data-act="sheet" data-s="village" data-k="feast">' + ico('mug', '') + 'Fête</button>' : ''}</div>`;
+  h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button>${b.type !== 'halle' ? `<button class="btn small" data-act="demolish" data-id="${b.id}">Démolir</button>` : ''}${b.type === 'taverne' && b.lvl > 0 ? '<button class="btn small" data-act="sheet" data-s="village" data-k="feast">' + ico('mug', '') + 'Fête</button>' : ''}${b.type === 'forge' && b.lvl > 0 ? '<button class="btn small primary" data-act="sheet" data-s="forge">' + ico('s_anvil', '') + 'Ouvrir la forge</button>' : ''}</div>`;
   return h + '</div>';
 }
 function personPanel() {
@@ -540,12 +560,12 @@ function sheetHero() {
   let h = `<div class="sec"><h4>Tes héros · ${mine.length} sur ${slots}</h4>${mine.map(x => heroCard(v, x, x === sel)).join('')}`;
   if (mine.length < slots) h += `<button class="btn primary" data-act="newHero">${ico('crown', '')}Nouveau héros</button>`;
   else if (mine.length < 4) h += `<p class="note">${hasTavern(v) ? 'Agrandissez la taverne' : 'Construisez la taverne'} pour loger un héros de plus (4 au plus).</p>`;
-  h += '</div>' + heroDetail(v, sel, sel.own === uid);
+  h += '</div>' + heroGearHTML(v, sel, sel.own === uid) + heroDetail(v, sel, sel.own === uid);
   const pk = partnerId(v), ph = pk ? heroesOf(v, pk) : [];
   if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
-const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown' };
+const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil' };
 function sheetJournal() {
   const v = me;
   if (!v.log.length) return '<p class="note">Rien pour l’instant.</p>';
@@ -582,7 +602,7 @@ function sheetStock() {
   let h = `<p class="note">Chaque ressource peut monter jusqu’à <b>${fmtN(cap)}</b> : construisez des entrepôts pour en garder plus.</p><div class="item">`;
   for (const k of RES_SHOW) h += `<div class="row split stockrow"><b class="row">${ico(k)}${RES_LABEL[k]}</b><span><b>${fmtN(v.r[k] || 0)}</b> <small class="note">${fmtR(rt[k] || 0)}/h</small></span></div>`;
   h += `<div class="row split stockrow"><b class="row">${ico('people', 'c-tro')}Repas des villageois</b><span><small class="note">${fmtR(rt.food)}/h (pain et viande)</small></span></div></div>`;
-  h += '<p class="note">Le blé devient farine au moulin, puis pain à la boulangerie. Le pain et la viande nourrissent le village. L’orge devient bière à la brasserie : servie à la taverne, elle remonte le moral, et il en faut pour les fêtes.</p>';
+  h += '<p class="note">Le blé devient farine au moulin, puis pain à la boulangerie. Le pain et la viande nourrissent le village. L’orge devient bière à la brasserie : servie à la taverne, elle remonte le moral, et il en faut pour les fêtes. Le fer vient de la mine de fer : la forge s’en sert pour les objets des héros. L’or (la bourse commune, sans limite de place) se gagne en donjon et en vendant des objets.</p>';
   return h;
 }
 function sheetHelp() {
@@ -593,14 +613,15 @@ function sheetHelp() {
     + sec('Nourriture et saisons', ['Chaque villageois mange une ration par heure : du pain ou de la viande. Des repas variés remontent le moral.', 'Une saison dure 2 jours. En hiver, les champs ne donnent rien : faites des réserves en automne.', 'Sans nourriture, le moral s’effondre, et au bout d’un jour quelqu’un quitte le village.', 'Touchez un champ pour choisir sa culture : blé ou orge. L’orge devient bière à la brasserie ; servie à la taverne, la bière remonte le moral, et il en faut pour les fêtes.'])
     + sec('Construire', ['Les bâtisseurs font avancer les chantiers, plus vite s’ils sont doués en construction. Sans bâtisseur, ça avance quand même un peu.', 'Agrandir la halle débloque des bâtiments, plus de bâtisseurs et plus de chantiers à la fois.'])
     + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence (menu Héros, bouton +1) ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10.'])
-    + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de la pierre et du bois pour le village, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié.', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
+    + sec('L’équipement', ['Chaque héros porte une arme, un casque, une armure, des bottes et, dès le niveau 8, un bijou (menu Héros). Chaque classe manie sa famille d’armes : lames, arcs ou bâtons.', 'Les objets ont 5 raretés : commun (gris), peu commun (vert), rare (bleu), épique (violet), légendaire (orange, avec un pouvoir). Les objets d’ensemble (turquoise) donnent un bonus à 2 et à 4 pièces portées.', 'On les trouve en donjon : dans les coffres, sur les boss, parfois sur un monstre ; mieux dans les donjons plus hauts. À deux, chacun trouve ses propres objets.', 'Dans le sac, les flèches comparent avec l’objet porté : ▲ mieux, ▼ moins bien. Vendre un objet rapporte de l’or (la bourse commune) ; le fondre à la forge rend du fer.', 'La forge (avec le fer de la mine) fabrique un objet au choix, l’améliore jusqu’à +5 et sertit les pierres précieuses : trois pierres pareilles se fusionnent en une plus belle.', 'Un jour sur deux, un marchand ambulant s’installe près de la halle avec quelques objets à vendre.', 'Au niveau 6, un familier accompagne le héros : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.'])
+    + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de l’or, de la pierre et du bois pour le village, des objets et des pierres précieuses dans ton sac, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié (on garde les meilleurs objets).', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons' };
+  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon }[sheet];
+  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch }[sheet];
   setHTML(els.sheetBody, f ? f() : '');
   if (sheet === 'village' && sheetArg === 'feast' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#feastSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
@@ -726,6 +747,7 @@ const release = () => { pressing = null; };
 document.addEventListener('pointerup', release, true);
 document.addEventListener('pointercancel', release, true);
 const ACT = {
+  ...ACT_EQ,
   noop() {},
   orient: b => { orient = b.dataset.o; LS.set('mk2.orient', orient); applyOrientation(); renderAll(); },
   sheet: b => { renderSheet.scrolled = false; openSheet(b.dataset.s, b.dataset.k); },
@@ -780,7 +802,8 @@ const ACT = {
   install: () => { const e = installEvt; if (!e) return; installEvt = null; e.prompt(); (e.userChoice || Promise.resolve()).finally(() => renderAll()); },
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
-const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill', 'djInvite', 'djYes', 'djDown']);
+const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill', 'djInvite', 'djYes', 'djDown',
+  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (!QUIET.has(b.dataset.act)) SND.sfx('click');

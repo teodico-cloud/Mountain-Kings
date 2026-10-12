@@ -1,7 +1,7 @@
 /* Essais des règles du nouveau jeu (village commun). Usage : node tools/test_v2.js */
 const fs = require('fs'), path = require('path');
-const src = fs.readFileSync(path.join(__dirname, '../src2/p2_rules.js'), 'utf8');
-const R = new Function(src + '\nreturn { VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone };')();
+const src = ['p2_rules.js', 'p2e_equip.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
+const R = new Function(src + '\nreturn { VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone, genItem, cleanItem, itemInfo, canWear, gearOf, compareItem, bagOf, bagMax, mulberry32, merchHere, merchDay, RARITY, SETS, POWERS, GEMS, gemOf, craftCost, improveCost, SLOTS, DROP, rollRarity, forgeLvlOf };')();
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
 const H = 3600000, D = 24 * H, T0 = Date.UTC(2026, 9, 12, 8, 0, 0);
@@ -179,6 +179,100 @@ ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
   const c2 = R.clone(vh), g2 = c2.heroes[R.activeHero(c2, 'u1').id]; g2.lvl = 1; g2.xp = 0;
   const x1 = R.applyV(c1, { type: 'djEnd', hid: g1.id, lvl: 1, win: true, xp: 99999, theme: 'prof', deep: 0 }, who).xp, x2 = R.applyV(c2, { type: 'djEnd', hid: g2.id, lvl: 1, win: true, xp: 99999, theme: 'prof', deep: 3 }, who).xp;
   ok(x2 === x1 * 4, 'plafond d’expérience des Profondeurs : ×(1 + étages) (' + x1 + ' → ' + x2 + ')');
+}
+
+/* 16. Équipement : objets, sac, forge, marchand, familier */
+{
+  const R1 = R.mulberry32(42), R2 = R.mulberry32(42);
+  const i1 = R.genItem(R1, { il: 5, src: 'chest', cls: 'guerrier' }), i2 = R.genItem(R2, { il: 5, src: 'chest', cls: 'guerrier' });
+  ok(JSON.stringify(i1) === JSON.stringify(i2) && JSON.stringify(R.itemInfo(i1)) === JSON.stringify(R.itemInfo(R.cleanItem(JSON.parse(JSON.stringify(i1))))), 'même tirage = même objet ; ses bonus se recalculent à l’identique');
+  const cnt = [0, 0, 0, 0, 0], RR = R.mulberry32(7);
+  for (let i = 0; i < 4000; i++) cnt[R.rollRarity(RR, R.DROP.chest, 1)]++;
+  ok(cnt[0] > 1700 && cnt[0] < 2300 && cnt[4] < 60 && cnt[4] > 0, 'raretés des coffres au niveau 1 : ' + cnt.join(' / ') + ' sur 4000');
+  const hi = [0, 0, 0, 0, 0]; for (let i = 0; i < 4000; i++) hi[R.rollRarity(RR, R.DROP.chest, 10)]++;
+  ok(hi[2] + hi[3] + hi[4] > cnt[2] + cnt[3] + cnt[4], 'meilleures chances dans les donjons plus hauts (rare et mieux : ' + (cnt[2] + cnt[3] + cnt[4]) + ' → ' + (hi[2] + hi[3] + hi[4]) + ')');
+  const leg = R.genItem(R.mulberry32(3), { il: 10, r: 4, sl: 'arme', cls: 'mage' }), L = R.itemInfo(leg);
+  ok(leg.pw && R.POWERS[leg.pw].sl === 'arme' && Object.keys(L.af).length === 3 && L.so === 2 && ['baton', 'grimoire'].includes(leg.k) && /«/.test(L.name), 'légendaire : un pouvoir, 3 bonus, 2 pierres, une arme de mage (' + L.name + ')');
+  const com = R.itemInfo(R.genItem(R.mulberry32(5), { il: 1, r: 0, sl: 'arme', cls: 'guerrier' }));
+  ok(com.main.dmg >= 2.5 && com.main.dmg <= 3.1 && !Object.keys(com.af).length && com.so === 0, 'arme commune niveau 1 : +' + com.main.dmg + ' % de dégâts, sans bonus');
+  const setp = R.genItem(R.mulberry32(9), { il: 4, src: 'boss', set: 'troll', cls: 'guerrier' });
+  ok(setp.set === 'troll' && setp.r === 3 && setp.sl !== 'bijou' && /Chef troll/.test(R.itemInfo(setp).name), 'pièce d’ensemble : ' + R.itemInfo(setp).name);
+  ok(!R.cleanItem({ sl: 'chapeau' }) && R.cleanItem({ sl: 'arme', k: 'lance', r: 9, il: 999, sd: 1 }).r === 4 && R.cleanItem({ sl: 'arme', r: 2, il: 999, sd: 1 }, 7).il === 7, 'un objet reçu est remis dans les limites (rareté, niveau, sorte)');
+  /* le sac, équiper, comparer */
+  const ve = R.clone(vh), brokk = Object.values(ve.heroes).find(x => x.name === 'Brokk'), aelith = Object.values(ve.heroes).find(x => x.name === 'Aelith');
+  const it = (sl, r, il, k, extra) => Object.assign({ sl, k, r, il, sd: 1000 + sl.length * 7 + r * 13 + il }, extra || {});
+  let res = R.applyV(ve, { type: 'djEnd', hid: brokk.id, lvl: 3, win: true, xp: 10, or: 150, items: [it('arme', 2, 3, 'hache'), it('arme', 0, 1, 'epee'), it('bijou', 1, 2, 'anneau'), it('arme', 3, 3, 'arc'), it('casque', 1, 3, 'heaume')], gems: { rubis1: 2, topaze1: 1, xx: 5 } }, who);
+  const bag = ve.bag.u1, ids = Object.keys(bag.it);
+  ok(res.ok && res.items === 5 && ids.length === 5 && bag.gm.rubis1 === 2 && !bag.gm.xx && ve.r.or === 150, 'retour de donjon : 5 objets et 3 pierres dans le sac de Téo, 150 or dans la bourse commune');
+  const axe = ids.find(k => bag.it[k].k === 'hache'), bow = ids.find(k => bag.it[k].k === 'arc'), ring = ids.find(k => bag.it[k].sl === 'bijou'), oldSword = ids.find(k => bag.it[k].k === 'epee');
+  ok(!R.applyV(R.clone(ve), { type: 'equip', hid: brokk.id, id: bow }, who).ok && !R.applyV(R.clone(ve), { type: 'equip', hid: brokk.id, id: ring }, who).ok, 'un guerrier ne prend pas d’arc ; pas de bijou avant le niveau 8');
+  ok(!R.applyV(R.clone(ve), { type: 'equip', hid: aelith.id, id: axe }, who).ok, 'on n’équipe pas le héros de l’autre');
+  brokk.lvl = 3;
+  ok(R.applyV(ve, { type: 'equip', hid: brokk.id, id: oldSword }, who).ok && brokk.eq.arme.k === 'epee', 'Brokk prend l’épée commune');
+  ok(R.compareItem(brokk, bag.it[axe]) === 1, 'la hache rare est marquée « mieux » (▲)');
+  ok(R.applyV(ve, { type: 'equip', hid: brokk.id, id: axe }, who).ok && brokk.eq.arme.k === 'hache' && Object.values(bag.it).some(x => x.k === 'epee'), 'il prend la hache : l’épée retourne dans le sac');
+  const g0 = R.gearOf(brokk);
+  ok(g0.dmg > 0 && g0.crit + g0.haste + g0.leech + g0.skill + g0.cdr > 0, 'ce que donne l’équipement : +' + g0.dmg + ' % de dégâts et ses bonus');
+  /* vendre, fondre, forger, améliorer, sertir, fusionner */
+  const or0 = ve.r.or, sword = Object.keys(bag.it).find(k => bag.it[k].k === 'epee'), sv = R.itemInfo(bag.it[sword]).sell;
+  ok(R.applyV(ve, { type: 'sell', ids: [sword] }, who).ok && ve.r.or === or0 + sv && !bag.it[sword], 'vendre l’épée : +' + sv + ' or');
+  ok(!R.applyV(R.clone(ve), { type: 'melt', ids: [ring] }, who).ok && !R.applyV(R.clone(ve), { type: 'craft', sl: 'casque', hid: brokk.id }, who).ok, 'sans forge : pas de fonte ni de fabrication');
+  ve.b.find(x => x.type === 'halle').lvl = 2;
+  ve.b.push({ id: ve.nid++, type: 'forge', lvl: 1, gx: 2, gz: 2, up: null });
+  ok(R.forgeLvlOf(ve) === 1 && R.bagMax(ve) === 40, 'forge niveau 1 : sacs de 40 places');
+  ok(!R.applyV(R.clone(ve), { type: 'craft', sl: 'casque', hid: brokk.id }, who).ok, 'forger demande du fer');
+  ve.r.fer = 500; ve.r.bois = 500; ve.r.or = 1000;
+  const fer0 = ve.r.fer; res = R.applyV(ve, { type: 'melt', ids: [ring] }, who);
+  ok(res.ok && ve.r.fer > fer0 && !bag.it[ring], 'fondre l’anneau : +' + res.gain + ' fer');
+  const c0 = R.craftCost(brokk.lvl), b1 = Object.keys(bag.it).length, ferB = ve.r.fer, orB = ve.r.or; res = R.applyV(ve, { type: 'craft', sl: 'casque', hid: brokk.id }, who);
+  const made = bag.it[res.id];
+  ok(res.ok && Object.keys(bag.it).length === b1 + 1 && made.sl === 'casque' && made.il === brokk.lvl && made.r <= 2 && ve.r.fer === ferB - c0.fer && ve.r.or === orB - c0.or, 'la forge fabrique un casque de niveau ' + made.il + ' (' + R.RARITY[made.r].name.toLowerCase() + ') pour ' + c0.fer + ' fer, ' + c0.bois + ' bois et ' + c0.or + ' or');
+  const twin = R.clone(R.clone(ve)); // même compteur du sac : le même objet sortirait (pas de surprise après l'envoi au serveur)
+  ok(JSON.stringify(R.applyV(R.clone(ve), { type: 'craft', sl: 'bottes', hid: brokk.id }, who)) === JSON.stringify(R.applyV(twin, { type: 'craft', sl: 'bottes', hid: brokk.id }, who)), 'fabrication rejouée sur le serveur : le même objet');
+  const ax0 = R.itemInfo(brokk.eq.arme).main.dmg;
+  for (let k = 0; k < 3; k++) R.applyV(ve, { type: 'improve', hid: brokk.id, sl: 'arme' }, who);
+  ok(brokk.eq.arme.up === 3 && R.itemInfo(brokk.eq.arme).main.dmg > ax0 * 1.25 && !R.applyV(R.clone(ve), { type: 'improve', hid: brokk.id, sl: 'arme' }, who).ok, 'améliorée +3 (+30 % sur ses bonus principaux), +4 demande une forge plus grande');
+  ok(R.applyV(ve, { type: 'socket', hid: brokk.id, sl: 'arme', s: 0, g: 'topaze1' }, who).ok && brokk.eq.arme.gm.g0 === 'topaze1' && !bag.gm.topaze1, 'topaze sertie dans la hache');
+  const gs = R.gearOf(brokk).dmg;
+  ok(R.applyV(ve, { type: 'unsocket', hid: brokk.id, sl: 'arme', s: 0 }, who).ok && bag.gm.topaze1 === 1 && R.gearOf(brokk).dmg < gs, 'retirée : elle revient dans le sac');
+  bag.gm.rubis1 = 3;
+  ok(!R.applyV(R.clone(ve), { type: 'fuse', g: 'rubis1' }, who).ok, 'fusion : il faut une forge de niveau 2');
+  ve.b.find(x => x.type === 'forge').lvl = 2;
+  ok(R.applyV(ve, { type: 'fuse', g: 'rubis1' }, who).ok && bag.gm.rubis2 === 1 && !bag.gm.rubis1, '3 éclats de rubis → 1 rubis');
+  /* ensembles et plafonds */
+  const hs = { lvl: 10, cls: 'guerrier', eq: {} };
+  for (const sl of ['arme', 'casque', 'armure', 'bottes']) hs.eq[sl] = R.genItem(R.mulberry32(sl.length), { il: 8, set: 'abime', sl, cls: 'guerrier' });
+  const gsx = R.gearOf(hs);
+  ok(gsx.sets.abime === 4 && gsx.set4.abime && gsx.potX === 1 && gsx.potion >= 30, 'panoplie de l’abîme complète : bonus à 2 et 4 pièces (une potion de plus)');
+  const hcap = { lvl: 10, cls: 'voleur', eq: {} };
+  for (const sl of R.SLOTS) hcap.eq[sl] = Object.assign(R.genItem(R.mulberry32(99 + sl.length), { il: 60, r: 4, sl, cls: 'voleur' }), { gm: { g0: 'emeraude3', g1: 'emeraude3' } });
+  ok(R.gearOf(hcap).crit <= 30, 'plafond : pas plus de +30 % de coups critiques par l’équipement');
+  /* sac plein */
+  const vf2 = R.clone(ve); vf2.b = vf2.b.filter(x => x.type !== 'forge');
+  for (let k = Object.keys(vf2.bag.u1.it).length; k < 30; k++) vf2.bag.u1.it['z' + k] = it('bottes', 0, 1, 'bottes');
+  const orf = vf2.r.or; res = R.applyV(vf2, { type: 'djEnd', hid: brokk.id, lvl: 1, win: true, xp: 1, items: [it('casque', 0, 1, 'casque')] }, who);
+  ok(res.ok && res.autoSold === 1 && vf2.r.or > orf && vf2.log.slice(-1)[0].m.includes('Sac plein'), 'sac plein : l’objet en trop est vendu (+' + res.autoGold + ' or)');
+  /* le marchand ambulant : un jour sur deux */
+  const vm = R.clone(ve);
+  R.simulateVillage(vm, vm.born + 1 * D + 2 * H);
+  ok(R.merchHere(vm, vm.t) && vm.merch.it.length === 4 && vm.merch.gm.length === 2 && vm.log.some(l => l.k === 'merch'), 'le 2e jour, le marchand s’installe (4 objets, 2 pierres)');
+  vm.r.or = 5000;
+  res = R.applyV(vm, { type: 'buy', i: 0 }, who);
+  ok(res.ok && Object.values(vm.bag.u1.it).some(x => x.sd === vm.merch.it[0].sd) && !R.applyV(R.clone(vm), { type: 'buy', i: 0 }, who2).ok, 'on achète son premier objet ; il n’est vendu qu’une fois');
+  ok(R.applyV(vm, { type: 'buy', g: 1 }, who2).ok && Object.keys(vm.bag.u2.gm).length === 1, 'Léa lui achète une pierre (rangée dans son sac à elle)');
+  R.simulateVillage(vm, vm.born + 2 * D + H);
+  ok(!R.merchHere(vm, vm.t) && !R.applyV(R.clone(vm), { type: 'buy', i: 1 }, who).ok, 'le lendemain, il est reparti');
+  /* familier */
+  ok(!R.applyV(R.clone(ve), { type: 'pet', hid: brokk.id, p: 'faucon' }, who).ok, 'pas de familier avant le niveau 6');
+  brokk.lvl = 6;
+  ok(R.applyV(ve, { type: 'pet', hid: brokk.id, p: 'faucon' }, who).ok && brokk.pet === 'faucon' && !R.applyV(R.clone(ve), { type: 'pet', hid: brokk.id, p: 'dragon' }, who).ok, 'au niveau 6, Brokk choisit un faucon');
+  /* fer : la mine de fer */
+  const vi = R.clone(ve); vi.b.push({ id: vi.nid++, type: 'mine', lvl: 1, gx: 18, gz: 18, up: null });
+  const miner = vi.vil.find(p => p.job === 'bat'); R.applyV(vi, { type: 'job', vid: miner.id, to: vi.b[vi.b.length - 1].id }, who);
+  const fi = vi.r.fer; R.simulateVillage(vi, vi.t + 5 * H);
+  ok(vi.r.fer > fi + 10, 'un mineur à la mine de fer : +' + Math.round(vi.r.fer - fi) + ' fer en 5 heures');
+  const nv = R.newVillage('vnew', 'Neuf', '#D27A22', T0, 'u9', 'X');
+  ok(nv.r.fer === 0 && nv.r.or === 0 && R.goalsOf(nv).length === 3, 'nouveau village : fer et or à zéro');
 }
 
 /* 14. Rapidité : simuler 3 jours */

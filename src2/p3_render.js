@@ -564,7 +564,7 @@ const V3 = (() => {
       for (let i = 0; i < 260; i++) { const wx = (R() * 2 - 1) * (W_HALF - 0.5), wz = (R() * 2 - 1) * (W_HALF - 0.5), k = mIdx(wx, wz); if (k < 0 || mask[k]) continue; rocks.push([wx, 0, wz, 0.12 + R() * 0.2, R() * 6.28, 0.6]); }
     }
     for (let i = 0; i < 70; i++) { const wx = (R() * 2 - 1) * (W_HALF - 1), wz = (R() * 2 - 1) * (W_HALF - 1); if (Math.max(Math.abs(wx), Math.abs(wz)) < half + 0.5) continue; const k = mIdx(wx, wz); if (k >= 0 && mask[k] === 3) continue; rocks.push([wx, 0, wz, 0.18 + R() * 0.35, R() * 6.28, 0.55]); }
-    const PROPS = { bucheron: ['logs', 'logs', 'crate'], carriere: ['block', 'block', 'barrel'], champ: ['hay'], moulin: ['sack', 'sack', 'hay'], boulangerie: ['sack', 'barrel'], brasserie: ['sack', 'crate'], entrepot: ['crate', 'barrel', 'sack'], taverne: ['barrel', 'barrel', 'crate'], halle: ['barrel', 'crate', 'sack'], chasse: ['crate', 'logs'] };
+    const PROPS = { bucheron: ['logs', 'logs', 'crate'], carriere: ['block', 'block', 'barrel'], mine: ['block', 'crate'], forge: ['barrel', 'logs', 'crate'], champ: ['hay'], moulin: ['sack', 'sack', 'hay'], boulangerie: ['sack', 'barrel'], brasserie: ['sack', 'crate'], entrepot: ['crate', 'barrel', 'sack'], taverne: ['barrel', 'barrel', 'crate'], halle: ['barrel', 'crate', 'sack'], chasse: ['crate', 'logs'] };
     const propL = { barrel: [], crate: [], sack: [], logs: [], block: [], hay: [] };
     for (const it of lastGroundItems) {
       if (it.dead || it.key === 'ghost' || !PROPS[it.type] || it.lvl <= 0) continue;
@@ -968,7 +968,53 @@ const V3 = (() => {
     if (lv >= 3) { g.add(P('box', 0xe4d6b4, 0.5, 0.5, 0.5, -0.55, y0, 0.55)); g.add(P('prism', 0x8e3b2d, 0.62, 0.34, 0.6, -0.55, y0 + 0.5, 0.55)); }
     return { g, info: { top: y0 + H + 0.8, muzzle: 1, emit: [[-0.6, y0 + H + 0.85, -0.45]] } };
   }
-  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG };
+  /* Forge : atelier de pierre ouvert, grande cheminée, foyer rougeoyant, enclume (en attendant son modèle Meshy). */
+  function forgeG(it) {
+    const g = new THREE.Group(), lv = Math.max(1, it.lvl), y0 = 0.14, ch = 1.7 + 0.2 * lv;
+    g.add(P('box', 0x8a8378, 1.72, y0, 1.5, 0, 0, 0));
+    g.add(P('box', 0x8f8a80, 1.5, 0.92, 0.3, 0, y0, -0.56));
+    g.add(P('box', 0x8f8a80, 0.26, 0.92, 0.86, -0.62, y0, -0.14));
+    for (const x of [-0.7, 0.7]) g.add(P('box', 0x5f4127, 0.08, 0.96, 0.08, x, y0, 0.58, 0, true));
+    g.add(P('prism', 0x5d4632, 1.82, 0.5, 1.5, 0, y0 + 0.96, -0.04));
+    g.add(P('box', 0x7d756a, 0.48, ch, 0.48, 0.48, y0, -0.5));
+    g.add(P('box', 0x6a625a, 0.62, 0.46, 0.46, 0.48, y0, -0.2));
+    g.add(P('box', fireMat, 0.34, 0.2, 0.05, 0.48, y0 + 0.12, 0.04, 0, true));
+    const glow = makeGlow(0xff8a3a, 1.1, y0 + 0.3); glow.position.set(0.48, y0 + 0.3, 0.12); g.add(glow);
+    g.add(P('cyl8', 0x6b4a2e, 0.32, 0.3, 0.32, -0.15, y0, 0.28));
+    g.add(P('box', 0x3c4148, 0.44, 0.1, 0.18, -0.15, y0 + 0.3, 0.28));
+    g.add(P('box', 0x3c4148, 0.18, 0.08, 0.14, -0.15, y0 + 0.4, 0.28, 0, true));
+    g.add(P('cyl8', 0x7a5534, 0.28, 0.34, 0.28, -0.58, y0, 0.48));
+    if (lv >= 2) { g.add(P('box', 0x5f4127, 0.05, 0.62, 0.46, 0.84, y0, 0.22, 0, true)); for (const z of [0.08, 0.22, 0.36]) g.add(P('box', 0xc9d0d6, 0.03, 0.5, 0.05, 0.8, y0 + 0.08, z, 0, true)); }
+    if (lv >= 3) g.add(P('box', 0x8e3b2d, 0.04, 0.5, 0.34, -0.75, y0 + 0.45, 0.3, 0, true));
+    return { g, info: { top: y0 + ch + 0.2, muzzle: 1, emit: [[0.48, y0 + ch + 0.1, -0.5]] } };
+  }
+  /* Mine de fer : entrée dans un tertre rocheux, poutres, wagonnet de minerai sombre, lanterne. */
+  function mineG(it) {
+    const g = new THREE.Group(), lv = Math.max(1, it.lvl);
+    g.add(P('dode', 0x6f6a62, 1.75, 1.05 + 0.15 * lv, 1.4, -0.1, 0, -0.25));
+    g.add(P('dode', 0x7d776d, 0.9, 0.7, 0.8, 0.58, 0, -0.45));
+    g.add(P('box', 0x1b1a19, 0.6, 0.6, 0.1, -0.05, 0.02, 0.43, 0, true));
+    for (const x of [-0.39, 0.29]) g.add(P('box', 0x5f4127, 0.1, 0.72, 0.1, x, 0, 0.48));
+    g.add(P('box', 0x5f4127, 0.84, 0.1, 0.12, -0.05, 0.7, 0.48));
+    for (const x of [-0.17, 0.07]) g.add(P('box', 0x6b6f75, 0.04, 0.03, 0.62, x, 0.01, 0.82, 0, true));
+    g.add(P('box', 0x4a4038, 0.36, 0.2, 0.4, -0.05, 0.08, 0.86));
+    for (const [x, z, c] of [[-0.12, 0.8, 0x3a3f46], [0.02, 0.92, 0x6a4a3a], [-0.06, 0.95, 0x3a3f46]]) g.add(P('ico', c, 0.15, 0.13, 0.15, x, 0.27, z, 0, true));
+    if (lv >= 2) g.add(P('ico', 0x3a3f46, 0.3, 0.22, 0.3, 0.6, 0, 0.45));
+    const l = makeGlow(0xffb050, 0.8, 0.62); l.position.set(0.4, 0.62, 0.56); g.add(l);
+    return { g, info: { top: 1.25 + 0.15 * lv, muzzle: 1, emit: [] } };
+  }
+  /* Charrette du marchand ambulant : plateau, roues, bâche rayée, caisses. */
+  function cartG() {
+    const g = new THREE.Group();
+    g.add(P('box', 0x8a6a45, 0.78, 0.07, 0.5, 0, 0.24, 0));
+    for (const sx of [-1, 1]) g.add(piv(0, 0.17, sx * 0.27, [P('cyl12', 0x5f4127, 0.32, 0.05, 0.32, 0, -0.025, 0, 0, true)], Math.PI / 2, 0, 0));
+    for (const [x, z] of [[-0.36, -0.22], [0.36, -0.22], [-0.36, 0.22], [0.36, 0.22]]) g.add(P('box', 0x5f4127, 0.04, 0.42, 0.04, x, 0.3, z, 0, true));
+    g.add(P('box', 0xc8443a, 0.84, 0.05, 0.56, 0, 0.72, 0)); g.add(P('box', 0xf2e6c8, 0.84, 0.051, 0.18, 0, 0.72, 0, 0, true));
+    g.add(P('box', 0x9b7448, 0.24, 0.2, 0.22, -0.18, 0.31, 0.02)); g.add(P('cyl8', 0x7a5534, 0.2, 0.26, 0.2, 0.16, 0.31, 0.04));
+    g.add(P('box', 0x5f4127, 0.5, 0.03, 0.03, 0.62, 0.24, 0, 0, true));
+    return { g, info: { top: 1.0, muzzle: 0.5, emit: [] } };
+  }
+  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG };
   function build(it) {
     const s = BLD[it.type].size, g = new THREE.Group();
     let info = { top: 1.2, muzzle: 1, emit: [] };
@@ -1234,8 +1280,8 @@ const V3 = (() => {
     orque: { m: 'barbarian', tex: 'orc_barbarian', h: 1.14, w: 1.18 }, halfelin: { m: 'knight', h: 0.74, w: 1.08 }, mortvivant: { m: 'rogue', tint: 0x9db3a2, h: 1.05, w: 0.86 } };
   const CLASS_GEAR = { guerrier: ['1H_Sword', 'Round_Shield'], paladin: ['1H_Sword', 'Badge_Shield', 'Knight_Helmet'], rodeur: ['2H_Crossbow'], mage: ['Throwable'],
     voleur: ['Knife', 'Knife_Offhand'], pretre: ['Throwable', 'Knight_Cape'], druide: ['Throwable', 'Barbarian_Cape'], necro: ['Throwable', 'Rogue_Cape'] };
-  const JOB_GEAR = { bucheron: ['1H_Axe'], carriere: ['2H_Axe'], champ: [], chasse: ['1H_Crossbow'], moulin: ['Mug'], boulangerie: ['Mug'], brasserie: ['Mug'], bat: ['1H_Axe'] };
-  const JOB_WORK = { bucheron: '1H_Melee_Attack_Chop', carriere: '2H_Melee_Attack_Chop', bat: '1H_Melee_Attack_Chop', chasse: '2H_Ranged_Shoot' };
+  const JOB_GEAR = { bucheron: ['1H_Axe'], carriere: ['2H_Axe'], mine: ['2H_Axe'], champ: [], chasse: ['1H_Crossbow'], moulin: ['Mug'], boulangerie: ['Mug'], brasserie: ['Mug'], bat: ['1H_Axe'] };
+  const JOB_WORK = { bucheron: '1H_Melee_Attack_Chop', carriere: '2H_Melee_Attack_Chop', mine: '2H_Melee_Attack_Chop', bat: '1H_Melee_Attack_Chop', chasse: '2H_Ranged_Shoot' };
   const HERO_GEAR = {
     guerrier: { humain: ['1H_Sword', 'Badge_Shield', 'Knight_Helmet', 'Knight_Cape'], nain: ['1H_Axe', 'Barbarian_Round_Shield', 'Barbarian_Hat', 'Barbarian_Cape'], elfe: ['1H_Sword', 'Round_Shield', 'Rogue_Cape'] },
     rodeur: { humain: ['2H_Crossbow', 'Knight_Cape'], nain: ['2H_Crossbow', 'Barbarian_Hat'], elfe: ['2H_Crossbow', 'Rogue_Cape'] },
@@ -1773,10 +1819,19 @@ const V3 = (() => {
     let g;
     if (a.kind === 'skel') { g = djModel(DJ_U.skel); djPrepAnims(g); g.add(djRing(0xa070ff, 0.6, 0.45)); }
     else {
-      /* le familier : une petite bête toute simple, en attendant son modèle */
-      g = new THREE.Group(); const body = new THREE.Group();
-      body.add(P('box', 0x8a7a66, 0.32, 0.22, 0.5, 0, 0.12, 0)); body.add(P('box', 0x8a7a66, 0.24, 0.22, 0.22, 0, 0.26, 0.3));
-      body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, -0.07, 0.48, 0.3)); body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, 0.07, 0.48, 0.3));
+      /* le familier : une petite bête toute simple selon son espèce, en attendant son modèle */
+      g = new THREE.Group(); const body = new THREE.Group(), pt = a.pt || 'loup';
+      if (pt === 'faucon' || pt === 'chouette') {
+        const c = pt === 'faucon' ? 0x7a5a3a : 0xd8cbb0, y = 0.95;
+        body.add(P('sph', c, 0.26, 0.24, 0.34, 0, y, 0)); body.add(P('sph', c, 0.2, 0.2, 0.2, 0, y + 0.16, 0.12));
+        body.add(P('cone4', 0xe0a020, 0.06, 0.08, 0.06, 0, y + 0.18, 0.24, 0, true));
+        for (const sx of [-1, 1]) body.add(piv(sx * 0.12, y + 0.08, 0, [P('box', c, 0.36, 0.03, 0.2, sx * 0.18, 0, 0, 0, true)], 0, 0, sx * 0.3));
+      } else {
+        const c = pt === 'sanglier' ? 0x5e4434 : 0x8a7a66, k = pt === 'sanglier' ? 1.15 : 1;
+        body.add(P('box', c, 0.32 * k, 0.22 * k, 0.5 * k, 0, 0.12, 0)); body.add(P('box', c, 0.24 * k, 0.22 * k, 0.22 * k, 0, 0.26 * k, 0.3 * k));
+        if (pt === 'sanglier') for (const sx of [-1, 1]) body.add(P('cone4', 0xf2ead8, 0.04, 0.1, 0.04, sx * 0.08, 0.28, 0.46, 0, true));
+        else { body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, -0.07, 0.48, 0.3)); body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, 0.07, 0.48, 0.3)); }
+      }
       g.add(body); g.userData = { body, A: {}, mixer: null };
     }
     const bar = makeBar(0.5, 0xb48cff); bar.position.y = 1.3; bar.visible = false; g.add(bar);
@@ -1961,6 +2016,21 @@ const V3 = (() => {
       case 'storm': for (const p of e.pts || []) { burst(p[0], p[1], 0.3, 0xe8e0c8, 5); wave(p[0], p[1], 0xd8d0b8, e.r, 0.4); } shake(0.3); break;
       case 'raised': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xa070ff, 1.2, 0.6); djNum(p[0], p[1], 'relevé…', '#c9a0ff', false); } break; }
       case 'combo': { const p = P2(e.id); if (p) { djNum(p[0], p[1], 'COMBO !', '#ffd23f', true); wave(p[0], p[1], 0xffd23f, 1.3, 0.35); for (let i = 0; i < 4; i++) spark(p[0], 0.7 + i * 0.25, p[1], 0xffe07a); } break; }
+      case 'item': {
+        /* un objet trouvé : une colonne de lumière de la couleur de sa rareté (seulement pour ses propres objets, et toujours dès « rare ») */
+        if (e.id !== DJ.me && e.r < 2 && !e.set) break;
+        const c = new THREE.Color(e.set ? SET_COL : RARITY[e.r].col).getHex(), H = 1.2 + 0.5 * e.r;
+        const w = 0.11 + 0.02 * e.r, g2 = new THREE.CylinderGeometry(w, w, H, 8, 1, true); g2.translate(0, H / 2, 0);
+        const m = new THREE.Mesh(g2, basic(c, { transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })); m.position.set(e.x - half, 0, e.y - half);
+        djGroup.add(m); DJ.teles.push({ m, t: 0, T: 1.2 + 0.2 * e.r, fade: true });
+        for (let i = 0; i < 4 + 2 * e.r; i++) spark(e.x + (Math.random() - 0.5) * 0.5, 0.4 + Math.random() * H, e.y + (Math.random() - 0.5) * 0.5, c);
+        if (e.r >= 2 || e.set) djNum(e.x, e.y, e.set ? 'Ensemble !' : RARITY[e.r].name + ' !', e.set ? SET_COL : RARITY[e.r].col, e.r >= 3);
+        break;
+      }
+      case 'gem': { const G = gemOf(e.g); if (G) { const c = new THREE.Color(G.col).getHex(); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5) * 0.4, 0.5 + Math.random(), e.y + (Math.random() - 0.5) * 0.4, c); djNum(e.x, e.y, '◆', G.col, true); } break; }
+      case 'chain': { const L = Math.hypot(e.x1 - e.x, e.y1 - e.y); if (L > 0.1) { const g2 = new THREE.PlaneGeometry(0.18, L); g2.rotateX(-Math.PI / 2); g2.translate(0, 0, L / 2); const m = new THREE.Mesh(g2, basic(0x9fe3ff, { transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })); m.position.set(e.x - half, 0.9, e.y - half); m.rotation.y = Math.atan2(e.x1 - e.x, e.y1 - e.y); djGroup.add(m); DJ.teles.push({ m, t: 0, T: 0.18, fade: true }); spark(e.x1, 0.9, e.y1, 0x9fe3ff); } break; }
+      case 'echo': { const p = P2(e.id); if (p) { for (let i = 0; i < 4; i++) spark(p[0], 0.8 + i * 0.25, p[1], 0x9fe3ff); djNum(p[0], p[1], 'écho !', '#9fe3ff', false); } break; }
+      case 'sursis': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xffd27a, 1.8, 0.7); djNum(p[0], p[1], 'Dernier Rempart !', '#ffd27a', true); } break; }
       case 'slam': wave(e.x, e.y, 0xff6a3a, e.r, 0.5); debris(e.x, e.y, 2.5, true, 12); shake(0.45); break;
       case 'charge': dustRing(P2(e.id) ? P2(e.id)[0] : 0, P2(e.id) ? P2(e.id)[1] : 0, 0.6); break;
       case 'wall': shake(0.4); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5), 2.4 + Math.random() * 0.4, e.y + (Math.random() - 0.5), 0xfff07a); break;

@@ -6,8 +6,9 @@ const MIN = 60000, HOUR = 3600000, DAY = 24 * HOUR;
 const SEASON_LEN = 2 * DAY;      // une saison dure 2 jours réels
 
 /* ---------- ressources ---------- */
-const RES = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere'];
-const RES_LABEL = { bois: 'Bois', pierre: 'Pierre', ble: 'Blé', farine: 'Farine', pain: 'Pain', viande: 'Viande', orge: 'Orge', biere: 'Bière' };
+const RES = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere', 'fer', 'or'];
+const RES_LABEL = { bois: 'Bois', pierre: 'Pierre', ble: 'Blé', farine: 'Farine', pain: 'Pain', viande: 'Viande', orge: 'Orge', biere: 'Bière', fer: 'Fer', or: 'Or' };
+const NO_CAP = new Set(['or']);       // l'or (la bourse commune) n'a pas de limite de place
 const FOOD = ['pain', 'viande'];
 const EAT_DAY = 24;              // rations mangées par villageois et par jour (une par heure)
 /* Bière : servie à la taverne, chaque villageois en boit 3 par jour ; tant qu'il y en a, le moral monte. */
@@ -116,19 +117,22 @@ const BLD = {
   brasserie: { name: 'Brasserie', size: 2, max: 3, cost: { bois: 90, pierre: 50 }, mul: 2, work: 90, spec: 'arti', jobs: 1, inp: { orge: 8 }, out: { biere: 6 }, job: 'Brasseur', hall: 2, cat: 'prod', desc: 'Brasse l’orge en bière. Servie à la taverne, elle remonte le moral.' },
   chasse: { name: 'Pavillon de chasse', size: 2, max: 3, cost: { bois: 50 }, mul: 2, work: 40, spec: 'chasse', jobs: 2, out: { viande: 7 }, seasonal: 'chasse', job: 'Chasseur', cat: 'prod', desc: 'Les chasseurs rapportent de la viande, un peu moins en hiver.' },
   entrepot: { name: 'Entrepôt', size: 2, max: 3, cost: { bois: 100, pierre: 40 }, mul: 2, work: 60, store: 600, cat: 'stock', desc: '+600 de place par niveau, pour chaque ressource.' },
+  mine: { name: 'Mine de fer', size: 2, max: 3, cost: { bois: 80, pierre: 60 }, mul: 2, work: 70, spec: 'mine', jobs: 2, out: { fer: 6 }, job: 'Mineur', hall: 2, cat: 'prod', desc: 'Les mineurs y extraient le fer, pour la forge. Les nains y excellent.' },
+  forge: { name: 'Forge', size: 2, max: 3, cost: { bois: 120, pierre: 90 }, mul: 2, work: 100, hall: 2, cat: 'heros', desc: 'Fabrique, améliore et fond l’équipement des héros, et sertit les pierres précieuses. Chaque niveau : de meilleurs objets, des améliorations plus poussées et 10 places de plus dans chaque sac.' },
   taverne: { name: 'Taverne', size: 3, max: 3, cost: { bois: 150, pierre: 80 }, mul: 2.2, work: 120, mor: 10, hall: 2, cat: 'vie', desc: 'Remonte le moral, attire de nouveaux villageois, et c’est là qu’on fait la fête.' },
   banc: { name: 'Banc', size: 1, max: 1, cost: { bois: 20 }, work: 5, deco: 1, cat: 'deco', desc: 'Un peu de confort : +1 de moral.' },
   fleurs: { name: 'Parterre de fleurs', size: 1, max: 1, cost: { bois: 10, pierre: 5 }, work: 5, deco: 1, cat: 'deco', desc: 'Égaie le village : +1 de moral.' },
   fontaine: { name: 'Fontaine', size: 2, max: 1, cost: { pierre: 120 }, work: 60, deco: 4, hall: 2, cat: 'deco', desc: 'La fierté du village : +4 de moral.' },
   statue: { name: 'Statue', size: 1, max: 1, cost: { pierre: 80, bois: 20 }, work: 40, deco: 3, hall: 3, cat: 'deco', desc: 'Statue d’un héros de légende : +3 de moral.' },
+  marchand: { name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
 };
-const SHOP = ['maison', 'bucheron', 'carriere', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'banc', 'fleurs', 'fontaine', 'statue'];
-const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['deco', 'Décorations']];
+const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'banc', 'fleurs', 'fontaine', 'statue'];
+const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['heros', 'Pour les héros'], ['deco', 'Décorations']];
 const LIMITS = {
   halle: [1, 1, 1, 1, 1],
   maison: [3, 5, 7, 9, 12], bucheron: [1, 2, 2, 3, 3], carriere: [1, 1, 2, 2, 3], champ: [2, 3, 4, 5, 6],
   moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], brasserie: [0, 1, 1, 1, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
-  taverne: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
+  taverne: [0, 1, 1, 1, 1], mine: [0, 1, 1, 2, 2], forge: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
 };
 const DECO_MAX = 15;             // le moral apporté par les décorations est plafonné
 const FEAST = { cost: { pain: 30, viande: 30, biere: 20 }, mor: 15, len: DAY, cd: 3 * DAY };
@@ -231,6 +235,8 @@ const GOALS = [
   { id: 'halle2', name: 'La halle grandit', txt: 'Agrandir la halle du village au niveau 2.', prog: v => [hallLvl(v), 2], rew: { bois: 150, pierre: 100 } },
   { id: 'pain', name: 'Du pain pour tous', txt: 'Construire un moulin et une boulangerie.', prog: v => [Math.min(1, built(v, 'moulin')) + Math.min(1, built(v, 'boulangerie')), 2], rew: { pain: 60 } },
   { id: 'taverne', name: 'La taverne', txt: 'Construire la taverne.', prog: v => [built(v, 'taverne'), 1], rew: { bois: 100, pierre: 60 } },
+  { id: 'mine', name: 'Le fer', txt: 'Construire une mine de fer.', prog: v => [built(v, 'mine'), 1], rew: { bois: 80, pierre: 60 } },
+  { id: 'forge', name: 'La forge', txt: 'Construire la forge, pour équiper vos héros.', prog: v => [built(v, 'forge'), 1], rew: { fer: 60, or: 50 } },
   { id: 'biere', name: 'Santé !', txt: 'Semer de l’orge dans un champ et construire une brasserie.', prog: v => [(v.b.some(b => b.type === 'champ' && b.lvl > 0 && b.crop === 'orge') ? 1 : 0) + Math.min(1, built(v, 'brasserie')), 2], rew: { orge: 40 } },
   { id: 'pop8', name: 'Huit villageois', txt: 'Loger huit villageois.', prog: v => [v.vil.length, 8], rew: { bois: 120, pierre: 60 } },
   { id: 'hiver', name: 'Un hiver sans famine', txt: 'Passer un hiver entier sans que personne n’ait faim.', prog: v => [cntOf(v, 'win'), 1], rew: { pain: 80, bois: 100 } },
@@ -308,7 +314,7 @@ function newVillage(vid, name, col, t, uid, pname) {
   const v = {
     v: VERSION, vid, name, c: col, born: t, t, seed, tick: 0, nid: 1, q: 0,
     members: { [uid]: { name: pname, t, hi: 1 } }, heroes: {},
-    r: { bois: 160, pierre: 80, ble: 0, farine: 0, pain: 60, viande: 40, orge: 0, biere: 0 },
+    r: { bois: 160, pierre: 80, ble: 0, farine: 0, pain: 60, viande: 40, orge: 0, biere: 0, fer: 0, or: 0 },
     b: [], vil: [], cands: [], log: [], hunger: 0, feast: 0, feastCd: 0, ws: seasonIdx({ born: t }, t),
     goals: [], cnt: { acc: 0, fete: 0, win: 0 }, wok: 0,
   };
@@ -331,7 +337,10 @@ function newVillage(vid, name, col, t, uid, pname) {
 function stepVillage(v) {
   const t = v.t, h = 1 / 60, cap = capOf(v), si = seasonIdx(v, t), S = SEASONS[si];
   const mor = moraleOf(v, t), mf = moraleF(mor);
-  const add = (k, n) => { v.r[k] = Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
+  const add = (k, n) => { v.r[k] = NO_CAP.has(k) ? (v.r[k] || 0) + n : Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
+  /* Le marchand ambulant : un jour sur deux, il s'installe sur la place avec quelques objets */
+  const md = merchDay(v, t);
+  if (md % 2 === 1 && (!v.merch || v.merch.d !== md)) { v.merch = genMerch(v, md); addLog(v, t, 'Un marchand ambulant s’installe sur la place du village, jusqu’à demain.', 'merch'); }
   /* Saison qui change */
   if (si !== v.ws) {
     const prev = v.ws, warm = prev === 3 && si === 0 && v.wok;
@@ -618,13 +627,126 @@ function applyV(v, a, who) {
       }
       const pris = a.pris ? prisonerOf(v, t) : null;
       if (pris) v.cands.push(pris);
+      /* L'or va dans la bourse commune (à deux, c'est l'hôte qui le rapporte) ; les objets et les pierres, dans le sac du joueur. */
+      const lm = 1 + 0.2 * (L - 1), gold = Math.max(0, Math.min(Math.round(600 * lm * (th === 'prof' ? 1 + deep : 1)), Math.round(+a.or || 0)));
+      const bag = bagOf(v, who.uid), maxIl = L + 2 + (th === 'prof' ? Math.ceil(deep / 2) + 1 : 0);
+      let nItems = 0, autoSold = 0, autoGold = 0;
+      for (const x of (Array.isArray(a.items) ? a.items : []).slice(0, th === 'prof' ? 60 : 20)) {
+        const it = cleanItem(x, maxIl); if (!it) continue;
+        if (bagCount(bag) >= bagMax(v)) { autoSold++; autoGold += itemInfo(it).sell; continue; }
+        bagAdd(v, who.uid, it); nItems++;
+      }
+      for (const g in (a.gems && typeof a.gems === 'object' ? a.gems : {})) { const G = gemOf(g), n = Math.max(0, Math.min(10, a.gems[g] | 0)); if (G && n) bag.gm[G.key] = (bag.gm[G.key] || 0) + n; }
+      if (gold + autoGold) v.r.or = (v.r.or || 0) + gold + autoGold;
+      if (gold) got.or = gold;
       const up = hh.lvl - lv0;
       const fl = deep ? deep + ' étage' + (deep > 1 ? 's terminés' : ' terminé') : 'aucun étage terminé';
       const what = th === 'prof' ? (win ? ' remonte des Profondeurs (' : ' a dû fuir les Profondeurs (') + fl + ')'
         : win ? ' revient vainqueur ' + (th === 'crypte' ? 'de la crypte des rois' : 'de la mine des gobelins') + ' (niveau ' + L + ')' : ' a dû fuir ' + (th === 'crypte' ? 'la crypte des rois' : 'la mine des gobelins') + ' (niveau ' + L + ')';
-      addLog(v, t, hh.name + what + ' : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : ''), 'dj');
+      addLog(v, t, hh.name + what + ' : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + (nItems ? ', ' + nItems + ' objet' + (nItems > 1 ? 's' : '') : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : '') + (autoSold ? ' Sac plein : ' + autoSold + ' objet' + (autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + autoGold + ' or.' : ''), 'dj');
       if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + (th === 'crypte' ? ' d’un tombeau de la crypte' : ' d’un cachot souterrain') + ', voudrait s’installer au village.', 'cand');
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0 };
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold };
+    }
+    /* ---------- équipement (étape 3) ---------- */
+    case 'equip': {
+      /* Porter un objet de son sac (l'objet qu'il remplace retourne dans le sac). */
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      const bag = bagOf(v, who.uid), it = bag.it[a.id]; if (!it) return fail('Objet introuvable.');
+      const cw = canWear(hh, it); if (!cw.ok) return fail(cw.why);
+      if (!hh.eq) hh.eq = {};
+      const old = hh.eq[it.sl];
+      delete bag.it[a.id]; it.id = a.id; hh.eq[it.sl] = it;
+      if (old) { if (!old.id || bag.it[old.id]) old.id = 'i' + (bag.n++); bag.it[old.id] = old; }
+      return { ok: true, name: itemInfo(it).name };
+    }
+    case 'unequip': {
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      const it = hh.eq && hh.eq[a.sl]; if (!it) return { ok: true };
+      const bag = bagOf(v, who.uid); if (bagCount(bag) >= bagMax(v)) return fail('Ton sac est plein : vends ou fonds un objet d’abord.');
+      delete hh.eq[a.sl]; if (!it.id || bag.it[it.id]) it.id = 'i' + (bag.n++); bag.it[it.id] = it;
+      return { ok: true };
+    }
+    case 'sell': case 'melt': {
+      /* Vendre (de l'or pour la bourse commune) ou fondre à la forge (du fer) des objets du sac ; leurs pierres reviennent dans le sac. */
+      const melt = a.type === 'melt';
+      if (melt && !forgeLvlOf(v)) return fail('Il faut une forge pour fondre un objet.');
+      const bag = bagOf(v, who.uid), ids = (Array.isArray(a.ids) ? a.ids : [a.id]).slice(0, 80);
+      let gain = 0, n = 0;
+      for (const id of ids) { const it = bag.it[id]; if (!it) continue; const I = itemInfo(it); gain += melt ? I.melt : I.sell; gemsBack(bag, it); delete bag.it[id]; n++; }
+      if (!n) return fail('Objet introuvable.');
+      if (melt) { const cap = capOf(v); v.r.fer = Math.min(Math.max(cap, v.r.fer || 0), (v.r.fer || 0) + gain); }
+      else v.r.or = (v.r.or || 0) + gain;
+      return { ok: true, gain, n };
+    }
+    case 'craft': {
+      /* Forger un objet pour un de ses héros : la rareté dépend du niveau de la forge, le niveau de l'objet de celui du héros. */
+      const f = forgeLvlOf(v); if (!f) return fail('Il faut une forge.');
+      if (!SLOTS.includes(a.sl)) return fail('Emplacement inconnu.');
+      const hh = a.hid ? v.heroes[a.hid] : activeHero(v, who.uid); if (!hh || hh.own !== who.uid) return fail('Choisis un de tes héros.');
+      const bag = bagOf(v, who.uid); if (bagCount(bag) >= bagMax(v)) return fail('Ton sac est plein.');
+      const c = craftCost(hh.lvl), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c);
+      const R = mulberry32(hash((v.seed ^ hashStr(who.uid) ^ Math.imul(bag.n + 1, 2654435761)) >>> 0));
+      const it = genItem(R, { il: hh.lvl, src: 'forge' + Math.min(3, f), cls: hh.cls, sl: a.sl });
+      const id = bagAdd(v, who.uid, it), I = itemInfo(it);
+      if (it.r >= 3) addLog(v, t, nm + ' forge un objet ' + RARITY[it.r].name.toLowerCase() + ' : ' + I.name + ' !', 'forge');
+      return { ok: true, id, r: it.r, name: I.name };
+    }
+    case 'improve': {
+      const f = forgeLvlOf(v); if (!f) return fail('Il faut une forge.');
+      const at = itemAt(v, who.uid, a); if (!at) return fail('Objet introuvable.');
+      const it = at.it; if ((it.up | 0) >= maxUpOf(f)) return fail((it.up | 0) >= 5 ? 'Déjà amélioré au maximum (+5).' : 'Agrandissez la forge pour aller plus loin.');
+      const c = improveCost(it), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); it.up = (it.up | 0) + 1;
+      return { ok: true, up: it.up };
+    }
+    case 'socket': case 'unsocket': {
+      /* Sertir une pierre dans un objet (celle qui y était revient dans le sac), ou l'en retirer. */
+      if (!forgeLvlOf(v)) return fail('Il faut une forge pour sertir une pierre.');
+      const at = itemAt(v, who.uid, a); if (!at) return fail('Objet introuvable.');
+      const it = at.it, s = a.s | 0, bag = bagOf(v, who.uid); if (s < 0 || s >= socketsOf(it)) return fail('Pas de place pour une pierre ici.');
+      if (!it.gm) it.gm = {};
+      const old = it.gm['g' + s];
+      if (a.type === 'unsocket') { if (gemOf(old)) { bag.gm[old] = (bag.gm[old] || 0) + 1; delete it.gm['g' + s]; } return { ok: true }; }
+      const G = gemOf(a.g); if (!G || !(bag.gm[G.key] > 0)) return fail('Tu n’as pas cette pierre.');
+      if (gemOf(old)) bag.gm[old] = (bag.gm[old] || 0) + 1;
+      bag.gm[G.key]--; if (!bag.gm[G.key]) delete bag.gm[G.key];
+      it.gm['g' + s] = G.key;
+      return { ok: true };
+    }
+    case 'fuse': {
+      if (forgeLvlOf(v) < 2) return fail('Il faut une forge de niveau 2 pour fusionner les pierres.');
+      const G = gemOf(a.g), bag = bagOf(v, who.uid); if (!G) return fail('Pierre inconnue.');
+      if (G.n >= 3) return fail('Cette pierre est déjà parfaite.');
+      if ((bag.gm[G.key] || 0) < 3) return fail('Il faut trois pierres pareilles.');
+      const c = { or: GEM_FUSE_COST[G.n] }, m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); bag.gm[G.key] -= 3; if (!bag.gm[G.key]) delete bag.gm[G.key];
+      const nk = G.type + (G.n + 1); bag.gm[nk] = (bag.gm[nk] || 0) + 1;
+      return { ok: true, g: nk, name: gemOf(nk).name };
+    }
+    case 'buy': {
+      /* Acheter au marchand ambulant (avec l'or de la bourse commune) : chaque objet ne se vend qu'une fois. */
+      if (!merchHere(v, t)) return fail('Le marchand est reparti.');
+      const M = v.merch, sold = String(M.sold || ''), bag = bagOf(v, who.uid);
+      if (a.g != null) {
+        const i = a.g | 0, key = M.gm && M.gm[i]; if (!gemOf(key) || sold.includes('g' + i + ';')) return fail('Déjà vendu.');
+        const c = { or: gemPrice(key) }, m = missingTxt(v, c); if (m) return fail(m);
+        pay(v, c); bag.gm[key] = (bag.gm[key] || 0) + 1; M.sold = sold + 'g' + i + ';';
+        return { ok: true, name: gemOf(key).name };
+      }
+      const i = a.i | 0, src = M.it && M.it[i]; if (!src || sold.includes('i' + i + ';')) return fail('Déjà vendu.');
+      if (bagCount(bag) >= bagMax(v)) return fail('Ton sac est plein.');
+      const c = { or: merchPrice(src) }, m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); const it = cleanItem(src), id = bagAdd(v, who.uid, it); M.sold = sold + 'i' + i + ';';
+      addLog(v, t, nm + ' achète au marchand : ' + itemInfo(it).name + '.', 'merch');
+      return { ok: true, id, name: itemInfo(it).name };
+    }
+    case 'pet': {
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      if (hh.lvl < PET_LVL) return fail('Le familier arrive au niveau ' + PET_LVL + '.');
+      if (!PETS[a.p]) return fail('Familier inconnu.');
+      hh.pet = a.p;
+      return { ok: true };
     }
     case 'skill': {
       /* Un point de compétence : +1 rang (5 au plus) à une compétence déjà ouverte. */

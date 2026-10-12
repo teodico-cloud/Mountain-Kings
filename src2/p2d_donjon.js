@@ -255,8 +255,10 @@ function djHero(h) {
   const C = DJ_CLASS[h.cls] || DJ_CLASS.guerrier, lvl = Math.max(1, Math.min(HERO_MAX_LVL, h.lvl | 0)), pw = djMul(lvl), at = l => lvl >= l;
   const cls = DJ_CLASS[h.cls] ? h.cls : 'guerrier', race = RACES[h.race] ? h.race : 'humain', sk = h.sk || {};
   const sp = lvl >= SPEC_LVL && (h.spec === 0 || h.spec === 1) ? h.spec : null, spec = (c, s) => cls === c && sp === s;
-  const hp = C.hp * pw * (race === 'nain' ? 1.15 : 1);
-  let dmg = C.dmg * pw, armor = C.armor + (cls === 'guerrier' && at(4) ? 0.1 : 0);
+  /* Équipement (en %) et familier (niveau 6) */
+  const G = gearOf(h), pet = lvl >= PET_LVL ? (PETS[h.pet] ? h.pet : 'loup') : null;
+  const hp = C.hp * pw * (race === 'nain' ? 1.15 : 1) * (1 + G.hp / 100) * (pet === 'sanglier' ? 1.08 : 1);
+  let dmg = C.dmg * pw * (1 + G.dmg / 100), armor = C.armor + (cls === 'guerrier' && at(4) ? 0.1 : 0) + G.armor / 100;
   if (spec('guerrier', 0)) { dmg *= 1.2; armor -= 0.05; }
   if (spec('guerrier', 1)) armor += 0.1;
   if (spec('paladin', 0)) dmg *= 1.15;
@@ -265,15 +267,17 @@ function djHero(h) {
   return {
     id: h.id, own: h.own || '', name: h.name || '', race, cls, sex: h.sex === 'f' ? 'f' : 'm', col: h.col || COLORS[0], lvl, spec: sp, kind: 'hero',
     x: 0, y: 0, px: 0, py: 0, r: 0.35, fx: 1, fy: 0, hpBase: hp, hpMax: hp, hp, dmg, armor,
-    range: C.range * (cls === 'rodeur' && at(4) ? 1.1 : 1), cdAtk: C.cd,
-    speed: C.speed * (race === 'elfe' ? 1.1 : 1) * (cls === 'rodeur' && at(7) ? 1.1 : 1),
-    crit: (C.crit || 0.05) + (race === 'halfelin' ? 0.05 : 0) + (cls === 'voleur' && at(4) ? 0.1 : 0), critMul: spec('voleur', 0) ? 2.5 : 2,
-    dodge: (C.dodge || 0) + (race === 'elfe' ? 0.1 : 0) + (cls === 'voleur' && at(7) ? 0.1 : 0), taken: cls === 'mage' && at(7) ? 0.9 : 1,
-    cdMul: cls === 'mage' && at(4) ? 0.9 : 1,
+    range: C.range * (cls === 'rodeur' && at(4) ? 1.1 : 1), cdAtk: C.cd / (1 + G.haste / 100),
+    speed: C.speed * (race === 'elfe' ? 1.1 : 1) * (cls === 'rodeur' && at(7) ? 1.1 : 1) * (1 + G.speed / 100),
+    crit: (C.crit || 0.05) + (race === 'halfelin' ? 0.05 : 0) + (cls === 'voleur' && at(4) ? 0.1 : 0) + G.crit / 100 + (pet === 'faucon' ? 0.05 : 0), critMul: spec('voleur', 0) ? 2.5 : 2,
+    dodge: Math.min(0.6, (C.dodge || 0) + (race === 'elfe' ? 0.1 : 0) + (cls === 'voleur' && at(7) ? 0.1 : 0) + G.dodge / 100), taken: cls === 'mage' && at(7) ? 0.9 : 1,
+    cdMul: (cls === 'mage' && at(4) ? 0.9 : 1) * (1 - G.cdr / 100) * (pet === 'chouette' ? 0.95 : 1),
+    leech: G.leech / 100, potMul: 1 + G.potion / 100, skillMul: 1 + G.skill / 100, gold: G.gold / 100, pw: G.pw, set4: G.set4, pet,
+    luck: (race === 'halfelin' ? 1.25 : 1) * (G.pw.tresor ? 1.3 : 1), sursis: false,
     heal: (cls === 'paladin' && at(4) ? 1.1 : 1) * (cls === 'pretre' && at(7) ? 1.15 : 1) * (spec('paladin', 1) ? 1.2 : 1) * (spec('pretre', 0) ? 1.25 : 1),
-    regen: cls === 'druide' && at(4) ? 0.01 : 0, instinct: cls === 'druide' && at(7), souffle: cls === 'guerrier' && at(7), moisson: cls === 'necro' && at(7), aura: cls === 'paladin' && at(7),
+    regen: (cls === 'druide' && at(4) ? 0.01 : 0) + G.regen / 100, instinct: cls === 'druide' && at(7), souffle: cls === 'guerrier' && at(7), moisson: cls === 'necro' && at(7), aura: cls === 'paladin' && at(7),
     rank: [0, 1, 2].map(i => lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, sk['s' + i] | 0)) : 0),
-    cd: [0, 0, 0], cdMax: [1, 1, 1], atkT: 0, tgt: 0, pot: lvl >= 2 ? 4 : 3, potT: 0, b: {}, criA: 0, shield: 0, form: null,
+    cd: [0, 0, 0], cdMax: [1, 1, 1], atkT: 0, tgt: 0, pot: (lvl >= 2 ? 4 : 3) + G.potX, potT: 0, b: {}, criA: 0, shield: 0, form: null,
     dead: false, revived: false, mv: false, atkN: 0, castN: 0, lastCast: '',
     tp: 0, rev: 0, gone: false, remote: false,   // à deux : téléportations (le téléphone de l'autre se recale), relève, départ, héros piloté à distance
   };
@@ -301,7 +305,7 @@ function djStart(d, heroes, opts) {
     altar: d.altar ? { x: d.altar[0] + 0.5, y: d.altar[1] + 0.5, used: false } : null,
     pris: d.prisoner ? { x: d.prisoner[0] + 0.5, y: d.prisoner[1] + 0.5, freed: false } : null,
     traps: d.traps.map((t, i) => ({ x: t.x, y: t.y, ph: (i * 0.37) % 2.4, on: false, hit: {} })),
-    exit: null, bless: null, xp: 0, loot: {}, kills: 0, flow: null, flowN: -99, boss: 0, calmT: 0,
+    exit: null, bless: null, xp: 0, loot: {}, kills: 0, flow: null, flowN: -99, boss: 0, calmT: 0, gold: 0, items: {}, gems: {},
     pk: 1 + 0.7 * (heroes.length - 1),
   };
   for (const h of st.heroes) if (o.remote && h.id === o.remote) h.remote = true;
@@ -322,8 +326,9 @@ function djStart(d, heroes, opts) {
   }
   st.heroes.forEach((h, i) => { h.x = h.px = d.start[0] + 0.5 + (i ? 1.2 : 0); h.y = h.py = d.start[1] + 0.5 + (i ? 0.6 : 0); });
   /* Le familier (niveau 6) : il suit son héros et mord sa cible ; les monstres ne s'en occupent pas. */
-  for (const h of st.heroes) if (h.lvl >= 6) st.allies.push({ id: st.nid++, kind: 'pet', own: h.id, x: h.x - 0.8, y: h.y + 0.8, px: h.x - 0.8, py: h.y + 0.8, r: 0.25, hp: 1, hpMax: 1,
-    dmg: h.dmg * 0.35 * (h.cls === 'rodeur' && h.spec === 1 ? 3 : 1), range: 1.1, rate: 1.2, speed: 5.5, atkT: 0, t: 1e9, inv: true, tgt: 0, mv: false, atkN: 0 });
+  for (const h of st.heroes) if (h.pet) st.allies.push({ id: st.nid++, kind: 'pet', pt: h.pet, own: h.id, x: h.x - 0.8, y: h.y + 0.8, px: h.x - 0.8, py: h.y + 0.8, r: 0.25, hp: 1, hpMax: 1,
+    dmg: h.dmg * 0.35 * (h.cls === 'rodeur' && h.spec === 1 ? 3 : 1) * (h.pet === 'loup' ? 1.3 : h.pet === 'faucon' ? 0.8 : 1), range: 1.1, rate: 1.2, speed: 5.5, atkT: 0, t: 1e9, inv: true, tgt: 0, mv: false, atkN: 0 });
+  st.goldMul = 1 + st.heroes.reduce((a, h) => a + (h.gold || 0), 0);
   return st;
 }
 
@@ -340,6 +345,7 @@ function djHurt(st, m, v, src, crit, kind) {
   }
   const dealt = Math.min(v, m.hp);
   m.hp -= v; st.ev.push({ k: 'hit', id: m.id, v: Math.round(v), crit: !!crit });
+  if (src && src.kind === 'hero' && src.leech > 0 && !src.dead) djHeal(st, src, dealt * src.leech);      // vol de vie (équipement)
   if (m.hp <= 0) djKill(st, m);
   return dealt;
 }
@@ -351,8 +357,36 @@ function djKill(st, m) {
     if (h.dead) continue;
     if (h.souffle) djHeal(st, h, h.hpMax * 0.03);                               // Second souffle
     if (h.moisson) for (let i = 0; i < 3; i++) h.cd[i] = Math.max(0, h.cd[i] - 0.5);   // Moisson
+    if (h.pw.soif) djHeal(st, h, h.hpMax * 0.03);                                // Cœur assoiffé (légendaire)
+    if (h.set4.roi) for (let i = 0; i < 3; i++) h.cd[i] = Math.max(0, h.cd[i] - 1);    // Atours du roi squelette (4 pièces)
   }
-  if (m.boss) st.ev.push({ k: 'loot', got: djLootAdd(st, DJ_BOSS_LOOT, djLootMul(st.lvl)), x: m.x, y: m.y });
+  /* Butin : de l'or pour le village, et pour chaque héros ses propres objets (à deux, chacun le sien). */
+  const lm = djLootMul(st.lvl);
+  if (!m.boss) {
+    st.gold += Math.round((1 + djRnd(st) * 2) * lm * (m.big ? 3 : 1) * st.goldMul);
+    for (const h of st.heroes) if (!h.gone && djRnd(st) < (m.big ? 0.06 : 0.02) * h.luck) djDrop(st, h, { src: 'mob' }, m);
+  } else {
+    const g = Math.round(60 * lm * st.goldMul), set = st.d.floor && djRnd(st) < 0.5 ? 'abime' : SET_OF_THEME[st.d.theme] || 'troll';
+    st.gold += g;
+    const got = djLootAdd(st, DJ_BOSS_LOOT, lm); got.or = g;
+    st.ev.push({ k: 'loot', got, x: m.x, y: m.y });
+    for (const h of st.heroes) if (!h.gone) {
+      djDrop(st, h, djRnd(st) < 0.25 ? { src: 'boss', set } : { src: 'boss' }, m);
+      if (djRnd(st) < 0.5) djDrop(st, h, { src: 'boss' }, m);
+      if (djRnd(st) < 0.3) djGem(st, h, djRnd(st) < 0.25 ? 2 : 1, m);
+    }
+  }
+}
+/* Un objet trouvé par un héros (rangé à son nom : à deux, chacun garde le sien). */
+function djDrop(st, h, o, at) {
+  const it = genItem(() => djRnd(st), Object.assign({ il: st.lvl, cls: h.cls, luck: h.luck }, o));
+  (st.items[h.id] = st.items[h.id] || []).push(it);
+  st.ev.push({ k: 'item', id: h.id, r: it.r, sl: it.sl, set: it.set || 0, x: at.x, y: at.y });
+}
+function djGem(st, h, n, at) {
+  const key = GEM_KEYS[Math.floor(djRnd(st) * GEM_KEYS.length)] + n, g = st.gems[h.id] = st.gems[h.id] || {};
+  g[key] = (g[key] || 0) + 1;
+  st.ev.push({ k: 'gem', id: h.id, g: key, x: at.x, y: at.y });
 }
 function djHeal(st, h, v) {
   if (!h || h.dead || !(v > 0)) return 0;
@@ -361,12 +395,13 @@ function djHeal(st, h, v) {
   return h.hp - before;
 }
 /* Dégâts reçus par un héros, après esquive, armure et bouclier. */
-function djHurtHero(st, h, v) {
+function djHurtHero(st, h, v, src) {
   if (h.dead || h.b.inv > 0 || !(v > 0)) return 0;
   if (djRnd(st) < h.dodge) { st.ev.push({ k: 'miss', id: h.id }); return 0; }
   let ar = h.armor + (h.b.cri > 0 ? h.criA : 0) + (h.form === 'ours' ? 0.4 + (h.cls === 'druide' && h.spec === 0 ? 0.15 : 0) : 0);
   if (st.heroes.some(p => p.aura && !p.dead && djDist(p, h) <= 4)) ar += 0.1;          // Aura du paladin
   v *= (1 - Math.min(0.75, Math.max(0, ar))) * h.taken * st.dmgMul;
+  if (src && src.kind === 'mob' && src.hp > 0 && h.pw.epines) djHurt(st, src, v * 0.3, h, false, 'dot');       // Peau-de-Ronces (légendaire)
   if (h.shield > 0) { const a = Math.min(h.shield, v); h.shield -= a; v -= a; if (a >= 1) st.ev.push({ k: 'block', id: h.id, v: Math.round(a) }); }
   return djDamageHero(st, h, v);
 }
@@ -374,7 +409,8 @@ function djDamageHero(st, h, v) {
   if (h.dead || !(v > 0)) return 0;
   h.hp -= v; st.ev.push({ k: 'hurt', id: h.id, v: Math.round(v) });
   if (h.hp <= 0) {
-    if (h.race === 'mortvivant' && !h.revived) { h.revived = true; h.hp = h.hpMax * 0.4; h.b.inv = 1.5; st.ev.push({ k: 'revive', id: h.id }); }
+    if (h.pw && h.pw.sursis && !h.sursis) { h.sursis = true; h.hp = 1; h.b.inv = 2; st.ev.push({ k: 'sursis', id: h.id }); }   // Dernier Rempart (légendaire)
+    else if (h.race === 'mortvivant' && !h.revived) { h.revived = true; h.hp = h.hpMax * 0.4; h.b.inv = 1.5; st.ev.push({ k: 'revive', id: h.id }); }
     else { h.hp = 0; h.dead = true; h.form = null; h.mv = false; st.ev.push({ k: 'down', id: h.id }); }
   }
   return v;
@@ -383,8 +419,8 @@ function djRaise(st, h, frac, by) {
   h.dead = false; h.hp = Math.max(1, h.hpMax * frac); h.rev = 0; h.b = { inv: 1.5 };
   st.ev.push({ k: 'raise', id: h.id, by });
 }
-function djHit(st, t, v) {
-  if (t.kind === 'hero') return djHurtHero(st, t, v);
+function djHit(st, t, v, src) {
+  if (t.kind === 'hero') return djHurtHero(st, t, v, src);
   if (t.inv || t.hp <= 0) return 0;
   t.hp -= v * st.dmgMul; st.ev.push({ k: 'hit', id: t.id, v: Math.round(v * st.dmgMul), ally: true });
   if (t.hp <= 0) { t.hp = 0; st.ev.push({ k: 'die', id: t.id, x: t.x, y: t.y }); }
@@ -401,6 +437,18 @@ function djCC(st, m, kind, s, by) {
 function djPoison(st, h, m) {
   const S = DJ_SKILLS.voleur[1], P = 1 + 0.15 * ((h.rank[1] || 1) - 1);
   if (m.hp > 0) { m.poi = S.pt; m.poiD = Math.max(m.poiD, h.dmg * S.dps * P); }
+}
+/* Après un coup simple réussi (corps à corps ou projectile) : poison du voleur, pouvoirs légendaires, ensemble du chef troll. */
+function djOnBasic(st, h, t, v, crit) {
+  if (!h || h.kind !== 'hero' || !t) return;
+  if (h.b.poison > 0) djPoison(st, h, t);
+  if (h.pw.brasier && t.hp > 0) { t.poi = Math.max(t.poi, 3); t.poiD = Math.max(t.poiD, v * 0.25 / 3); }
+  if (h.pw.chaine) {
+    let best = null, bd = 2.6;
+    for (const m of st.mobs) { if (m === t || m.hp <= 0 || !m.awake) continue; const d = djDist(m, t); if (d < bd) { bd = d; best = m; } }
+    if (best) { st.ev.push({ k: 'chain', id: t.id, tgt: best.id, x: t.x, y: t.y, x1: best.x, y1: best.y }); djHurt(st, best, v * 0.5, h, crit, 'dot'); }
+  }
+  if (h.set4.troll && t.hp > 0 && djRnd(st) < 0.1) djCC(st, t, 'stun', 1, h.id);
 }
 /* Dégâts d'un coup de héros : passifs, autel, forme animale, coup critique. */
 function djRoll(st, h, mult) {
@@ -420,7 +468,7 @@ function djSetForm(st, h, f) {
 }
 function djPotion(st, h) {
   if (h.dead || h.pot <= 0 || h.potT > 0 || h.hp >= h.hpMax - 0.5) return false;
-  h.pot--; h.potT = 1; djHeal(st, h, h.hpMax * DJ_POTION); st.ev.push({ k: 'potion', id: h.id });
+  h.pot--; h.potT = 1; djHeal(st, h, h.hpMax * DJ_POTION * (h.potMul || 1)); st.ev.push({ k: 'potion', id: h.id });
   return true;
 }
 /* Endroit libre pour se téléporter, en ligne droite (sans traverser de mur ni de grille). */
@@ -433,7 +481,7 @@ function djBlinkSpot(st, h, ux, uy, dist) {
 function djCast(st, h, i) {
   const S = DJ_SKILLS[h.cls] && DJ_SKILLS[h.cls][i];
   if (!S || h.dead || !h.rank[i] || h.cd[i] > 0) return false;
-  const r = h.rank[i], P = 1 + 0.15 * (r - 1), L = 1 + 0.1 * (r - 1), D = mult => djRoll(st, h, mult * P);
+  const r = h.rank[i], P = (1 + 0.15 * (r - 1)) * (h.skillMul || 1), L = 1 + 0.1 * (r - 1), D = mult => djRoll(st, h, mult * P);
   const shoot = (t, d, spd) => st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: spd || 14, dmg: d.v, crit: d.crit, life: 2 });
   let ok = true;
   switch (S.id) {
@@ -555,6 +603,7 @@ function djCast(st, h, i) {
   if (!ok) { st.ev.push({ k: 'nocast', id: h.id, i }); return false; }
   const cd = S.cd * (1 - 0.05 * (r - 1)) * h.cdMul * (st.bless === 'celerite' ? 0.85 : 1);
   h.cd[i] = cd; h.cdMax[i] = cd; h.castN++; h.lastCast = S.id;
+  if (h.pw.echo && djRnd(st) < 0.2) { h.cd[i] = 0.3; st.ev.push({ k: 'echo', id: h.id }); }                  // Écho des Anciens (légendaire)
   if (S.id === 'charge' || S.id === 'roulade' || S.id === 'tp' || S.id === 'ombre') h.tp = (h.tp || 0) + 1;
   st.ev.push({ k: 'cast', id: h.id, i, s: S.id });
   return true;
@@ -602,8 +651,8 @@ function djHeroStep(st, h, inp) {
       if (h.b.stealth > 0) { v *= 2; delete h.b.stealth; st.ev.push({ k: 'unstealth', id: h.id }); }
       h.atkT = h.form === 'loup' ? 0.5 : h.form === 'ours' ? 1.1 : h.cdAtk; h.atkN++;
       st.ev.push({ k: 'atk', id: h.id, tgt: t.id });
-      if (reach < 2) { if (!djEvade(st, t)) { djHurt(st, t, v, h, d.crit, 'basic'); if (h.b.poison > 0) djPoison(st, h, t); } }
-      else st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: 14, dmg: v, crit: d.crit, life: 2, splash: DJ_CLASS[h.cls].splash || 0 });
+      if (reach < 2) { if (!djEvade(st, t)) { djHurt(st, t, v, h, d.crit, 'basic'); djOnBasic(st, h, t, v, d.crit); } }
+      else st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: 14, dmg: v, crit: d.crit, life: 2, splash: DJ_CLASS[h.cls].splash || 0, basic: 1 });
     }
   }
 }
@@ -703,7 +752,7 @@ function djMobStep(st, m) {
     m.wind -= dt; m.mv = false;
     if (m.wind > 0) return;
     const tt = djEnt(st, m.actTgt);
-    if (m.act === 'melee') { if (tt && !tt.dead && tt.hp > 0 && djDist(m, tt) <= m.range + tt.r + m.r + 0.45) djHit(st, tt, m.dmg); }
+    if (m.act === 'melee') { if (tt && !tt.dead && tt.hp > 0 && djDist(m, tt) <= m.range + tt.r + m.r + 0.45) djHit(st, tt, m.dmg, m); }
     else if (m.act === 'shot') { if (tt) { const ax = tt.x - m.x, ay = tt.y - m.y, len = Math.hypot(ax, ay) || 1, sp = m.shot === 'arrow' ? 9 : 6; st.shots.push({ id: st.nid++, side: 'm', kind: m.shot, from: m.id, x: m.x, y: m.y, px: m.x, py: m.y, vx: ax / len * sp, vy: ay / len * sp, dmg: m.dmg, life: (m.range + 2) / sp, r: 0.25 }); } }
     else if (m.act === 'heal') { if (tt && tt.hp > 0) { tt.hp = Math.min(tt.hpMax, tt.hp + tt.hpMax * 0.15); st.ev.push({ k: 'mheal', id: tt.id, by: m.id }); } }
     else if (m.act === 'raise' && m.raiseAt) {
@@ -843,7 +892,8 @@ function djShotStep(st, s) {
     if (!t || s.life <= 0) { s.dead = true; return; }
     const dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy), step = s.spd * dt;
     if (len <= step + t.r) {
-      s.dead = true; s.x = t.x; s.y = t.y; if (djEvade(st, t)) return; djHurt(st, t, s.dmg, djEnt(st, s.from), s.crit, 'basic');
+      s.dead = true; s.x = t.x; s.y = t.y; if (djEvade(st, t)) return;
+      const from = djEnt(st, s.from); djHurt(st, t, s.dmg, from, s.crit, 'basic'); if (s.basic) djOnBasic(st, from, t, s.dmg, s.crit);
       if (s.splash) for (const m of djAround(st, s.x, s.y, s.splash)) if (m !== t) djHurt(st, m, s.dmg * 0.4, null, false);   // la boule du mage éclabousse
       return;
     }
@@ -917,7 +967,13 @@ function djWorld(st) {
     if (h.dead) continue;
     for (const c of st.chests) if (!c.open && Math.hypot(c.x - h.x, c.y - h.y) < 1.1) {
       c.open = true;
-      st.ev.push({ k: 'chest', x: c.x, y: c.y, got: djLootAdd(st, DJ_CHEST, djLootMul(st.lvl) * (st.heroes.some(p => p.race === 'halfelin') ? 1.5 : 1)) });
+      const got = djLootAdd(st, DJ_CHEST, djLootMul(st.lvl) * (st.heroes.some(p => p.race === 'halfelin') ? 1.5 : 1)), g = Math.round(15 * djLootMul(st.lvl) * st.goldMul);
+      st.gold += g; got.or = g;
+      st.ev.push({ k: 'chest', x: c.x, y: c.y, got });
+      for (const p of st.heroes) if (!p.gone) {
+        if (djRnd(st) < 0.6) djDrop(st, p, { src: 'chest', luck: p.luck * (p.race === 'halfelin' ? 1.2 : 1) }, c);
+        if (djRnd(st) < 0.08) djGem(st, p, 1, c);
+      }
     }
     if (st.altar && !st.altar.used && Math.hypot(st.altar.x - h.x, st.altar.y - h.y) < 1.2) {
       st.altar.used = true; st.bless = ['force', 'vigueur', 'celerite'][Math.floor(djRnd(st) * 3)];
@@ -970,8 +1026,21 @@ function djFlee(st) { if (!st.over) { st.fled = true; st.over = 'lose'; st.ev.pu
 function djResult(st) {
   const win = st.over === 'win' || st.over === 'floor', L = st.lvl, k = win ? 1 : 0.5, loot = {};
   for (const r in st.loot) { const n = Math.round(st.loot[r] * k); if (n > 0) loot[r] = n; }
-  return { win, lvl: L, xp: Math.round((st.xp + (win ? 60 * djXpMul(L) : 0)) * k), loot, pris: !!(st.pris && st.pris.freed), kills: st.kills, secs: Math.round(st.t), fled: !!st.fled, combos: st.combos || 0, theme: st.d.theme };
+  return { win, lvl: L, xp: Math.round((st.xp + (win ? 60 * djXpMul(L) : 0)) * k), loot, pris: !!(st.pris && st.pris.freed), kills: st.kills, secs: Math.round(st.t), fled: !!st.fled, combos: st.combos || 0, theme: st.d.theme,
+    gold: Math.round((st.gold || 0) * k), items: djHalfItems(st.items || {}, win), gems: djHalfGems(st.gems || {}, win) };
 }
+/* Défaite ou fuite : on garde la meilleure moitié des objets (arrondie au-dessus) et la moitié des pierres. */
+function djHalfItems(items, win) {
+  const out = {};
+  for (const hid in items) { const l = items[hid] || []; out[hid] = win ? l.slice() : l.slice().sort((a, b) => b.r - a.r || b.il - a.il).slice(0, Math.ceil(l.length / 2)); }
+  return out;
+}
+function djHalfGems(gems, win) {
+  const out = {};
+  for (const hid in gems) { const g = {}; for (const k in gems[hid]) { const n = win ? gems[hid][k] : Math.round(gems[hid][k] * 0.5); if (n > 0) g[k] = n; } out[hid] = g; }
+  return out;
+}
+function djAddGems(a, b) { const out = Object.assign({}, a); for (const k in b || {}) out[k] = (out[k] || 0) + b[k]; return out; }
 /* Où en est-on ? (pour l'interface) */
 function djProgress(st) {
   const fights = st.d.rooms.map((r, i) => [r, i]).filter(([r]) => r.kind === 'fight');
@@ -984,7 +1053,8 @@ function djProgress(st) {
 /* ===================== DONJONS À DEUX : l'hôte simule, l'invitée affiche =====================
    Le téléphone de l'hôte fait tourner le combat et envoie l'état ~7 fois par seconde ; celui de l'invitée l'affiche
    (en lissant), déplace lui-même son héros (pour qu'il réponde tout de suite) et envoie sa position et ses boutons. */
-const DJ_PV = 2;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent
+const DJ_PV = 3;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent
+const DJ_PETS = ['loup', 'faucon', 'sanglier', 'chouette'];
 const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette'];
 const DJ_ST = { idle: 'i', lock: 'l', clear: 'c', open: 'o', fight: 'f' }, DJ_STR = { i: 'idle', l: 'lock', c: 'clear', o: 'open', f: 'fight' };
 const djR1 = x => Math.round(x * 10) / 10, djR2 = x => Math.round(x * 100) / 100;
@@ -999,14 +1069,14 @@ function djSnap(st, evs, n, res) {
     m: st.mobs.filter(m => !m.hidden && m.hp > 0).map(m => [m.id, DJ_MT.indexOf(m.type), djR2(m.x), djR2(m.y), djR1(m.hp), djR1(m.hpMax),
       (m.awake ? 1 : 0) | (m.mv ? 2 : 0) | (m.stun > 0 ? 4 : 0) | (m.frz > 0 ? 8 : 0) | (m.root > 0 ? 16 : 0) | (m.boss ? 32 : 0) | (m.sp && m.sp.enr ? 64 : 0) | (m.big ? 128 : 0),
       djR2(m.fx), djR2(m.fy), m.atkN, m.room, m.r]),
-    a: st.allies.filter(a => a.inv || a.hp > 0).map(a => [a.id, a.kind === 'pet' ? 1 : 0, a.own, djR2(a.x), djR2(a.y), djR1(a.hp), djR1(a.hpMax), a.mv ? 1 : 0, a.atkN, djR2(a.fx || 0), djR2(a.fy || 0)]),
+    a: st.allies.filter(a => a.inv || a.hp > 0).map(a => [a.id, a.kind === 'pet' ? 1 : 0, a.own, djR2(a.x), djR2(a.y), djR1(a.hp), djR1(a.hpMax), a.mv ? 1 : 0, a.atkN, djR2(a.fx || 0), djR2(a.fy || 0), Math.max(0, DJ_PETS.indexOf(a.pt))]),
     s: st.shots.map(s => [s.id, s.kind, djR2(s.x), djR2(s.y)]),
     z: st.zones.map(z => [z.id, z.k, djR2(z.x), djR2(z.y), z.r]),
     r: st.rooms.map(R => [DJ_ST[R.st] || 'o', R.wave, R.waves]),
     ch: st.chests.map(c => (c.open ? '1' : '0')).join('') || '0',
     al: st.altar && st.altar.used ? 1 : 0, bl: st.bless || 0, pr: st.pris && st.pris.freed ? 1 : 0,
     ex: st.exit ? [djR2(st.exit.x), djR2(st.exit.y)] : 0,
-    ov: st.over || 0, res: res || (st.over && st.over !== 'floor' ? djResult(st) : 0), xp: Math.round(st.xp), k: st.kills, cb: st.combos || 0,
+    ov: st.over || 0, res: res || (st.over && st.over !== 'floor' ? djResult(st) : 0), xp: Math.round(st.xp), k: st.kills, cb: st.combos || 0, gd: Math.round(st.gold || 0),
     ev: evs && evs.length ? evs : 0,
   };
 }
@@ -1035,7 +1105,7 @@ function djApplySnap(ms, sn, me) {
     m.boss = !!(f & 32); m.big = !!(f & 128); m.sp = m.boss ? { enr: !!(f & 64) } : null;
     m.fx = a[7]; m.fy = a[8]; m.atkN = a[9]; m.room = a[10]; m.r = a[11] || 0.38; m.hidden = false;
   });
-  ms.allies = keep(ms.allies, sn.a, a => ({ id: a[0], kind: a[1] ? 'pet' : 'skel', own: a[2], x: a[3], y: a[4], px: a[3], py: a[4], r: a[1] ? 0.25 : 0.32, inv: !!a[1] }), (e, a) => {
+  ms.allies = keep(ms.allies, sn.a, a => ({ id: a[0], kind: a[1] ? 'pet' : 'skel', pt: a[1] ? DJ_PETS[a[11] | 0] : null, own: a[2], x: a[3], y: a[4], px: a[3], py: a[4], r: a[1] ? 0.25 : 0.32, inv: !!a[1] }), (e, a) => {
     e.x = a[3]; e.y = a[4]; e.hp = a[5]; e.hpMax = a[6]; e.mv = !!a[7]; e.atkN = a[8]; e.fx = a[9]; e.fy = a[10];
   });
   ms.shots = keep(ms.shots, sn.s, a => ({ id: a[0], kind: a[1], x: a[2], y: a[3], px: a[2], py: a[3] }), (e, a) => { e.x = a[2]; e.y = a[3]; });
@@ -1048,7 +1118,7 @@ function djApplySnap(ms, sn, me) {
   if (ms.pris) ms.pris.freed = !!sn.pr;
   ms.exit = sn.ex ? { x: sn.ex[0], y: sn.ex[1] } : null;
   for (const tr of ms.traps) { const u = ms.t + tr.ph, cyc = Math.floor(u / 2.4); tr.on = u - cyc * 2.4 < 0.6; }
-  ms.xp = sn.xp; ms.kills = sn.k; ms.combos = sn.cb || 0;
+  ms.xp = sn.xp; ms.kills = sn.k; ms.combos = sn.cb || 0; ms.gold = sn.gd || 0;
   if ((sn.ov || null) !== (ms.over || null)) { ms.over = sn.ov || null; ms.res = sn.res || null; }
   return sn.ev || [];
 }
@@ -1088,10 +1158,18 @@ function djCarry(st) {
 function djRunAdd(run, r) {
   run.xp += r.xp; run.kills += r.kills; run.secs += r.secs; run.combos += r.combos || 0; if (r.pris) run.pris = true;
   for (const k in r.loot) run.loot[k] = (run.loot[k] || 0) + r.loot[k];
+  run.gold = (run.gold || 0) + (r.gold || 0);
+  if (!run.items) run.items = {}; if (!run.gems) run.gems = {};
+  for (const hid in r.items || {}) run.items[hid] = (run.items[hid] || []).concat(r.items[hid]);
+  for (const hid in r.gems || {}) run.gems[hid] = djAddGems(run.gems[hid], r.gems[hid]);
   return run;
 }
 function djRunResult(run, win, partial) {
   const all = djRunAdd(JSON.parse(JSON.stringify(run)), partial || { xp: 0, kills: 0, secs: 0, loot: {} }), k = win ? 1 : 0.5, loot = {};
   for (const r in all.loot) { const n = Math.round(all.loot[r] * k); if (n > 0) loot[r] = n; }
-  return { win, prof: true, lvl: run.start, deep: run.done, xp: Math.round(all.xp * k), loot, pris: !!all.pris, kills: all.kills, secs: all.secs, combos: all.combos, fled: !win && !!(partial && partial.fled), theme: 'prof' };
+  return { win, prof: true, lvl: run.start, deep: run.done, xp: Math.round(all.xp * k), loot, pris: !!all.pris, kills: all.kills, secs: all.secs, combos: all.combos, fled: !win && !!(partial && partial.fled), theme: 'prof',
+    gold: Math.round((all.gold || 0) * k), items: djHalfItems(all.items || {}, win), gems: djHalfGems(all.gems || {}, win) };
 }
+/* Objets envoyés à l'invitée dans les instantanés (forme courte). */
+const djPack = it => [it.sl, it.k, it.r, it.il, it.sd, it.set || 0, it.pw || 0];
+const djUnpack = a => cleanItem({ sl: a[0], k: a[1], r: a[2], il: a[3], sd: a[4], set: a[5] || null, pw: a[6] || null });

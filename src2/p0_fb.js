@@ -29,14 +29,26 @@ function normVillage(v) {
   for (const [k, h0] of Object.entries(fbObj(v.heroes))) {
     if (!h0 || typeof h0 !== 'object') continue;
     const old = !h0.own, id = old ? 'h_' + k : (h0.id || k);
-    const h = Object.assign({ lvl: 1, xp: 0, sp: 0, spec: null, at: null, n: 0, dj: 1, deep: 0 }, h0, { id, own: old ? k : h0.own, sk: Object.assign({}, h0.sk) });
+    const eq = {}; for (const [sl, x] of Object.entries(fbObj(h0.eq))) { const it = fbItem(x); if (it && it.sl === sl) eq[sl] = it; }
+    const h = Object.assign({ lvl: 1, xp: 0, sp: 0, spec: null, at: null, n: 0, dj: 1, deep: 0 }, h0, { id, own: old ? k : h0.own, sk: Object.assign({}, h0.sk), eq });
     H[id] = h;
     if (old && v.members[k] && !v.members[k].hero) v.members[k].hero = id;
   }
   v.heroes = H;
-  v.r = Object.assign({ orge: 0, biere: 0 }, v.r);
+  v.r = Object.assign({ orge: 0, biere: 0, fer: 0, or: 0 }, v.r);
+  /* Équipement : le sac de chaque joueur (objets et pierres), le marchand ambulant */
+  const B = {};
+  for (const [k, b0] of Object.entries(fbObj(v.bag))) {
+    if (!b0 || typeof b0 !== 'object') continue;
+    const it = {}; for (const [id, x] of Object.entries(fbObj(b0.it))) { const o = fbItem(x); if (o) { o.id = id; it[id] = o; } }
+    B[k] = { it, gm: Object.assign({}, fbObj(b0.gm)), n: b0.n || 1 };
+  }
+  v.bag = B;
+  if (v.merch && typeof v.merch === 'object') v.merch = { d: v.merch.d | 0, it: fbArr(v.merch.it).map(fbItem).filter(Boolean), gm: fbArr(v.merch.gm), sold: String(v.merch.sold || '') };
+  else delete v.merch;
   return v;
 }
+const fbItem = x => x && typeof x === 'object' && x.sl ? Object.assign({}, x, { gm: Object.assign({}, fbObj(x.gm)) }) : null;
 const fbFix = (path, v) => path.indexOf(ROOT + 'villages/') === 0 && path.split('/').length === 3 ? normVillage(v) : v;
 const fbClean = d => JSON.parse(JSON.stringify(d));
 function fbCode(e) { const s = String((e && (e.code || e.message)) || ''); return /permission/i.test(s) ? 'not_granted' : 'unavailable'; }

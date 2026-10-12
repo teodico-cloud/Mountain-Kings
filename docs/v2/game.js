@@ -31,14 +31,26 @@ function normVillage(v) {
   for (const [k, h0] of Object.entries(fbObj(v.heroes))) {
     if (!h0 || typeof h0 !== 'object') continue;
     const old = !h0.own, id = old ? 'h_' + k : (h0.id || k);
-    const h = Object.assign({ lvl: 1, xp: 0, sp: 0, spec: null, at: null, n: 0, dj: 1, deep: 0 }, h0, { id, own: old ? k : h0.own, sk: Object.assign({}, h0.sk) });
+    const eq = {}; for (const [sl, x] of Object.entries(fbObj(h0.eq))) { const it = fbItem(x); if (it && it.sl === sl) eq[sl] = it; }
+    const h = Object.assign({ lvl: 1, xp: 0, sp: 0, spec: null, at: null, n: 0, dj: 1, deep: 0 }, h0, { id, own: old ? k : h0.own, sk: Object.assign({}, h0.sk), eq });
     H[id] = h;
     if (old && v.members[k] && !v.members[k].hero) v.members[k].hero = id;
   }
   v.heroes = H;
-  v.r = Object.assign({ orge: 0, biere: 0 }, v.r);
+  v.r = Object.assign({ orge: 0, biere: 0, fer: 0, or: 0 }, v.r);
+  /* Équipement : le sac de chaque joueur (objets et pierres), le marchand ambulant */
+  const B = {};
+  for (const [k, b0] of Object.entries(fbObj(v.bag))) {
+    if (!b0 || typeof b0 !== 'object') continue;
+    const it = {}; for (const [id, x] of Object.entries(fbObj(b0.it))) { const o = fbItem(x); if (o) { o.id = id; it[id] = o; } }
+    B[k] = { it, gm: Object.assign({}, fbObj(b0.gm)), n: b0.n || 1 };
+  }
+  v.bag = B;
+  if (v.merch && typeof v.merch === 'object') v.merch = { d: v.merch.d | 0, it: fbArr(v.merch.it).map(fbItem).filter(Boolean), gm: fbArr(v.merch.gm), sold: String(v.merch.sold || '') };
+  else delete v.merch;
   return v;
 }
+const fbItem = x => x && typeof x === 'object' && x.sl ? Object.assign({}, x, { gm: Object.assign({}, fbObj(x.gm)) }) : null;
 const fbFix = (path, v) => path.indexOf(ROOT + 'villages/') === 0 && path.split('/').length === 3 ? normVillage(v) : v;
 const fbClean = d => JSON.parse(JSON.stringify(d));
 function fbCode(e) { const s = String((e && (e.code || e.message)) || ''); return /permission/i.test(s) ? 'not_granted' : 'unavailable'; }
@@ -135,8 +147,9 @@ const MIN = 60000, HOUR = 3600000, DAY = 24 * HOUR;
 const SEASON_LEN = 2 * DAY;      // une saison dure 2 jours réels
 
 /* ---------- ressources ---------- */
-const RES = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere'];
-const RES_LABEL = { bois: 'Bois', pierre: 'Pierre', ble: 'Blé', farine: 'Farine', pain: 'Pain', viande: 'Viande', orge: 'Orge', biere: 'Bière' };
+const RES = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere', 'fer', 'or'];
+const RES_LABEL = { bois: 'Bois', pierre: 'Pierre', ble: 'Blé', farine: 'Farine', pain: 'Pain', viande: 'Viande', orge: 'Orge', biere: 'Bière', fer: 'Fer', or: 'Or' };
+const NO_CAP = new Set(['or']);       // l'or (la bourse commune) n'a pas de limite de place
 const FOOD = ['pain', 'viande'];
 const EAT_DAY = 24;              // rations mangées par villageois et par jour (une par heure)
 /* Bière : servie à la taverne, chaque villageois en boit 3 par jour ; tant qu'il y en a, le moral monte. */
@@ -245,19 +258,22 @@ const BLD = {
   brasserie: { name: 'Brasserie', size: 2, max: 3, cost: { bois: 90, pierre: 50 }, mul: 2, work: 90, spec: 'arti', jobs: 1, inp: { orge: 8 }, out: { biere: 6 }, job: 'Brasseur', hall: 2, cat: 'prod', desc: 'Brasse l’orge en bière. Servie à la taverne, elle remonte le moral.' },
   chasse: { name: 'Pavillon de chasse', size: 2, max: 3, cost: { bois: 50 }, mul: 2, work: 40, spec: 'chasse', jobs: 2, out: { viande: 7 }, seasonal: 'chasse', job: 'Chasseur', cat: 'prod', desc: 'Les chasseurs rapportent de la viande, un peu moins en hiver.' },
   entrepot: { name: 'Entrepôt', size: 2, max: 3, cost: { bois: 100, pierre: 40 }, mul: 2, work: 60, store: 600, cat: 'stock', desc: '+600 de place par niveau, pour chaque ressource.' },
+  mine: { name: 'Mine de fer', size: 2, max: 3, cost: { bois: 80, pierre: 60 }, mul: 2, work: 70, spec: 'mine', jobs: 2, out: { fer: 6 }, job: 'Mineur', hall: 2, cat: 'prod', desc: 'Les mineurs y extraient le fer, pour la forge. Les nains y excellent.' },
+  forge: { name: 'Forge', size: 2, max: 3, cost: { bois: 120, pierre: 90 }, mul: 2, work: 100, hall: 2, cat: 'heros', desc: 'Fabrique, améliore et fond l’équipement des héros, et sertit les pierres précieuses. Chaque niveau : de meilleurs objets, des améliorations plus poussées et 10 places de plus dans chaque sac.' },
   taverne: { name: 'Taverne', size: 3, max: 3, cost: { bois: 150, pierre: 80 }, mul: 2.2, work: 120, mor: 10, hall: 2, cat: 'vie', desc: 'Remonte le moral, attire de nouveaux villageois, et c’est là qu’on fait la fête.' },
   banc: { name: 'Banc', size: 1, max: 1, cost: { bois: 20 }, work: 5, deco: 1, cat: 'deco', desc: 'Un peu de confort : +1 de moral.' },
   fleurs: { name: 'Parterre de fleurs', size: 1, max: 1, cost: { bois: 10, pierre: 5 }, work: 5, deco: 1, cat: 'deco', desc: 'Égaie le village : +1 de moral.' },
   fontaine: { name: 'Fontaine', size: 2, max: 1, cost: { pierre: 120 }, work: 60, deco: 4, hall: 2, cat: 'deco', desc: 'La fierté du village : +4 de moral.' },
   statue: { name: 'Statue', size: 1, max: 1, cost: { pierre: 80, bois: 20 }, work: 40, deco: 3, hall: 3, cat: 'deco', desc: 'Statue d’un héros de légende : +3 de moral.' },
+  marchand: { name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
 };
-const SHOP = ['maison', 'bucheron', 'carriere', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'banc', 'fleurs', 'fontaine', 'statue'];
-const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['deco', 'Décorations']];
+const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'banc', 'fleurs', 'fontaine', 'statue'];
+const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['heros', 'Pour les héros'], ['deco', 'Décorations']];
 const LIMITS = {
   halle: [1, 1, 1, 1, 1],
   maison: [3, 5, 7, 9, 12], bucheron: [1, 2, 2, 3, 3], carriere: [1, 1, 2, 2, 3], champ: [2, 3, 4, 5, 6],
   moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], brasserie: [0, 1, 1, 1, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
-  taverne: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
+  taverne: [0, 1, 1, 1, 1], mine: [0, 1, 1, 2, 2], forge: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
 };
 const DECO_MAX = 15;             // le moral apporté par les décorations est plafonné
 const FEAST = { cost: { pain: 30, viande: 30, biere: 20 }, mor: 15, len: DAY, cd: 3 * DAY };
@@ -360,6 +376,8 @@ const GOALS = [
   { id: 'halle2', name: 'La halle grandit', txt: 'Agrandir la halle du village au niveau 2.', prog: v => [hallLvl(v), 2], rew: { bois: 150, pierre: 100 } },
   { id: 'pain', name: 'Du pain pour tous', txt: 'Construire un moulin et une boulangerie.', prog: v => [Math.min(1, built(v, 'moulin')) + Math.min(1, built(v, 'boulangerie')), 2], rew: { pain: 60 } },
   { id: 'taverne', name: 'La taverne', txt: 'Construire la taverne.', prog: v => [built(v, 'taverne'), 1], rew: { bois: 100, pierre: 60 } },
+  { id: 'mine', name: 'Le fer', txt: 'Construire une mine de fer.', prog: v => [built(v, 'mine'), 1], rew: { bois: 80, pierre: 60 } },
+  { id: 'forge', name: 'La forge', txt: 'Construire la forge, pour équiper vos héros.', prog: v => [built(v, 'forge'), 1], rew: { fer: 60, or: 50 } },
   { id: 'biere', name: 'Santé !', txt: 'Semer de l’orge dans un champ et construire une brasserie.', prog: v => [(v.b.some(b => b.type === 'champ' && b.lvl > 0 && b.crop === 'orge') ? 1 : 0) + Math.min(1, built(v, 'brasserie')), 2], rew: { orge: 40 } },
   { id: 'pop8', name: 'Huit villageois', txt: 'Loger huit villageois.', prog: v => [v.vil.length, 8], rew: { bois: 120, pierre: 60 } },
   { id: 'hiver', name: 'Un hiver sans famine', txt: 'Passer un hiver entier sans que personne n’ait faim.', prog: v => [cntOf(v, 'win'), 1], rew: { pain: 80, bois: 100 } },
@@ -437,7 +455,7 @@ function newVillage(vid, name, col, t, uid, pname) {
   const v = {
     v: VERSION, vid, name, c: col, born: t, t, seed, tick: 0, nid: 1, q: 0,
     members: { [uid]: { name: pname, t, hi: 1 } }, heroes: {},
-    r: { bois: 160, pierre: 80, ble: 0, farine: 0, pain: 60, viande: 40, orge: 0, biere: 0 },
+    r: { bois: 160, pierre: 80, ble: 0, farine: 0, pain: 60, viande: 40, orge: 0, biere: 0, fer: 0, or: 0 },
     b: [], vil: [], cands: [], log: [], hunger: 0, feast: 0, feastCd: 0, ws: seasonIdx({ born: t }, t),
     goals: [], cnt: { acc: 0, fete: 0, win: 0 }, wok: 0,
   };
@@ -460,7 +478,10 @@ function newVillage(vid, name, col, t, uid, pname) {
 function stepVillage(v) {
   const t = v.t, h = 1 / 60, cap = capOf(v), si = seasonIdx(v, t), S = SEASONS[si];
   const mor = moraleOf(v, t), mf = moraleF(mor);
-  const add = (k, n) => { v.r[k] = Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
+  const add = (k, n) => { v.r[k] = NO_CAP.has(k) ? (v.r[k] || 0) + n : Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
+  /* Le marchand ambulant : un jour sur deux, il s'installe sur la place avec quelques objets */
+  const md = merchDay(v, t);
+  if (md % 2 === 1 && (!v.merch || v.merch.d !== md)) { v.merch = genMerch(v, md); addLog(v, t, 'Un marchand ambulant s’installe sur la place du village, jusqu’à demain.', 'merch'); }
   /* Saison qui change */
   if (si !== v.ws) {
     const prev = v.ws, warm = prev === 3 && si === 0 && v.wok;
@@ -747,13 +768,126 @@ function applyV(v, a, who) {
       }
       const pris = a.pris ? prisonerOf(v, t) : null;
       if (pris) v.cands.push(pris);
+      /* L'or va dans la bourse commune (à deux, c'est l'hôte qui le rapporte) ; les objets et les pierres, dans le sac du joueur. */
+      const lm = 1 + 0.2 * (L - 1), gold = Math.max(0, Math.min(Math.round(600 * lm * (th === 'prof' ? 1 + deep : 1)), Math.round(+a.or || 0)));
+      const bag = bagOf(v, who.uid), maxIl = L + 2 + (th === 'prof' ? Math.ceil(deep / 2) + 1 : 0);
+      let nItems = 0, autoSold = 0, autoGold = 0;
+      for (const x of (Array.isArray(a.items) ? a.items : []).slice(0, th === 'prof' ? 60 : 20)) {
+        const it = cleanItem(x, maxIl); if (!it) continue;
+        if (bagCount(bag) >= bagMax(v)) { autoSold++; autoGold += itemInfo(it).sell; continue; }
+        bagAdd(v, who.uid, it); nItems++;
+      }
+      for (const g in (a.gems && typeof a.gems === 'object' ? a.gems : {})) { const G = gemOf(g), n = Math.max(0, Math.min(10, a.gems[g] | 0)); if (G && n) bag.gm[G.key] = (bag.gm[G.key] || 0) + n; }
+      if (gold + autoGold) v.r.or = (v.r.or || 0) + gold + autoGold;
+      if (gold) got.or = gold;
       const up = hh.lvl - lv0;
       const fl = deep ? deep + ' étage' + (deep > 1 ? 's terminés' : ' terminé') : 'aucun étage terminé';
       const what = th === 'prof' ? (win ? ' remonte des Profondeurs (' : ' a dû fuir les Profondeurs (') + fl + ')'
         : win ? ' revient vainqueur ' + (th === 'crypte' ? 'de la crypte des rois' : 'de la mine des gobelins') + ' (niveau ' + L + ')' : ' a dû fuir ' + (th === 'crypte' ? 'la crypte des rois' : 'la mine des gobelins') + ' (niveau ' + L + ')';
-      addLog(v, t, hh.name + what + ' : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : ''), 'dj');
+      addLog(v, t, hh.name + what + ' : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + (nItems ? ', ' + nItems + ' objet' + (nItems > 1 ? 's' : '') : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : '') + (autoSold ? ' Sac plein : ' + autoSold + ' objet' + (autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + autoGold + ' or.' : ''), 'dj');
       if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + (th === 'crypte' ? ' d’un tombeau de la crypte' : ' d’un cachot souterrain') + ', voudrait s’installer au village.', 'cand');
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0 };
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold };
+    }
+    /* ---------- équipement (étape 3) ---------- */
+    case 'equip': {
+      /* Porter un objet de son sac (l'objet qu'il remplace retourne dans le sac). */
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      const bag = bagOf(v, who.uid), it = bag.it[a.id]; if (!it) return fail('Objet introuvable.');
+      const cw = canWear(hh, it); if (!cw.ok) return fail(cw.why);
+      if (!hh.eq) hh.eq = {};
+      const old = hh.eq[it.sl];
+      delete bag.it[a.id]; it.id = a.id; hh.eq[it.sl] = it;
+      if (old) { if (!old.id || bag.it[old.id]) old.id = 'i' + (bag.n++); bag.it[old.id] = old; }
+      return { ok: true, name: itemInfo(it).name };
+    }
+    case 'unequip': {
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      const it = hh.eq && hh.eq[a.sl]; if (!it) return { ok: true };
+      const bag = bagOf(v, who.uid); if (bagCount(bag) >= bagMax(v)) return fail('Ton sac est plein : vends ou fonds un objet d’abord.');
+      delete hh.eq[a.sl]; if (!it.id || bag.it[it.id]) it.id = 'i' + (bag.n++); bag.it[it.id] = it;
+      return { ok: true };
+    }
+    case 'sell': case 'melt': {
+      /* Vendre (de l'or pour la bourse commune) ou fondre à la forge (du fer) des objets du sac ; leurs pierres reviennent dans le sac. */
+      const melt = a.type === 'melt';
+      if (melt && !forgeLvlOf(v)) return fail('Il faut une forge pour fondre un objet.');
+      const bag = bagOf(v, who.uid), ids = (Array.isArray(a.ids) ? a.ids : [a.id]).slice(0, 80);
+      let gain = 0, n = 0;
+      for (const id of ids) { const it = bag.it[id]; if (!it) continue; const I = itemInfo(it); gain += melt ? I.melt : I.sell; gemsBack(bag, it); delete bag.it[id]; n++; }
+      if (!n) return fail('Objet introuvable.');
+      if (melt) { const cap = capOf(v); v.r.fer = Math.min(Math.max(cap, v.r.fer || 0), (v.r.fer || 0) + gain); }
+      else v.r.or = (v.r.or || 0) + gain;
+      return { ok: true, gain, n };
+    }
+    case 'craft': {
+      /* Forger un objet pour un de ses héros : la rareté dépend du niveau de la forge, le niveau de l'objet de celui du héros. */
+      const f = forgeLvlOf(v); if (!f) return fail('Il faut une forge.');
+      if (!SLOTS.includes(a.sl)) return fail('Emplacement inconnu.');
+      const hh = a.hid ? v.heroes[a.hid] : activeHero(v, who.uid); if (!hh || hh.own !== who.uid) return fail('Choisis un de tes héros.');
+      const bag = bagOf(v, who.uid); if (bagCount(bag) >= bagMax(v)) return fail('Ton sac est plein.');
+      const c = craftCost(hh.lvl), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c);
+      const R = mulberry32(hash((v.seed ^ hashStr(who.uid) ^ Math.imul(bag.n + 1, 2654435761)) >>> 0));
+      const it = genItem(R, { il: hh.lvl, src: 'forge' + Math.min(3, f), cls: hh.cls, sl: a.sl });
+      const id = bagAdd(v, who.uid, it), I = itemInfo(it);
+      if (it.r >= 3) addLog(v, t, nm + ' forge un objet ' + RARITY[it.r].name.toLowerCase() + ' : ' + I.name + ' !', 'forge');
+      return { ok: true, id, r: it.r, name: I.name };
+    }
+    case 'improve': {
+      const f = forgeLvlOf(v); if (!f) return fail('Il faut une forge.');
+      const at = itemAt(v, who.uid, a); if (!at) return fail('Objet introuvable.');
+      const it = at.it; if ((it.up | 0) >= maxUpOf(f)) return fail((it.up | 0) >= 5 ? 'Déjà amélioré au maximum (+5).' : 'Agrandissez la forge pour aller plus loin.');
+      const c = improveCost(it), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); it.up = (it.up | 0) + 1;
+      return { ok: true, up: it.up };
+    }
+    case 'socket': case 'unsocket': {
+      /* Sertir une pierre dans un objet (celle qui y était revient dans le sac), ou l'en retirer. */
+      if (!forgeLvlOf(v)) return fail('Il faut une forge pour sertir une pierre.');
+      const at = itemAt(v, who.uid, a); if (!at) return fail('Objet introuvable.');
+      const it = at.it, s = a.s | 0, bag = bagOf(v, who.uid); if (s < 0 || s >= socketsOf(it)) return fail('Pas de place pour une pierre ici.');
+      if (!it.gm) it.gm = {};
+      const old = it.gm['g' + s];
+      if (a.type === 'unsocket') { if (gemOf(old)) { bag.gm[old] = (bag.gm[old] || 0) + 1; delete it.gm['g' + s]; } return { ok: true }; }
+      const G = gemOf(a.g); if (!G || !(bag.gm[G.key] > 0)) return fail('Tu n’as pas cette pierre.');
+      if (gemOf(old)) bag.gm[old] = (bag.gm[old] || 0) + 1;
+      bag.gm[G.key]--; if (!bag.gm[G.key]) delete bag.gm[G.key];
+      it.gm['g' + s] = G.key;
+      return { ok: true };
+    }
+    case 'fuse': {
+      if (forgeLvlOf(v) < 2) return fail('Il faut une forge de niveau 2 pour fusionner les pierres.');
+      const G = gemOf(a.g), bag = bagOf(v, who.uid); if (!G) return fail('Pierre inconnue.');
+      if (G.n >= 3) return fail('Cette pierre est déjà parfaite.');
+      if ((bag.gm[G.key] || 0) < 3) return fail('Il faut trois pierres pareilles.');
+      const c = { or: GEM_FUSE_COST[G.n] }, m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); bag.gm[G.key] -= 3; if (!bag.gm[G.key]) delete bag.gm[G.key];
+      const nk = G.type + (G.n + 1); bag.gm[nk] = (bag.gm[nk] || 0) + 1;
+      return { ok: true, g: nk, name: gemOf(nk).name };
+    }
+    case 'buy': {
+      /* Acheter au marchand ambulant (avec l'or de la bourse commune) : chaque objet ne se vend qu'une fois. */
+      if (!merchHere(v, t)) return fail('Le marchand est reparti.');
+      const M = v.merch, sold = String(M.sold || ''), bag = bagOf(v, who.uid);
+      if (a.g != null) {
+        const i = a.g | 0, key = M.gm && M.gm[i]; if (!gemOf(key) || sold.includes('g' + i + ';')) return fail('Déjà vendu.');
+        const c = { or: gemPrice(key) }, m = missingTxt(v, c); if (m) return fail(m);
+        pay(v, c); bag.gm[key] = (bag.gm[key] || 0) + 1; M.sold = sold + 'g' + i + ';';
+        return { ok: true, name: gemOf(key).name };
+      }
+      const i = a.i | 0, src = M.it && M.it[i]; if (!src || sold.includes('i' + i + ';')) return fail('Déjà vendu.');
+      if (bagCount(bag) >= bagMax(v)) return fail('Ton sac est plein.');
+      const c = { or: merchPrice(src) }, m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); const it = cleanItem(src), id = bagAdd(v, who.uid, it); M.sold = sold + 'i' + i + ';';
+      addLog(v, t, nm + ' achète au marchand : ' + itemInfo(it).name + '.', 'merch');
+      return { ok: true, id, name: itemInfo(it).name };
+    }
+    case 'pet': {
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      if (hh.lvl < PET_LVL) return fail('Le familier arrive au niveau ' + PET_LVL + '.');
+      if (!PETS[a.p]) return fail('Familier inconnu.');
+      hh.pet = a.p;
+      return { ok: true };
     }
     case 'skill': {
       /* Un point de compétence : +1 rang (5 au plus) à une compétence déjà ouverte. */
@@ -791,6 +925,276 @@ function applyV(v, a, who) {
 
 /* Restes du rendu des combats de l'ancien jeu (serviront aux donjons, étape 2). */
 const HEROES = {}, TROOPS = {};
+
+/* ===================== ÉQUIPEMENT DES HÉROS (pur, sans DOM) =====================
+   Un objet ne garde que sa « recette » : emplacement (sl), sorte (k), rareté (r, 0 à 4), niveau (il), graine (sd),
+   et s'il y a lieu son ensemble (set), son pouvoir légendaire (pw), son amélioration (up, +1 à +5) et ses pierres serties (gm).
+   Ses bonus et son nom sont recalculés à partir de la graine : même objet = mêmes bonus sur les deux téléphones.
+   Les valeurs sont en pour cent (12 = +12 %). */
+
+const SLOTS = ['arme', 'casque', 'armure', 'bottes', 'bijou'];
+const SLOT_LABEL = { arme: 'Arme', casque: 'Casque', armure: 'Armure', bottes: 'Bottes', bijou: 'Bijou' };
+const BIJOU_LVL = 8;                       // le bijou se porte à partir du niveau 8
+const IL_MAX = 60;
+const RARITY = [
+  { name: 'Commun', col: '#a3abb4', af: 0, mul: 1, so: 0, sell: 4, melt: 6 },
+  { name: 'Peu commun', col: '#5cc27a', af: 1, mul: 1.1, so: 0, sell: 10, melt: 12 },
+  { name: 'Rare', col: '#5b9cf0', af: 2, mul: 1.22, so: 1, sell: 25, melt: 25 },
+  { name: 'Épique', col: '#b07ce8', af: 3, mul: 1.36, so: 1, sell: 60, melt: 50 },
+  { name: 'Légendaire', col: '#f59a3c', af: 3, mul: 1.5, so: 2, sell: 150, melt: 100 },
+];
+const SET_COL = '#36c2a8';
+
+/* Armes : trois familles (lames, arcs, bâtons) ; chaque classe manie une famille. */
+const WEAPONS = {
+  epee: { f: 'lame', name: 'Épée' }, hache: { f: 'lame', name: 'Hache' }, masse: { f: 'lame', name: 'Masse' }, dagues: { f: 'lame', name: 'Dagues' },
+  arc: { f: 'arc', name: 'Arc' }, arbalete: { f: 'arc', name: 'Arbalète' },
+  baton: { f: 'baton', name: 'Bâton' }, sceptre: { f: 'baton', name: 'Sceptre' }, grimoire: { f: 'baton', name: 'Grimoire' },
+};
+const FAMILY_LABEL = { lame: 'lames (épées, haches, masses, dagues)', arc: 'arcs et arbalètes', baton: 'bâtons, sceptres et grimoires' };
+const CLASS_FAMILY = { guerrier: 'lame', paladin: 'lame', voleur: 'lame', rodeur: 'arc', mage: 'baton', pretre: 'baton', druide: 'baton', necro: 'baton' };
+const CLASS_WEAPONS = { guerrier: ['epee', 'hache'], paladin: ['masse', 'epee'], voleur: ['dagues'], rodeur: ['arc', 'arbalete'], mage: ['baton', 'grimoire'], pretre: ['sceptre', 'baton'], druide: ['baton'], necro: ['grimoire', 'baton'] };
+const ARMOR_KINDS = {
+  casque: [['casque', 'Casque'], ['heaume', 'Heaume'], ['capuche', 'Capuche'], ['couronne', 'Couronne']],
+  armure: [['armure', 'Armure'], ['cotte', 'Cotte de mailles'], ['tunique', 'Tunique'], ['robe', 'Robe de mage']],
+  bottes: [['bottes', 'Bottes'], ['jambieres', 'Jambières'], ['sandales', 'Sandales']],
+  bijou: [['amulette', 'Amulette'], ['anneau', 'Anneau'], ['talisman', 'Talisman']],
+};
+const SLOT_WEIGHT = { arme: 26, casque: 18, armure: 20, bottes: 18, bijou: 18 };
+
+/* Bonus possibles. Valeur de base selon le niveau L de l'objet. */
+const STATS = {
+  dmg: { t: v => '+' + v + ' % de dégâts', w: 1 },
+  hp: { t: v => '+' + v + ' % de vie', w: 0.8 },
+  armor: { t: v => '+' + v + ' % d’armure', w: 1.5 },
+  crit: { t: v => '+' + v + ' % de coups critiques', w: 1.5 },
+  haste: { t: v => 'attaque ' + v + ' % plus vite', w: 0.7 },
+  cdr: { t: v => 'compétences ' + v + ' % plus vite prêtes', w: 0.8 },
+  dodge: { t: v => '+' + v + ' % d’esquive', w: 1.2 },
+  speed: { t: v => '+' + v + ' % de vitesse', w: 0.3 },
+  leech: { t: v => 'vole ' + v + ' % des dégâts infligés', w: 2 },
+  regen: { t: v => 'récupère ' + v + ' % de vie par seconde', w: 8 },
+  potion: { t: v => 'potions +' + v + ' %', w: 0.2 },
+  skill: { t: v => 'compétences +' + v + ' % plus fortes', w: 0.6 },
+  gold: { t: v => '+' + v + ' % d’or trouvé', w: 0.1 },
+};
+const MAIN = {
+  arme: { dmg: L => 2 + 0.8 * L },
+  casque: { hp: L => 1.5 + 0.5 * L },
+  armure: { hp: L => 2.5 + 0.6 * L, armor: L => 1 + 0.2 * L },
+  bottes: { hp: L => 1 + 0.3 * L, speed: () => 4 },
+  bijou: { skill: L => 2 + 0.6 * L },
+};
+const AFFIX = { dmg: L => 1 + 0.4 * L, hp: L => 1.5 + 0.5 * L, crit: L => 1 + 0.15 * L, haste: L => 2 + 0.3 * L, cdr: L => 2 + 0.3 * L, dodge: L => 1 + 0.12 * L,
+  armor: L => 1 + 0.2 * L, leech: L => 0.5 + 0.1 * L, regen: L => 0.1 + 0.03 * L, speed: L => 2 + 0.2 * L, potion: L => 5 + L, skill: L => 2 + 0.5 * L, gold: L => 5 + L };
+const AFFIX_POOL = {
+  arme: ['crit', 'haste', 'leech', 'skill', 'cdr'],
+  casque: ['armor', 'cdr', 'crit', 'regen', 'skill', 'dmg'],
+  armure: ['regen', 'dodge', 'potion', 'dmg', 'crit'],
+  bottes: ['dodge', 'armor', 'regen', 'dmg', 'crit'],
+  bijou: ['dmg', 'crit', 'cdr', 'leech', 'gold', 'potion', 'hp'],
+};
+/* Plafonds de ce que l'équipement peut donner au total. */
+const GEAR_CAP = { crit: 30, cdr: 40, dodge: 25, armor: 30, leech: 10, regen: 2, speed: 40, haste: 50 };
+/* Noms : objets rares d'après leur bonus le plus fort, épiques d'après un titre, légendaires d'après leur pouvoir. */
+const NAME_TIER = ['du soldat', 'du vétéran', 'du champion', 'du héros'];
+const NAME_BEAST = { dmg: 'du loup', hp: 'de l’ours', crit: 'du faucon', haste: 'du lynx', cdr: 'du hibou', dodge: 'du renard', armor: 'de la tortue', leech: 'de la sangsue',
+  regen: 'du troll', speed: 'du cerf', potion: 'de l’alchimiste', skill: 'du sage', gold: 'du marchand' };
+const NAME_EPIC = ['des Cimes', 'de la Tempête', 'du Roi des Montagnes', 'de la Forge ancienne', 'de l’Aube', 'du Crépuscule', 'des Anciens Rois', 'du Dragon de pierre', 'du Gardien', 'des Profondeurs'];
+
+/* Pouvoirs légendaires (un par objet légendaire, selon l'emplacement). */
+const POWERS = {
+  chaine: { sl: 'arme', title: 'Croc-de-Foudre', txt: 'Vos attaques touchent aussi un 2e monstre proche (moitié des dégâts).' },
+  brasier: { sl: 'arme', title: 'Brasier', txt: 'Vos attaques enflamment la cible : un quart des dégâts en plus, en 3 secondes.' },
+  echo: { sl: 'casque', title: 'Écho des Anciens', txt: '1 chance sur 5 qu’une compétence soit aussitôt prête à nouveau.' },
+  epines: { sl: 'armure', title: 'Peau-de-Ronces', txt: 'Renvoie 30 % des coups reçus au corps à corps.' },
+  sursis: { sl: 'armure', title: 'Dernier Rempart', txt: 'Une fois par donjon, un coup fatal vous laisse à 1 point de vie, intouchable 2 secondes.' },
+  vent: { sl: 'bottes', title: 'Pas-du-Vent', txt: '+15 % de vitesse et +8 % d’esquive.' },
+  soif: { sl: 'bijou', title: 'Cœur assoiffé', txt: 'Chaque monstre vaincu vous rend 3 % de vie.' },
+  tresor: { sl: 'bijou', title: 'Œil du Dragon', txt: '+50 % d’or, et de meilleures chances de trouver des objets rares.' },
+};
+const POWER_KEYS = Object.keys(POWERS);
+/* Ensembles : une tenue par donjon (arme, casque, armure, bottes), bonus à 2 et 4 pièces. */
+const SETS = {
+  troll: { name: 'Tenue du chef troll', sfx: 'du Chef troll', b2: { hp: 10 }, b2t: '+10 % de vie', b4t: 'Vos coups ont 1 chance sur 10 d’étourdir (1 seconde).' },
+  roi: { name: 'Atours du roi squelette', sfx: 'du Roi squelette', b2: { skill: 12 }, b2t: 'Compétences +12 % plus fortes', b4t: 'Chaque monstre vaincu rapproche vos compétences d’une seconde.' },
+  abime: { name: 'Panoplie de l’abîme', sfx: 'de l’Abîme', b2: { dmg: 8, hp: 8 }, b2t: '+8 % de dégâts et de vie', b4t: 'Une potion de plus, et les potions soignent 30 % de plus.' },
+};
+const SET_SLOTS = ['arme', 'casque', 'armure', 'bottes'];
+const SET_OF_THEME = { mine: 'troll', crypte: 'roi' };
+/* Pierres précieuses : 3 tailles (éclat, pierre, parfaite) ; trois pareilles se fusionnent en une plus belle. */
+const GEMS = {
+  rubis: { name: 'Rubis', fem: false, stat: 'hp', v: [2, 4, 7], col: '#e0464e' },
+  saphir: { name: 'Saphir', fem: false, stat: 'cdr', v: [2, 4, 6], col: '#4a7fe0' },
+  emeraude: { name: 'Émeraude', fem: true, stat: 'crit', v: [1.5, 3, 5], col: '#3fb56b' },
+  topaze: { name: 'Topaze', fem: true, stat: 'dmg', v: [2, 4, 7], col: '#e8b23a' },
+};
+const GEM_KEYS = Object.keys(GEMS);
+const GEM_FUSE_COST = [0, 15, 50];         // or pour passer de la taille 1 à 2, de 2 à 3
+const gemOf = key => { const m = /^([a-z]+)([123])$/.exec(String(key || '')); if (!m || !GEMS[m[1]]) return null; const G = GEMS[m[1]], n = +m[2]; return { key: m[1] + n, type: m[1], n, stat: G.stat, v: G.v[n - 1], col: G.col, name: gemName(m[1], n) }; };
+function gemName(type, n) {
+  const G = GEMS[type], low = G.name.toLowerCase();
+  return n === 1 ? 'Éclat ' + (/^[aeiouéèêh]/i.test(low) ? 'd’' : 'de ') + low : n === 2 ? G.name : G.name + (G.fem ? ' parfaite' : ' parfait');
+}
+/* Familiers (niveau 6) : chacun son petit bonus. */
+const PETS = {
+  loup: { name: 'Loup', txt: 'Il mord fort : +30 % de dégâts pour le familier.' },
+  faucon: { name: 'Faucon', txt: '+5 % de coups critiques pour son maître.' },
+  sanglier: { name: 'Sanglier', txt: '+8 % de vie pour son maître.' },
+  chouette: { name: 'Chouette', txt: 'Compétences 5 % plus vite prêtes.' },
+};
+const PET_KEYS = Object.keys(PETS);
+const PET_LVL = 6;
+
+/* ---------- tirage d'un objet ---------- */
+/* Chances de chaque rareté selon la source (en %), avant le bonus du niveau et de la chance. */
+const DROP = {
+  mob: [62, 28, 8, 1.8, 0.2], chest: [50, 32, 14, 3.5, 0.5], boss: [0, 45, 38, 14, 3],
+  forge1: [50, 35, 15, 0, 0], forge2: [20, 40, 30, 10, 0], forge3: [0, 35, 40, 21, 4], merch: [0, 40, 40, 18, 2],
+};
+const pickOf = (R, a) => a[Math.floor(R() * a.length) % a.length];
+function rollRarity(R, table, L, luck) {
+  const w = table.slice(), boost = (1 + 0.04 * Math.max(0, (L | 0) - 1)) * (luck || 1);
+  for (let i = 2; i < 5; i++) w[i] *= boost;
+  w[1] *= Math.sqrt(boost);
+  const tot = w.reduce((a, b) => a + b, 0); let x = R() * tot;
+  for (let i = 0; i < 5; i++) { x -= w[i]; if (x < 0 && w[i] > 0) return i; }
+  return w.findIndex(x2 => x2 > 0);
+}
+/* o : { il, src (clé de DROP), cls (classe de celui qui le trouve : l'arme sera pour lui), sl, r, set, luck } */
+function genItem(R, o) {
+  let sl = o.sl;
+  if (!sl) {
+    const list = o.set ? SET_SLOTS : SLOTS, tot = list.reduce((a, s) => a + SLOT_WEIGHT[s], 0);
+    let x = R() * tot; sl = list[list.length - 1];
+    for (const s of list) { x -= SLOT_WEIGHT[s]; if (x < 0) { sl = s; break; } }
+  }
+  const r = o.set ? 3 : o.r != null ? Math.max(0, Math.min(4, o.r | 0)) : rollRarity(R, DROP[o.src] || DROP.chest, o.il, o.luck);
+  const k = sl === 'arme' ? pickOf(R, CLASS_WEAPONS[o.cls] || Object.keys(WEAPONS)) : pickOf(R, ARMOR_KINDS[sl].filter((a, i) => i < 3 || r >= 2))[0];
+  const it = { sl, k, r, il: Math.max(1, Math.min(IL_MAX, Math.round(o.il) || 1)), sd: (Math.floor(R() * 4294967295) >>> 0) || 1 };
+  if (o.set && SET_SLOTS.includes(sl)) it.set = o.set;
+  if (it.r === 4) it.pw = pickOf(R, POWER_KEYS.filter(p => POWERS[p].sl === sl));
+  return it;
+}
+/* Objet reçu d'un téléphone (retour de donjon) : on ne garde que ce qui est possible. */
+function cleanItem(x, maxIl) {
+  if (!x || typeof x !== 'object' || !SLOTS.includes(x.sl)) return null;
+  const sl = x.sl, kinds = sl === 'arme' ? Object.keys(WEAPONS) : ARMOR_KINDS[sl].map(a => a[0]);
+  const it = { sl, k: kinds.includes(x.k) ? x.k : kinds[0], r: Math.max(0, Math.min(4, x.r | 0)), il: Math.max(1, Math.min(maxIl || IL_MAX, IL_MAX, x.il | 0)), sd: (x.sd >>> 0) || 1 };
+  if (x.set && SETS[x.set] && SET_SLOTS.includes(sl)) { it.set = x.set; it.r = 3; }
+  if (it.r === 4) it.pw = POWERS[x.pw] && POWERS[x.pw].sl === sl ? x.pw : POWER_KEYS.find(p => POWERS[p].sl === sl);
+  return it;
+}
+
+/* ---------- ce que vaut un objet (recalculé, mis en cache) ---------- */
+const itemCache = new Map();
+const r1 = x => Math.round(x * 10) / 10;
+const itemKey = it => [it.sl, it.k, it.r, it.il, it.sd, it.set || '', it.pw || '', it.up | 0, gemList(it).join(',')].join('|');
+function gemList(it) { const n = socketsOf(it), out = []; for (let i = 0; i < n; i++) { const g = it.gm && it.gm['g' + i]; out.push(gemOf(g) ? g : null); } return out; }
+const socketsOf = it => it.set ? 1 : RARITY[Math.max(0, Math.min(4, it.r | 0))].so;
+const itemReq = it => Math.min(HERO_MAX_LVL, Math.max(1, (it.il | 0) - 2));
+const maxUpOf = forgeLvl => forgeLvl >= 3 ? 5 : forgeLvl >= 2 ? 4 : forgeLvl >= 1 ? 3 : 0;
+function itemInfo(it) {
+  const key = itemKey(it), hit = itemCache.get(key); if (hit) return hit;
+  const R = mulberry32((it.sd ^ 0x5bd1e995) >>> 0), L = it.il, rr = RARITY[it.r] || RARITY[0], up = 1 + 0.1 * Math.max(0, Math.min(5, it.up | 0));
+  const main = {}, af = {};
+  for (const k in MAIN[it.sl]) main[k] = r1(MAIN[it.sl][k](L) * (k === 'speed' ? 1 : rr.mul * (0.95 + 0.1 * R())) * up);
+  const pool = AFFIX_POOL[it.sl].filter(k => !(k in main)), n = it.set ? 2 : rr.af;
+  for (let i = 0; i < n && pool.length; i++) { const k = pool.splice(Math.floor(R() * pool.length), 1)[0]; af[k] = r1(AFFIX[k](L) * (0.8 + 0.4 * R()) * (1 + 0.08 * it.r)); }
+  const gems = gemList(it);
+  /* Nom */
+  const base = it.sl === 'arme' ? (WEAPONS[it.k] || WEAPONS.epee).name : ((ARMOR_KINDS[it.sl].find(a => a[0] === it.k) || ARMOR_KINDS[it.sl][0])[1]);
+  let name;
+  if (it.set && SETS[it.set]) name = base + ' ' + SETS[it.set].sfx;
+  else if (it.r === 4 && POWERS[it.pw]) name = base + ' « ' + POWERS[it.pw].title + ' »';
+  else if (it.r === 3) name = base + ' ' + NAME_EPIC[it.sd % NAME_EPIC.length];
+  else if (it.r === 2) { const best = Object.keys(af).sort((a, b) => af[b] * STATS[b].w - af[a] * STATS[a].w)[0]; name = base + ' ' + (NAME_BEAST[best] || 'du loup'); }
+  else name = base + ' ' + NAME_TIER[L >= 20 ? 3 : L >= 10 ? 2 : L >= 5 ? 1 : 0];
+  if (it.up > 0) name += ' +' + it.up;
+  /* Valeur (pour comparer), prix de vente, fer rendu à la fonte */
+  let score = 0;
+  for (const k in main) score += main[k] * STATS[k].w;
+  for (const k in af) score += af[k] * STATS[k].w;
+  for (const g of gems) if (g) { const G = gemOf(g); score += G.v * STATS[G.stat].w; }
+  if (it.pw) score += 8; if (it.set) score += 4;
+  const lv = 1 + 0.12 * (L - 1), upv = 1 + 0.3 * (it.up | 0);
+  const info = { name, base, main, af, gems, so: gems.length, req: itemReq(it), score: r1(score), sell: Math.max(1, Math.round(rr.sell * lv * upv)),
+    melt: Math.max(1, Math.round(rr.melt * (1 + 0.1 * (L - 1)) * (1 + 0.5 * (it.up | 0)))), col: it.set ? SET_COL : rr.col, fam: it.sl === 'arme' ? (WEAPONS[it.k] || WEAPONS.epee).f : null };
+  if (itemCache.size > 600) itemCache.clear();
+  itemCache.set(key, info);
+  return info;
+}
+/* Ce héros peut-il porter cet objet ? */
+function canWear(hh, it) {
+  if (!hh || !it) return { ok: false, why: 'Objet introuvable.' };
+  if (it.sl === 'bijou' && hh.lvl < BIJOU_LVL) return { ok: false, why: 'Un bijou se porte à partir du niveau ' + BIJOU_LVL + '.' };
+  if (it.sl === 'arme' && (WEAPONS[it.k] || WEAPONS.epee).f !== CLASS_FAMILY[hh.cls]) return { ok: false, why: className(hh.cls, hh.sex) + ' : seulement les ' + FAMILY_LABEL[CLASS_FAMILY[hh.cls]] + '.' };
+  const req = itemReq(it); if (hh.lvl < req) return { ok: false, why: 'Il faut être niveau ' + req + '.' };
+  return { ok: true };
+}
+/* Tout ce que l'équipement porté donne au héros (en %), ensembles et pouvoirs compris. */
+function gearOf(hh) {
+  const s = { dmg: 0, hp: 0, armor: 0, crit: 0, haste: 0, cdr: 0, dodge: 0, speed: 0, leech: 0, regen: 0, potion: 0, skill: 0, gold: 0, pw: {}, set4: {}, sets: {}, potX: 0 };
+  for (const sl of SLOTS) {
+    const it = hh && hh.eq && hh.eq[sl]; if (!it || it.sl !== sl || !canWear(hh, it).ok) continue;
+    const I = itemInfo(it);
+    for (const k in I.main) s[k] += I.main[k];
+    for (const k in I.af) s[k] += I.af[k];
+    for (const g of I.gems) if (g) { const G = gemOf(g); s[G.stat] += G.v; }
+    if (it.pw) s.pw[it.pw] = 1;
+    if (it.set) s.sets[it.set] = (s.sets[it.set] || 0) + 1;
+  }
+  for (const k in s.sets) { const S = SETS[k]; if (!S) continue; if (s.sets[k] >= 2) for (const st in S.b2) s[st] += S.b2[st]; if (s.sets[k] >= 4) s.set4[k] = 1; }
+  if (s.pw.vent) { s.speed += 15; s.dodge += 8; }
+  if (s.pw.tresor) s.gold += 50;
+  if (s.set4.abime) { s.potion += 30; s.potX = 1; }
+  for (const k in GEAR_CAP) s[k] = Math.min(s[k], GEAR_CAP[k]);
+  for (const k in STATS) s[k] = r1(s[k]);
+  return s;
+}
+/* Comparaison avec l'objet porté au même emplacement : 1 mieux, -1 moins bien, 0 pareil (null si on ne peut pas le porter). */
+function compareItem(hh, it) {
+  if (!hh || !canWear(hh, it).ok) return null;
+  const cur = hh.eq && hh.eq[it.sl], a = itemInfo(it).score, b = cur ? itemInfo(cur).score : 0;
+  return a > b * 1.03 + 0.05 ? 1 : a < b * 0.97 - 0.05 ? -1 : 0;
+}
+
+/* ---------- le sac (un par joueur) et la forge ---------- */
+const BAG_BASE = 30;
+const forgeLvlOf = v => { const f = v.b.find(b => b.type === 'forge' && b.lvl > 0); return f ? f.lvl : 0; };
+const bagMax = v => BAG_BASE + 10 * forgeLvlOf(v);
+function bagOf(v, uid) {
+  if (!v.bag) v.bag = {};
+  if (!v.bag[uid]) v.bag[uid] = { it: {}, gm: {}, n: 1 };
+  const b = v.bag[uid]; if (!b.it) b.it = {}; if (!b.gm) b.gm = {}; if (!b.n) b.n = 1;
+  return b;
+}
+const bagCount = b => Object.keys(b.it).length;
+function bagAdd(v, uid, it) { const b = bagOf(v, uid); const id = 'i' + (b.n++); it.id = id; b.it[id] = it; return id; }
+/* Les pierres serties d'un objet vendu ou fondu reviennent dans le sac. */
+function gemsBack(bag, it) { for (const g of Object.values(it.gm || {})) if (gemOf(g)) bag.gm[g] = (bag.gm[g] || 0) + 1; }
+const craftCost = L => ({ fer: 30 + 6 * L, bois: 20 + 4 * L, or: 20 + 5 * L });
+const improveCost = (it) => { const k = (it.up | 0) + 1, L = it.il; return { fer: (15 + 3 * L) * k, or: (10 + 2 * L) * k }; };
+/* Où est l'objet visé par une action ? a.hid + a.sl : porté par ce héros (à moi) ; sinon a.id dans mon sac. */
+function itemAt(v, uid, a) {
+  if (a.hid) { const hh = v.heroes[a.hid]; if (!hh || hh.own !== uid || !hh.eq || !hh.eq[a.sl]) return null; return { it: hh.eq[a.sl], hh }; }
+  const b = bagOf(v, uid), it = b.it[a.id]; return it ? { it, bag: b } : null;
+}
+
+/* ---------- le marchand ambulant : un jour sur deux, il s'installe sur la place ---------- */
+const merchDay = (v, t) => Math.floor(Math.max(0, t - v.born) / DAY);
+const merchHere = (v, t) => { const d = merchDay(v, t); return d % 2 === 1 && !!v.merch && v.merch.d === d; };
+const merchLeaves = (v, t) => v.born + (merchDay(v, t) + 1) * DAY;
+const merchPrice = it => Math.round(itemInfo(it).sell * 4);
+const gemPrice = key => { const G = gemOf(key); return G ? [0, 40, 130, 400][G.n] : 0; };
+function genMerch(v, d) {
+  const R = mulberry32(hash((v.seed ^ Math.imul(d + 1, 7919)) >>> 0)), lv = Object.values(v.heroes || {}).reduce((m, h) => Math.max(m, h && h.lvl || 1), 1);
+  const classes = [...new Set(Object.values(v.heroes || {}).map(h => h && h.cls).filter(Boolean))];
+  const it = [];
+  for (let i = 0; i < 4; i++) it.push(genItem(R, { il: lv + Math.floor(R() * 2), src: 'merch', cls: classes.length ? pickOf(R, classes) : null }));
+  const gm = [pickOf(R, GEM_KEYS) + 1, pickOf(R, GEM_KEYS) + (R() < 0.35 ? 2 : 1)];
+  return { d, it, gm, sold: '' };
+}
 
 /* ===================== DONJONS : fabrication à partir d'une graine (pur, sans DOM) =====================
    Même graine + même niveau = même donjon, sur les deux téléphones. Une case = 1 unité (≈ un personnage). */
@@ -1049,8 +1453,10 @@ function djHero(h) {
   const C = DJ_CLASS[h.cls] || DJ_CLASS.guerrier, lvl = Math.max(1, Math.min(HERO_MAX_LVL, h.lvl | 0)), pw = djMul(lvl), at = l => lvl >= l;
   const cls = DJ_CLASS[h.cls] ? h.cls : 'guerrier', race = RACES[h.race] ? h.race : 'humain', sk = h.sk || {};
   const sp = lvl >= SPEC_LVL && (h.spec === 0 || h.spec === 1) ? h.spec : null, spec = (c, s) => cls === c && sp === s;
-  const hp = C.hp * pw * (race === 'nain' ? 1.15 : 1);
-  let dmg = C.dmg * pw, armor = C.armor + (cls === 'guerrier' && at(4) ? 0.1 : 0);
+  /* Équipement (en %) et familier (niveau 6) */
+  const G = gearOf(h), pet = lvl >= PET_LVL ? (PETS[h.pet] ? h.pet : 'loup') : null;
+  const hp = C.hp * pw * (race === 'nain' ? 1.15 : 1) * (1 + G.hp / 100) * (pet === 'sanglier' ? 1.08 : 1);
+  let dmg = C.dmg * pw * (1 + G.dmg / 100), armor = C.armor + (cls === 'guerrier' && at(4) ? 0.1 : 0) + G.armor / 100;
   if (spec('guerrier', 0)) { dmg *= 1.2; armor -= 0.05; }
   if (spec('guerrier', 1)) armor += 0.1;
   if (spec('paladin', 0)) dmg *= 1.15;
@@ -1059,15 +1465,17 @@ function djHero(h) {
   return {
     id: h.id, own: h.own || '', name: h.name || '', race, cls, sex: h.sex === 'f' ? 'f' : 'm', col: h.col || COLORS[0], lvl, spec: sp, kind: 'hero',
     x: 0, y: 0, px: 0, py: 0, r: 0.35, fx: 1, fy: 0, hpBase: hp, hpMax: hp, hp, dmg, armor,
-    range: C.range * (cls === 'rodeur' && at(4) ? 1.1 : 1), cdAtk: C.cd,
-    speed: C.speed * (race === 'elfe' ? 1.1 : 1) * (cls === 'rodeur' && at(7) ? 1.1 : 1),
-    crit: (C.crit || 0.05) + (race === 'halfelin' ? 0.05 : 0) + (cls === 'voleur' && at(4) ? 0.1 : 0), critMul: spec('voleur', 0) ? 2.5 : 2,
-    dodge: (C.dodge || 0) + (race === 'elfe' ? 0.1 : 0) + (cls === 'voleur' && at(7) ? 0.1 : 0), taken: cls === 'mage' && at(7) ? 0.9 : 1,
-    cdMul: cls === 'mage' && at(4) ? 0.9 : 1,
+    range: C.range * (cls === 'rodeur' && at(4) ? 1.1 : 1), cdAtk: C.cd / (1 + G.haste / 100),
+    speed: C.speed * (race === 'elfe' ? 1.1 : 1) * (cls === 'rodeur' && at(7) ? 1.1 : 1) * (1 + G.speed / 100),
+    crit: (C.crit || 0.05) + (race === 'halfelin' ? 0.05 : 0) + (cls === 'voleur' && at(4) ? 0.1 : 0) + G.crit / 100 + (pet === 'faucon' ? 0.05 : 0), critMul: spec('voleur', 0) ? 2.5 : 2,
+    dodge: Math.min(0.6, (C.dodge || 0) + (race === 'elfe' ? 0.1 : 0) + (cls === 'voleur' && at(7) ? 0.1 : 0) + G.dodge / 100), taken: cls === 'mage' && at(7) ? 0.9 : 1,
+    cdMul: (cls === 'mage' && at(4) ? 0.9 : 1) * (1 - G.cdr / 100) * (pet === 'chouette' ? 0.95 : 1),
+    leech: G.leech / 100, potMul: 1 + G.potion / 100, skillMul: 1 + G.skill / 100, gold: G.gold / 100, pw: G.pw, set4: G.set4, pet,
+    luck: (race === 'halfelin' ? 1.25 : 1) * (G.pw.tresor ? 1.3 : 1), sursis: false,
     heal: (cls === 'paladin' && at(4) ? 1.1 : 1) * (cls === 'pretre' && at(7) ? 1.15 : 1) * (spec('paladin', 1) ? 1.2 : 1) * (spec('pretre', 0) ? 1.25 : 1),
-    regen: cls === 'druide' && at(4) ? 0.01 : 0, instinct: cls === 'druide' && at(7), souffle: cls === 'guerrier' && at(7), moisson: cls === 'necro' && at(7), aura: cls === 'paladin' && at(7),
+    regen: (cls === 'druide' && at(4) ? 0.01 : 0) + G.regen / 100, instinct: cls === 'druide' && at(7), souffle: cls === 'guerrier' && at(7), moisson: cls === 'necro' && at(7), aura: cls === 'paladin' && at(7),
     rank: [0, 1, 2].map(i => lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, sk['s' + i] | 0)) : 0),
-    cd: [0, 0, 0], cdMax: [1, 1, 1], atkT: 0, tgt: 0, pot: lvl >= 2 ? 4 : 3, potT: 0, b: {}, criA: 0, shield: 0, form: null,
+    cd: [0, 0, 0], cdMax: [1, 1, 1], atkT: 0, tgt: 0, pot: (lvl >= 2 ? 4 : 3) + G.potX, potT: 0, b: {}, criA: 0, shield: 0, form: null,
     dead: false, revived: false, mv: false, atkN: 0, castN: 0, lastCast: '',
     tp: 0, rev: 0, gone: false, remote: false,   // à deux : téléportations (le téléphone de l'autre se recale), relève, départ, héros piloté à distance
   };
@@ -1095,7 +1503,7 @@ function djStart(d, heroes, opts) {
     altar: d.altar ? { x: d.altar[0] + 0.5, y: d.altar[1] + 0.5, used: false } : null,
     pris: d.prisoner ? { x: d.prisoner[0] + 0.5, y: d.prisoner[1] + 0.5, freed: false } : null,
     traps: d.traps.map((t, i) => ({ x: t.x, y: t.y, ph: (i * 0.37) % 2.4, on: false, hit: {} })),
-    exit: null, bless: null, xp: 0, loot: {}, kills: 0, flow: null, flowN: -99, boss: 0, calmT: 0,
+    exit: null, bless: null, xp: 0, loot: {}, kills: 0, flow: null, flowN: -99, boss: 0, calmT: 0, gold: 0, items: {}, gems: {},
     pk: 1 + 0.7 * (heroes.length - 1),
   };
   for (const h of st.heroes) if (o.remote && h.id === o.remote) h.remote = true;
@@ -1116,8 +1524,9 @@ function djStart(d, heroes, opts) {
   }
   st.heroes.forEach((h, i) => { h.x = h.px = d.start[0] + 0.5 + (i ? 1.2 : 0); h.y = h.py = d.start[1] + 0.5 + (i ? 0.6 : 0); });
   /* Le familier (niveau 6) : il suit son héros et mord sa cible ; les monstres ne s'en occupent pas. */
-  for (const h of st.heroes) if (h.lvl >= 6) st.allies.push({ id: st.nid++, kind: 'pet', own: h.id, x: h.x - 0.8, y: h.y + 0.8, px: h.x - 0.8, py: h.y + 0.8, r: 0.25, hp: 1, hpMax: 1,
-    dmg: h.dmg * 0.35 * (h.cls === 'rodeur' && h.spec === 1 ? 3 : 1), range: 1.1, rate: 1.2, speed: 5.5, atkT: 0, t: 1e9, inv: true, tgt: 0, mv: false, atkN: 0 });
+  for (const h of st.heroes) if (h.pet) st.allies.push({ id: st.nid++, kind: 'pet', pt: h.pet, own: h.id, x: h.x - 0.8, y: h.y + 0.8, px: h.x - 0.8, py: h.y + 0.8, r: 0.25, hp: 1, hpMax: 1,
+    dmg: h.dmg * 0.35 * (h.cls === 'rodeur' && h.spec === 1 ? 3 : 1) * (h.pet === 'loup' ? 1.3 : h.pet === 'faucon' ? 0.8 : 1), range: 1.1, rate: 1.2, speed: 5.5, atkT: 0, t: 1e9, inv: true, tgt: 0, mv: false, atkN: 0 });
+  st.goldMul = 1 + st.heroes.reduce((a, h) => a + (h.gold || 0), 0);
   return st;
 }
 
@@ -1134,6 +1543,7 @@ function djHurt(st, m, v, src, crit, kind) {
   }
   const dealt = Math.min(v, m.hp);
   m.hp -= v; st.ev.push({ k: 'hit', id: m.id, v: Math.round(v), crit: !!crit });
+  if (src && src.kind === 'hero' && src.leech > 0 && !src.dead) djHeal(st, src, dealt * src.leech);      // vol de vie (équipement)
   if (m.hp <= 0) djKill(st, m);
   return dealt;
 }
@@ -1145,8 +1555,36 @@ function djKill(st, m) {
     if (h.dead) continue;
     if (h.souffle) djHeal(st, h, h.hpMax * 0.03);                               // Second souffle
     if (h.moisson) for (let i = 0; i < 3; i++) h.cd[i] = Math.max(0, h.cd[i] - 0.5);   // Moisson
+    if (h.pw.soif) djHeal(st, h, h.hpMax * 0.03);                                // Cœur assoiffé (légendaire)
+    if (h.set4.roi) for (let i = 0; i < 3; i++) h.cd[i] = Math.max(0, h.cd[i] - 1);    // Atours du roi squelette (4 pièces)
   }
-  if (m.boss) st.ev.push({ k: 'loot', got: djLootAdd(st, DJ_BOSS_LOOT, djLootMul(st.lvl)), x: m.x, y: m.y });
+  /* Butin : de l'or pour le village, et pour chaque héros ses propres objets (à deux, chacun le sien). */
+  const lm = djLootMul(st.lvl);
+  if (!m.boss) {
+    st.gold += Math.round((1 + djRnd(st) * 2) * lm * (m.big ? 3 : 1) * st.goldMul);
+    for (const h of st.heroes) if (!h.gone && djRnd(st) < (m.big ? 0.06 : 0.02) * h.luck) djDrop(st, h, { src: 'mob' }, m);
+  } else {
+    const g = Math.round(60 * lm * st.goldMul), set = st.d.floor && djRnd(st) < 0.5 ? 'abime' : SET_OF_THEME[st.d.theme] || 'troll';
+    st.gold += g;
+    const got = djLootAdd(st, DJ_BOSS_LOOT, lm); got.or = g;
+    st.ev.push({ k: 'loot', got, x: m.x, y: m.y });
+    for (const h of st.heroes) if (!h.gone) {
+      djDrop(st, h, djRnd(st) < 0.25 ? { src: 'boss', set } : { src: 'boss' }, m);
+      if (djRnd(st) < 0.5) djDrop(st, h, { src: 'boss' }, m);
+      if (djRnd(st) < 0.3) djGem(st, h, djRnd(st) < 0.25 ? 2 : 1, m);
+    }
+  }
+}
+/* Un objet trouvé par un héros (rangé à son nom : à deux, chacun garde le sien). */
+function djDrop(st, h, o, at) {
+  const it = genItem(() => djRnd(st), Object.assign({ il: st.lvl, cls: h.cls, luck: h.luck }, o));
+  (st.items[h.id] = st.items[h.id] || []).push(it);
+  st.ev.push({ k: 'item', id: h.id, r: it.r, sl: it.sl, set: it.set || 0, x: at.x, y: at.y });
+}
+function djGem(st, h, n, at) {
+  const key = GEM_KEYS[Math.floor(djRnd(st) * GEM_KEYS.length)] + n, g = st.gems[h.id] = st.gems[h.id] || {};
+  g[key] = (g[key] || 0) + 1;
+  st.ev.push({ k: 'gem', id: h.id, g: key, x: at.x, y: at.y });
 }
 function djHeal(st, h, v) {
   if (!h || h.dead || !(v > 0)) return 0;
@@ -1155,12 +1593,13 @@ function djHeal(st, h, v) {
   return h.hp - before;
 }
 /* Dégâts reçus par un héros, après esquive, armure et bouclier. */
-function djHurtHero(st, h, v) {
+function djHurtHero(st, h, v, src) {
   if (h.dead || h.b.inv > 0 || !(v > 0)) return 0;
   if (djRnd(st) < h.dodge) { st.ev.push({ k: 'miss', id: h.id }); return 0; }
   let ar = h.armor + (h.b.cri > 0 ? h.criA : 0) + (h.form === 'ours' ? 0.4 + (h.cls === 'druide' && h.spec === 0 ? 0.15 : 0) : 0);
   if (st.heroes.some(p => p.aura && !p.dead && djDist(p, h) <= 4)) ar += 0.1;          // Aura du paladin
   v *= (1 - Math.min(0.75, Math.max(0, ar))) * h.taken * st.dmgMul;
+  if (src && src.kind === 'mob' && src.hp > 0 && h.pw.epines) djHurt(st, src, v * 0.3, h, false, 'dot');       // Peau-de-Ronces (légendaire)
   if (h.shield > 0) { const a = Math.min(h.shield, v); h.shield -= a; v -= a; if (a >= 1) st.ev.push({ k: 'block', id: h.id, v: Math.round(a) }); }
   return djDamageHero(st, h, v);
 }
@@ -1168,7 +1607,8 @@ function djDamageHero(st, h, v) {
   if (h.dead || !(v > 0)) return 0;
   h.hp -= v; st.ev.push({ k: 'hurt', id: h.id, v: Math.round(v) });
   if (h.hp <= 0) {
-    if (h.race === 'mortvivant' && !h.revived) { h.revived = true; h.hp = h.hpMax * 0.4; h.b.inv = 1.5; st.ev.push({ k: 'revive', id: h.id }); }
+    if (h.pw && h.pw.sursis && !h.sursis) { h.sursis = true; h.hp = 1; h.b.inv = 2; st.ev.push({ k: 'sursis', id: h.id }); }   // Dernier Rempart (légendaire)
+    else if (h.race === 'mortvivant' && !h.revived) { h.revived = true; h.hp = h.hpMax * 0.4; h.b.inv = 1.5; st.ev.push({ k: 'revive', id: h.id }); }
     else { h.hp = 0; h.dead = true; h.form = null; h.mv = false; st.ev.push({ k: 'down', id: h.id }); }
   }
   return v;
@@ -1177,8 +1617,8 @@ function djRaise(st, h, frac, by) {
   h.dead = false; h.hp = Math.max(1, h.hpMax * frac); h.rev = 0; h.b = { inv: 1.5 };
   st.ev.push({ k: 'raise', id: h.id, by });
 }
-function djHit(st, t, v) {
-  if (t.kind === 'hero') return djHurtHero(st, t, v);
+function djHit(st, t, v, src) {
+  if (t.kind === 'hero') return djHurtHero(st, t, v, src);
   if (t.inv || t.hp <= 0) return 0;
   t.hp -= v * st.dmgMul; st.ev.push({ k: 'hit', id: t.id, v: Math.round(v * st.dmgMul), ally: true });
   if (t.hp <= 0) { t.hp = 0; st.ev.push({ k: 'die', id: t.id, x: t.x, y: t.y }); }
@@ -1195,6 +1635,18 @@ function djCC(st, m, kind, s, by) {
 function djPoison(st, h, m) {
   const S = DJ_SKILLS.voleur[1], P = 1 + 0.15 * ((h.rank[1] || 1) - 1);
   if (m.hp > 0) { m.poi = S.pt; m.poiD = Math.max(m.poiD, h.dmg * S.dps * P); }
+}
+/* Après un coup simple réussi (corps à corps ou projectile) : poison du voleur, pouvoirs légendaires, ensemble du chef troll. */
+function djOnBasic(st, h, t, v, crit) {
+  if (!h || h.kind !== 'hero' || !t) return;
+  if (h.b.poison > 0) djPoison(st, h, t);
+  if (h.pw.brasier && t.hp > 0) { t.poi = Math.max(t.poi, 3); t.poiD = Math.max(t.poiD, v * 0.25 / 3); }
+  if (h.pw.chaine) {
+    let best = null, bd = 2.6;
+    for (const m of st.mobs) { if (m === t || m.hp <= 0 || !m.awake) continue; const d = djDist(m, t); if (d < bd) { bd = d; best = m; } }
+    if (best) { st.ev.push({ k: 'chain', id: t.id, tgt: best.id, x: t.x, y: t.y, x1: best.x, y1: best.y }); djHurt(st, best, v * 0.5, h, crit, 'dot'); }
+  }
+  if (h.set4.troll && t.hp > 0 && djRnd(st) < 0.1) djCC(st, t, 'stun', 1, h.id);
 }
 /* Dégâts d'un coup de héros : passifs, autel, forme animale, coup critique. */
 function djRoll(st, h, mult) {
@@ -1214,7 +1666,7 @@ function djSetForm(st, h, f) {
 }
 function djPotion(st, h) {
   if (h.dead || h.pot <= 0 || h.potT > 0 || h.hp >= h.hpMax - 0.5) return false;
-  h.pot--; h.potT = 1; djHeal(st, h, h.hpMax * DJ_POTION); st.ev.push({ k: 'potion', id: h.id });
+  h.pot--; h.potT = 1; djHeal(st, h, h.hpMax * DJ_POTION * (h.potMul || 1)); st.ev.push({ k: 'potion', id: h.id });
   return true;
 }
 /* Endroit libre pour se téléporter, en ligne droite (sans traverser de mur ni de grille). */
@@ -1227,7 +1679,7 @@ function djBlinkSpot(st, h, ux, uy, dist) {
 function djCast(st, h, i) {
   const S = DJ_SKILLS[h.cls] && DJ_SKILLS[h.cls][i];
   if (!S || h.dead || !h.rank[i] || h.cd[i] > 0) return false;
-  const r = h.rank[i], P = 1 + 0.15 * (r - 1), L = 1 + 0.1 * (r - 1), D = mult => djRoll(st, h, mult * P);
+  const r = h.rank[i], P = (1 + 0.15 * (r - 1)) * (h.skillMul || 1), L = 1 + 0.1 * (r - 1), D = mult => djRoll(st, h, mult * P);
   const shoot = (t, d, spd) => st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: spd || 14, dmg: d.v, crit: d.crit, life: 2 });
   let ok = true;
   switch (S.id) {
@@ -1349,6 +1801,7 @@ function djCast(st, h, i) {
   if (!ok) { st.ev.push({ k: 'nocast', id: h.id, i }); return false; }
   const cd = S.cd * (1 - 0.05 * (r - 1)) * h.cdMul * (st.bless === 'celerite' ? 0.85 : 1);
   h.cd[i] = cd; h.cdMax[i] = cd; h.castN++; h.lastCast = S.id;
+  if (h.pw.echo && djRnd(st) < 0.2) { h.cd[i] = 0.3; st.ev.push({ k: 'echo', id: h.id }); }                  // Écho des Anciens (légendaire)
   if (S.id === 'charge' || S.id === 'roulade' || S.id === 'tp' || S.id === 'ombre') h.tp = (h.tp || 0) + 1;
   st.ev.push({ k: 'cast', id: h.id, i, s: S.id });
   return true;
@@ -1396,8 +1849,8 @@ function djHeroStep(st, h, inp) {
       if (h.b.stealth > 0) { v *= 2; delete h.b.stealth; st.ev.push({ k: 'unstealth', id: h.id }); }
       h.atkT = h.form === 'loup' ? 0.5 : h.form === 'ours' ? 1.1 : h.cdAtk; h.atkN++;
       st.ev.push({ k: 'atk', id: h.id, tgt: t.id });
-      if (reach < 2) { if (!djEvade(st, t)) { djHurt(st, t, v, h, d.crit, 'basic'); if (h.b.poison > 0) djPoison(st, h, t); } }
-      else st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: 14, dmg: v, crit: d.crit, life: 2, splash: DJ_CLASS[h.cls].splash || 0 });
+      if (reach < 2) { if (!djEvade(st, t)) { djHurt(st, t, v, h, d.crit, 'basic'); djOnBasic(st, h, t, v, d.crit); } }
+      else st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: 14, dmg: v, crit: d.crit, life: 2, splash: DJ_CLASS[h.cls].splash || 0, basic: 1 });
     }
   }
 }
@@ -1497,7 +1950,7 @@ function djMobStep(st, m) {
     m.wind -= dt; m.mv = false;
     if (m.wind > 0) return;
     const tt = djEnt(st, m.actTgt);
-    if (m.act === 'melee') { if (tt && !tt.dead && tt.hp > 0 && djDist(m, tt) <= m.range + tt.r + m.r + 0.45) djHit(st, tt, m.dmg); }
+    if (m.act === 'melee') { if (tt && !tt.dead && tt.hp > 0 && djDist(m, tt) <= m.range + tt.r + m.r + 0.45) djHit(st, tt, m.dmg, m); }
     else if (m.act === 'shot') { if (tt) { const ax = tt.x - m.x, ay = tt.y - m.y, len = Math.hypot(ax, ay) || 1, sp = m.shot === 'arrow' ? 9 : 6; st.shots.push({ id: st.nid++, side: 'm', kind: m.shot, from: m.id, x: m.x, y: m.y, px: m.x, py: m.y, vx: ax / len * sp, vy: ay / len * sp, dmg: m.dmg, life: (m.range + 2) / sp, r: 0.25 }); } }
     else if (m.act === 'heal') { if (tt && tt.hp > 0) { tt.hp = Math.min(tt.hpMax, tt.hp + tt.hpMax * 0.15); st.ev.push({ k: 'mheal', id: tt.id, by: m.id }); } }
     else if (m.act === 'raise' && m.raiseAt) {
@@ -1637,7 +2090,8 @@ function djShotStep(st, s) {
     if (!t || s.life <= 0) { s.dead = true; return; }
     const dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy), step = s.spd * dt;
     if (len <= step + t.r) {
-      s.dead = true; s.x = t.x; s.y = t.y; if (djEvade(st, t)) return; djHurt(st, t, s.dmg, djEnt(st, s.from), s.crit, 'basic');
+      s.dead = true; s.x = t.x; s.y = t.y; if (djEvade(st, t)) return;
+      const from = djEnt(st, s.from); djHurt(st, t, s.dmg, from, s.crit, 'basic'); if (s.basic) djOnBasic(st, from, t, s.dmg, s.crit);
       if (s.splash) for (const m of djAround(st, s.x, s.y, s.splash)) if (m !== t) djHurt(st, m, s.dmg * 0.4, null, false);   // la boule du mage éclabousse
       return;
     }
@@ -1711,7 +2165,13 @@ function djWorld(st) {
     if (h.dead) continue;
     for (const c of st.chests) if (!c.open && Math.hypot(c.x - h.x, c.y - h.y) < 1.1) {
       c.open = true;
-      st.ev.push({ k: 'chest', x: c.x, y: c.y, got: djLootAdd(st, DJ_CHEST, djLootMul(st.lvl) * (st.heroes.some(p => p.race === 'halfelin') ? 1.5 : 1)) });
+      const got = djLootAdd(st, DJ_CHEST, djLootMul(st.lvl) * (st.heroes.some(p => p.race === 'halfelin') ? 1.5 : 1)), g = Math.round(15 * djLootMul(st.lvl) * st.goldMul);
+      st.gold += g; got.or = g;
+      st.ev.push({ k: 'chest', x: c.x, y: c.y, got });
+      for (const p of st.heroes) if (!p.gone) {
+        if (djRnd(st) < 0.6) djDrop(st, p, { src: 'chest', luck: p.luck * (p.race === 'halfelin' ? 1.2 : 1) }, c);
+        if (djRnd(st) < 0.08) djGem(st, p, 1, c);
+      }
     }
     if (st.altar && !st.altar.used && Math.hypot(st.altar.x - h.x, st.altar.y - h.y) < 1.2) {
       st.altar.used = true; st.bless = ['force', 'vigueur', 'celerite'][Math.floor(djRnd(st) * 3)];
@@ -1764,8 +2224,21 @@ function djFlee(st) { if (!st.over) { st.fled = true; st.over = 'lose'; st.ev.pu
 function djResult(st) {
   const win = st.over === 'win' || st.over === 'floor', L = st.lvl, k = win ? 1 : 0.5, loot = {};
   for (const r in st.loot) { const n = Math.round(st.loot[r] * k); if (n > 0) loot[r] = n; }
-  return { win, lvl: L, xp: Math.round((st.xp + (win ? 60 * djXpMul(L) : 0)) * k), loot, pris: !!(st.pris && st.pris.freed), kills: st.kills, secs: Math.round(st.t), fled: !!st.fled, combos: st.combos || 0, theme: st.d.theme };
+  return { win, lvl: L, xp: Math.round((st.xp + (win ? 60 * djXpMul(L) : 0)) * k), loot, pris: !!(st.pris && st.pris.freed), kills: st.kills, secs: Math.round(st.t), fled: !!st.fled, combos: st.combos || 0, theme: st.d.theme,
+    gold: Math.round((st.gold || 0) * k), items: djHalfItems(st.items || {}, win), gems: djHalfGems(st.gems || {}, win) };
 }
+/* Défaite ou fuite : on garde la meilleure moitié des objets (arrondie au-dessus) et la moitié des pierres. */
+function djHalfItems(items, win) {
+  const out = {};
+  for (const hid in items) { const l = items[hid] || []; out[hid] = win ? l.slice() : l.slice().sort((a, b) => b.r - a.r || b.il - a.il).slice(0, Math.ceil(l.length / 2)); }
+  return out;
+}
+function djHalfGems(gems, win) {
+  const out = {};
+  for (const hid in gems) { const g = {}; for (const k in gems[hid]) { const n = win ? gems[hid][k] : Math.round(gems[hid][k] * 0.5); if (n > 0) g[k] = n; } out[hid] = g; }
+  return out;
+}
+function djAddGems(a, b) { const out = Object.assign({}, a); for (const k in b || {}) out[k] = (out[k] || 0) + b[k]; return out; }
 /* Où en est-on ? (pour l'interface) */
 function djProgress(st) {
   const fights = st.d.rooms.map((r, i) => [r, i]).filter(([r]) => r.kind === 'fight');
@@ -1778,7 +2251,8 @@ function djProgress(st) {
 /* ===================== DONJONS À DEUX : l'hôte simule, l'invitée affiche =====================
    Le téléphone de l'hôte fait tourner le combat et envoie l'état ~7 fois par seconde ; celui de l'invitée l'affiche
    (en lissant), déplace lui-même son héros (pour qu'il réponde tout de suite) et envoie sa position et ses boutons. */
-const DJ_PV = 2;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent
+const DJ_PV = 3;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent
+const DJ_PETS = ['loup', 'faucon', 'sanglier', 'chouette'];
 const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette'];
 const DJ_ST = { idle: 'i', lock: 'l', clear: 'c', open: 'o', fight: 'f' }, DJ_STR = { i: 'idle', l: 'lock', c: 'clear', o: 'open', f: 'fight' };
 const djR1 = x => Math.round(x * 10) / 10, djR2 = x => Math.round(x * 100) / 100;
@@ -1793,14 +2267,14 @@ function djSnap(st, evs, n, res) {
     m: st.mobs.filter(m => !m.hidden && m.hp > 0).map(m => [m.id, DJ_MT.indexOf(m.type), djR2(m.x), djR2(m.y), djR1(m.hp), djR1(m.hpMax),
       (m.awake ? 1 : 0) | (m.mv ? 2 : 0) | (m.stun > 0 ? 4 : 0) | (m.frz > 0 ? 8 : 0) | (m.root > 0 ? 16 : 0) | (m.boss ? 32 : 0) | (m.sp && m.sp.enr ? 64 : 0) | (m.big ? 128 : 0),
       djR2(m.fx), djR2(m.fy), m.atkN, m.room, m.r]),
-    a: st.allies.filter(a => a.inv || a.hp > 0).map(a => [a.id, a.kind === 'pet' ? 1 : 0, a.own, djR2(a.x), djR2(a.y), djR1(a.hp), djR1(a.hpMax), a.mv ? 1 : 0, a.atkN, djR2(a.fx || 0), djR2(a.fy || 0)]),
+    a: st.allies.filter(a => a.inv || a.hp > 0).map(a => [a.id, a.kind === 'pet' ? 1 : 0, a.own, djR2(a.x), djR2(a.y), djR1(a.hp), djR1(a.hpMax), a.mv ? 1 : 0, a.atkN, djR2(a.fx || 0), djR2(a.fy || 0), Math.max(0, DJ_PETS.indexOf(a.pt))]),
     s: st.shots.map(s => [s.id, s.kind, djR2(s.x), djR2(s.y)]),
     z: st.zones.map(z => [z.id, z.k, djR2(z.x), djR2(z.y), z.r]),
     r: st.rooms.map(R => [DJ_ST[R.st] || 'o', R.wave, R.waves]),
     ch: st.chests.map(c => (c.open ? '1' : '0')).join('') || '0',
     al: st.altar && st.altar.used ? 1 : 0, bl: st.bless || 0, pr: st.pris && st.pris.freed ? 1 : 0,
     ex: st.exit ? [djR2(st.exit.x), djR2(st.exit.y)] : 0,
-    ov: st.over || 0, res: res || (st.over && st.over !== 'floor' ? djResult(st) : 0), xp: Math.round(st.xp), k: st.kills, cb: st.combos || 0,
+    ov: st.over || 0, res: res || (st.over && st.over !== 'floor' ? djResult(st) : 0), xp: Math.round(st.xp), k: st.kills, cb: st.combos || 0, gd: Math.round(st.gold || 0),
     ev: evs && evs.length ? evs : 0,
   };
 }
@@ -1829,7 +2303,7 @@ function djApplySnap(ms, sn, me) {
     m.boss = !!(f & 32); m.big = !!(f & 128); m.sp = m.boss ? { enr: !!(f & 64) } : null;
     m.fx = a[7]; m.fy = a[8]; m.atkN = a[9]; m.room = a[10]; m.r = a[11] || 0.38; m.hidden = false;
   });
-  ms.allies = keep(ms.allies, sn.a, a => ({ id: a[0], kind: a[1] ? 'pet' : 'skel', own: a[2], x: a[3], y: a[4], px: a[3], py: a[4], r: a[1] ? 0.25 : 0.32, inv: !!a[1] }), (e, a) => {
+  ms.allies = keep(ms.allies, sn.a, a => ({ id: a[0], kind: a[1] ? 'pet' : 'skel', pt: a[1] ? DJ_PETS[a[11] | 0] : null, own: a[2], x: a[3], y: a[4], px: a[3], py: a[4], r: a[1] ? 0.25 : 0.32, inv: !!a[1] }), (e, a) => {
     e.x = a[3]; e.y = a[4]; e.hp = a[5]; e.hpMax = a[6]; e.mv = !!a[7]; e.atkN = a[8]; e.fx = a[9]; e.fy = a[10];
   });
   ms.shots = keep(ms.shots, sn.s, a => ({ id: a[0], kind: a[1], x: a[2], y: a[3], px: a[2], py: a[3] }), (e, a) => { e.x = a[2]; e.y = a[3]; });
@@ -1842,7 +2316,7 @@ function djApplySnap(ms, sn, me) {
   if (ms.pris) ms.pris.freed = !!sn.pr;
   ms.exit = sn.ex ? { x: sn.ex[0], y: sn.ex[1] } : null;
   for (const tr of ms.traps) { const u = ms.t + tr.ph, cyc = Math.floor(u / 2.4); tr.on = u - cyc * 2.4 < 0.6; }
-  ms.xp = sn.xp; ms.kills = sn.k; ms.combos = sn.cb || 0;
+  ms.xp = sn.xp; ms.kills = sn.k; ms.combos = sn.cb || 0; ms.gold = sn.gd || 0;
   if ((sn.ov || null) !== (ms.over || null)) { ms.over = sn.ov || null; ms.res = sn.res || null; }
   return sn.ev || [];
 }
@@ -1882,13 +2356,21 @@ function djCarry(st) {
 function djRunAdd(run, r) {
   run.xp += r.xp; run.kills += r.kills; run.secs += r.secs; run.combos += r.combos || 0; if (r.pris) run.pris = true;
   for (const k in r.loot) run.loot[k] = (run.loot[k] || 0) + r.loot[k];
+  run.gold = (run.gold || 0) + (r.gold || 0);
+  if (!run.items) run.items = {}; if (!run.gems) run.gems = {};
+  for (const hid in r.items || {}) run.items[hid] = (run.items[hid] || []).concat(r.items[hid]);
+  for (const hid in r.gems || {}) run.gems[hid] = djAddGems(run.gems[hid], r.gems[hid]);
   return run;
 }
 function djRunResult(run, win, partial) {
   const all = djRunAdd(JSON.parse(JSON.stringify(run)), partial || { xp: 0, kills: 0, secs: 0, loot: {} }), k = win ? 1 : 0.5, loot = {};
   for (const r in all.loot) { const n = Math.round(all.loot[r] * k); if (n > 0) loot[r] = n; }
-  return { win, prof: true, lvl: run.start, deep: run.done, xp: Math.round(all.xp * k), loot, pris: !!all.pris, kills: all.kills, secs: all.secs, combos: all.combos, fled: !win && !!(partial && partial.fled), theme: 'prof' };
+  return { win, prof: true, lvl: run.start, deep: run.done, xp: Math.round(all.xp * k), loot, pris: !!all.pris, kills: all.kills, secs: all.secs, combos: all.combos, fled: !win && !!(partial && partial.fled), theme: 'prof',
+    gold: Math.round((all.gold || 0) * k), items: djHalfItems(all.items || {}, win), gems: djHalfGems(all.gems || {}, win) };
 }
+/* Objets envoyés à l'invitée dans les instantanés (forme courte). */
+const djPack = it => [it.sl, it.k, it.r, it.il, it.sd, it.set || 0, it.pw || 0];
+const djUnpack = a => cleanItem({ sl: a[0], k: a[1], r: a[2], il: a[3], sd: a[4], set: a[5] || null, pw: a[6] || null });
 
 /* ===================== VUE 3D (three.js r128) ===================== */
 const V3 = (() => {
@@ -2456,7 +2938,7 @@ const V3 = (() => {
       for (let i = 0; i < 260; i++) { const wx = (R() * 2 - 1) * (W_HALF - 0.5), wz = (R() * 2 - 1) * (W_HALF - 0.5), k = mIdx(wx, wz); if (k < 0 || mask[k]) continue; rocks.push([wx, 0, wz, 0.12 + R() * 0.2, R() * 6.28, 0.6]); }
     }
     for (let i = 0; i < 70; i++) { const wx = (R() * 2 - 1) * (W_HALF - 1), wz = (R() * 2 - 1) * (W_HALF - 1); if (Math.max(Math.abs(wx), Math.abs(wz)) < half + 0.5) continue; const k = mIdx(wx, wz); if (k >= 0 && mask[k] === 3) continue; rocks.push([wx, 0, wz, 0.18 + R() * 0.35, R() * 6.28, 0.55]); }
-    const PROPS = { bucheron: ['logs', 'logs', 'crate'], carriere: ['block', 'block', 'barrel'], champ: ['hay'], moulin: ['sack', 'sack', 'hay'], boulangerie: ['sack', 'barrel'], brasserie: ['sack', 'crate'], entrepot: ['crate', 'barrel', 'sack'], taverne: ['barrel', 'barrel', 'crate'], halle: ['barrel', 'crate', 'sack'], chasse: ['crate', 'logs'] };
+    const PROPS = { bucheron: ['logs', 'logs', 'crate'], carriere: ['block', 'block', 'barrel'], mine: ['block', 'crate'], forge: ['barrel', 'logs', 'crate'], champ: ['hay'], moulin: ['sack', 'sack', 'hay'], boulangerie: ['sack', 'barrel'], brasserie: ['sack', 'crate'], entrepot: ['crate', 'barrel', 'sack'], taverne: ['barrel', 'barrel', 'crate'], halle: ['barrel', 'crate', 'sack'], chasse: ['crate', 'logs'] };
     const propL = { barrel: [], crate: [], sack: [], logs: [], block: [], hay: [] };
     for (const it of lastGroundItems) {
       if (it.dead || it.key === 'ghost' || !PROPS[it.type] || it.lvl <= 0) continue;
@@ -2860,7 +3342,53 @@ const V3 = (() => {
     if (lv >= 3) { g.add(P('box', 0xe4d6b4, 0.5, 0.5, 0.5, -0.55, y0, 0.55)); g.add(P('prism', 0x8e3b2d, 0.62, 0.34, 0.6, -0.55, y0 + 0.5, 0.55)); }
     return { g, info: { top: y0 + H + 0.8, muzzle: 1, emit: [[-0.6, y0 + H + 0.85, -0.45]] } };
   }
-  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG };
+  /* Forge : atelier de pierre ouvert, grande cheminée, foyer rougeoyant, enclume (en attendant son modèle Meshy). */
+  function forgeG(it) {
+    const g = new THREE.Group(), lv = Math.max(1, it.lvl), y0 = 0.14, ch = 1.7 + 0.2 * lv;
+    g.add(P('box', 0x8a8378, 1.72, y0, 1.5, 0, 0, 0));
+    g.add(P('box', 0x8f8a80, 1.5, 0.92, 0.3, 0, y0, -0.56));
+    g.add(P('box', 0x8f8a80, 0.26, 0.92, 0.86, -0.62, y0, -0.14));
+    for (const x of [-0.7, 0.7]) g.add(P('box', 0x5f4127, 0.08, 0.96, 0.08, x, y0, 0.58, 0, true));
+    g.add(P('prism', 0x5d4632, 1.82, 0.5, 1.5, 0, y0 + 0.96, -0.04));
+    g.add(P('box', 0x7d756a, 0.48, ch, 0.48, 0.48, y0, -0.5));
+    g.add(P('box', 0x6a625a, 0.62, 0.46, 0.46, 0.48, y0, -0.2));
+    g.add(P('box', fireMat, 0.34, 0.2, 0.05, 0.48, y0 + 0.12, 0.04, 0, true));
+    const glow = makeGlow(0xff8a3a, 1.1, y0 + 0.3); glow.position.set(0.48, y0 + 0.3, 0.12); g.add(glow);
+    g.add(P('cyl8', 0x6b4a2e, 0.32, 0.3, 0.32, -0.15, y0, 0.28));
+    g.add(P('box', 0x3c4148, 0.44, 0.1, 0.18, -0.15, y0 + 0.3, 0.28));
+    g.add(P('box', 0x3c4148, 0.18, 0.08, 0.14, -0.15, y0 + 0.4, 0.28, 0, true));
+    g.add(P('cyl8', 0x7a5534, 0.28, 0.34, 0.28, -0.58, y0, 0.48));
+    if (lv >= 2) { g.add(P('box', 0x5f4127, 0.05, 0.62, 0.46, 0.84, y0, 0.22, 0, true)); for (const z of [0.08, 0.22, 0.36]) g.add(P('box', 0xc9d0d6, 0.03, 0.5, 0.05, 0.8, y0 + 0.08, z, 0, true)); }
+    if (lv >= 3) g.add(P('box', 0x8e3b2d, 0.04, 0.5, 0.34, -0.75, y0 + 0.45, 0.3, 0, true));
+    return { g, info: { top: y0 + ch + 0.2, muzzle: 1, emit: [[0.48, y0 + ch + 0.1, -0.5]] } };
+  }
+  /* Mine de fer : entrée dans un tertre rocheux, poutres, wagonnet de minerai sombre, lanterne. */
+  function mineG(it) {
+    const g = new THREE.Group(), lv = Math.max(1, it.lvl);
+    g.add(P('dode', 0x6f6a62, 1.75, 1.05 + 0.15 * lv, 1.4, -0.1, 0, -0.25));
+    g.add(P('dode', 0x7d776d, 0.9, 0.7, 0.8, 0.58, 0, -0.45));
+    g.add(P('box', 0x1b1a19, 0.6, 0.6, 0.1, -0.05, 0.02, 0.43, 0, true));
+    for (const x of [-0.39, 0.29]) g.add(P('box', 0x5f4127, 0.1, 0.72, 0.1, x, 0, 0.48));
+    g.add(P('box', 0x5f4127, 0.84, 0.1, 0.12, -0.05, 0.7, 0.48));
+    for (const x of [-0.17, 0.07]) g.add(P('box', 0x6b6f75, 0.04, 0.03, 0.62, x, 0.01, 0.82, 0, true));
+    g.add(P('box', 0x4a4038, 0.36, 0.2, 0.4, -0.05, 0.08, 0.86));
+    for (const [x, z, c] of [[-0.12, 0.8, 0x3a3f46], [0.02, 0.92, 0x6a4a3a], [-0.06, 0.95, 0x3a3f46]]) g.add(P('ico', c, 0.15, 0.13, 0.15, x, 0.27, z, 0, true));
+    if (lv >= 2) g.add(P('ico', 0x3a3f46, 0.3, 0.22, 0.3, 0.6, 0, 0.45));
+    const l = makeGlow(0xffb050, 0.8, 0.62); l.position.set(0.4, 0.62, 0.56); g.add(l);
+    return { g, info: { top: 1.25 + 0.15 * lv, muzzle: 1, emit: [] } };
+  }
+  /* Charrette du marchand ambulant : plateau, roues, bâche rayée, caisses. */
+  function cartG() {
+    const g = new THREE.Group();
+    g.add(P('box', 0x8a6a45, 0.78, 0.07, 0.5, 0, 0.24, 0));
+    for (const sx of [-1, 1]) g.add(piv(0, 0.17, sx * 0.27, [P('cyl12', 0x5f4127, 0.32, 0.05, 0.32, 0, -0.025, 0, 0, true)], Math.PI / 2, 0, 0));
+    for (const [x, z] of [[-0.36, -0.22], [0.36, -0.22], [-0.36, 0.22], [0.36, 0.22]]) g.add(P('box', 0x5f4127, 0.04, 0.42, 0.04, x, 0.3, z, 0, true));
+    g.add(P('box', 0xc8443a, 0.84, 0.05, 0.56, 0, 0.72, 0)); g.add(P('box', 0xf2e6c8, 0.84, 0.051, 0.18, 0, 0.72, 0, 0, true));
+    g.add(P('box', 0x9b7448, 0.24, 0.2, 0.22, -0.18, 0.31, 0.02)); g.add(P('cyl8', 0x7a5534, 0.2, 0.26, 0.2, 0.16, 0.31, 0.04));
+    g.add(P('box', 0x5f4127, 0.5, 0.03, 0.03, 0.62, 0.24, 0, 0, true));
+    return { g, info: { top: 1.0, muzzle: 0.5, emit: [] } };
+  }
+  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG };
   function build(it) {
     const s = BLD[it.type].size, g = new THREE.Group();
     let info = { top: 1.2, muzzle: 1, emit: [] };
@@ -3126,8 +3654,8 @@ const V3 = (() => {
     orque: { m: 'barbarian', tex: 'orc_barbarian', h: 1.14, w: 1.18 }, halfelin: { m: 'knight', h: 0.74, w: 1.08 }, mortvivant: { m: 'rogue', tint: 0x9db3a2, h: 1.05, w: 0.86 } };
   const CLASS_GEAR = { guerrier: ['1H_Sword', 'Round_Shield'], paladin: ['1H_Sword', 'Badge_Shield', 'Knight_Helmet'], rodeur: ['2H_Crossbow'], mage: ['Throwable'],
     voleur: ['Knife', 'Knife_Offhand'], pretre: ['Throwable', 'Knight_Cape'], druide: ['Throwable', 'Barbarian_Cape'], necro: ['Throwable', 'Rogue_Cape'] };
-  const JOB_GEAR = { bucheron: ['1H_Axe'], carriere: ['2H_Axe'], champ: [], chasse: ['1H_Crossbow'], moulin: ['Mug'], boulangerie: ['Mug'], brasserie: ['Mug'], bat: ['1H_Axe'] };
-  const JOB_WORK = { bucheron: '1H_Melee_Attack_Chop', carriere: '2H_Melee_Attack_Chop', bat: '1H_Melee_Attack_Chop', chasse: '2H_Ranged_Shoot' };
+  const JOB_GEAR = { bucheron: ['1H_Axe'], carriere: ['2H_Axe'], mine: ['2H_Axe'], champ: [], chasse: ['1H_Crossbow'], moulin: ['Mug'], boulangerie: ['Mug'], brasserie: ['Mug'], bat: ['1H_Axe'] };
+  const JOB_WORK = { bucheron: '1H_Melee_Attack_Chop', carriere: '2H_Melee_Attack_Chop', mine: '2H_Melee_Attack_Chop', bat: '1H_Melee_Attack_Chop', chasse: '2H_Ranged_Shoot' };
   const HERO_GEAR = {
     guerrier: { humain: ['1H_Sword', 'Badge_Shield', 'Knight_Helmet', 'Knight_Cape'], nain: ['1H_Axe', 'Barbarian_Round_Shield', 'Barbarian_Hat', 'Barbarian_Cape'], elfe: ['1H_Sword', 'Round_Shield', 'Rogue_Cape'] },
     rodeur: { humain: ['2H_Crossbow', 'Knight_Cape'], nain: ['2H_Crossbow', 'Barbarian_Hat'], elfe: ['2H_Crossbow', 'Rogue_Cape'] },
@@ -3665,10 +4193,19 @@ const V3 = (() => {
     let g;
     if (a.kind === 'skel') { g = djModel(DJ_U.skel); djPrepAnims(g); g.add(djRing(0xa070ff, 0.6, 0.45)); }
     else {
-      /* le familier : une petite bête toute simple, en attendant son modèle */
-      g = new THREE.Group(); const body = new THREE.Group();
-      body.add(P('box', 0x8a7a66, 0.32, 0.22, 0.5, 0, 0.12, 0)); body.add(P('box', 0x8a7a66, 0.24, 0.22, 0.22, 0, 0.26, 0.3));
-      body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, -0.07, 0.48, 0.3)); body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, 0.07, 0.48, 0.3));
+      /* le familier : une petite bête toute simple selon son espèce, en attendant son modèle */
+      g = new THREE.Group(); const body = new THREE.Group(), pt = a.pt || 'loup';
+      if (pt === 'faucon' || pt === 'chouette') {
+        const c = pt === 'faucon' ? 0x7a5a3a : 0xd8cbb0, y = 0.95;
+        body.add(P('sph', c, 0.26, 0.24, 0.34, 0, y, 0)); body.add(P('sph', c, 0.2, 0.2, 0.2, 0, y + 0.16, 0.12));
+        body.add(P('cone4', 0xe0a020, 0.06, 0.08, 0.06, 0, y + 0.18, 0.24, 0, true));
+        for (const sx of [-1, 1]) body.add(piv(sx * 0.12, y + 0.08, 0, [P('box', c, 0.36, 0.03, 0.2, sx * 0.18, 0, 0, 0, true)], 0, 0, sx * 0.3));
+      } else {
+        const c = pt === 'sanglier' ? 0x5e4434 : 0x8a7a66, k = pt === 'sanglier' ? 1.15 : 1;
+        body.add(P('box', c, 0.32 * k, 0.22 * k, 0.5 * k, 0, 0.12, 0)); body.add(P('box', c, 0.24 * k, 0.22 * k, 0.22 * k, 0, 0.26 * k, 0.3 * k));
+        if (pt === 'sanglier') for (const sx of [-1, 1]) body.add(P('cone4', 0xf2ead8, 0.04, 0.1, 0.04, sx * 0.08, 0.28, 0.46, 0, true));
+        else { body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, -0.07, 0.48, 0.3)); body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, 0.07, 0.48, 0.3)); }
+      }
       g.add(body); g.userData = { body, A: {}, mixer: null };
     }
     const bar = makeBar(0.5, 0xb48cff); bar.position.y = 1.3; bar.visible = false; g.add(bar);
@@ -3853,6 +4390,21 @@ const V3 = (() => {
       case 'storm': for (const p of e.pts || []) { burst(p[0], p[1], 0.3, 0xe8e0c8, 5); wave(p[0], p[1], 0xd8d0b8, e.r, 0.4); } shake(0.3); break;
       case 'raised': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xa070ff, 1.2, 0.6); djNum(p[0], p[1], 'relevé…', '#c9a0ff', false); } break; }
       case 'combo': { const p = P2(e.id); if (p) { djNum(p[0], p[1], 'COMBO !', '#ffd23f', true); wave(p[0], p[1], 0xffd23f, 1.3, 0.35); for (let i = 0; i < 4; i++) spark(p[0], 0.7 + i * 0.25, p[1], 0xffe07a); } break; }
+      case 'item': {
+        /* un objet trouvé : une colonne de lumière de la couleur de sa rareté (seulement pour ses propres objets, et toujours dès « rare ») */
+        if (e.id !== DJ.me && e.r < 2 && !e.set) break;
+        const c = new THREE.Color(e.set ? SET_COL : RARITY[e.r].col).getHex(), H = 1.2 + 0.5 * e.r;
+        const w = 0.11 + 0.02 * e.r, g2 = new THREE.CylinderGeometry(w, w, H, 8, 1, true); g2.translate(0, H / 2, 0);
+        const m = new THREE.Mesh(g2, basic(c, { transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })); m.position.set(e.x - half, 0, e.y - half);
+        djGroup.add(m); DJ.teles.push({ m, t: 0, T: 1.2 + 0.2 * e.r, fade: true });
+        for (let i = 0; i < 4 + 2 * e.r; i++) spark(e.x + (Math.random() - 0.5) * 0.5, 0.4 + Math.random() * H, e.y + (Math.random() - 0.5) * 0.5, c);
+        if (e.r >= 2 || e.set) djNum(e.x, e.y, e.set ? 'Ensemble !' : RARITY[e.r].name + ' !', e.set ? SET_COL : RARITY[e.r].col, e.r >= 3);
+        break;
+      }
+      case 'gem': { const G = gemOf(e.g); if (G) { const c = new THREE.Color(G.col).getHex(); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5) * 0.4, 0.5 + Math.random(), e.y + (Math.random() - 0.5) * 0.4, c); djNum(e.x, e.y, '◆', G.col, true); } break; }
+      case 'chain': { const L = Math.hypot(e.x1 - e.x, e.y1 - e.y); if (L > 0.1) { const g2 = new THREE.PlaneGeometry(0.18, L); g2.rotateX(-Math.PI / 2); g2.translate(0, 0, L / 2); const m = new THREE.Mesh(g2, basic(0x9fe3ff, { transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })); m.position.set(e.x - half, 0.9, e.y - half); m.rotation.y = Math.atan2(e.x1 - e.x, e.y1 - e.y); djGroup.add(m); DJ.teles.push({ m, t: 0, T: 0.18, fade: true }); spark(e.x1, 0.9, e.y1, 0x9fe3ff); } break; }
+      case 'echo': { const p = P2(e.id); if (p) { for (let i = 0; i < 4; i++) spark(p[0], 0.8 + i * 0.25, p[1], 0x9fe3ff); djNum(p[0], p[1], 'écho !', '#9fe3ff', false); } break; }
+      case 'sursis': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xffd27a, 1.8, 0.7); djNum(p[0], p[1], 'Dernier Rempart !', '#ffd27a', true); } break; }
       case 'slam': wave(e.x, e.y, 0xff6a3a, e.r, 0.5); debris(e.x, e.y, 2.5, true, 12); shake(0.45); break;
       case 'charge': dustRing(P2(e.id) ? P2(e.id)[0] : 0, P2(e.id) ? P2(e.id)[1] : 0, 0.6); break;
       case 'wall': shake(0.4); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5), 2.4 + Math.random() * 0.4, e.y + (Math.random() - 0.5), 0xfff07a); break;
@@ -4557,9 +5109,9 @@ function sheetDonjon() {
     ${pk && ph ? `<p class="note">${on ? 'À deux avec ' + esc(pname) + ' (' + esc(ph.name) + ') : les monstres sont plus solides, chacun gagne toute l’expérience, et vos combos font mal.' : 'Pour partir à deux, ' + esc(pname) + ' doit avoir le jeu ouvert en même temps que toi.'}</p>` : ''}</div>`;
   h += `<div class="sec"><h4>Niveau des donjons</h4><div class="row djlv">${lvls.map(l => `<button class="btn small${l === pick ? ' primary' : ''}" data-act="sheet" data-s="donjon" data-k="${l}" aria-pressed="${l === pick}">Niveau ${l}</button>`).join('')}</div>
     <p class="note">Niveau ${pick} : conseillé pour un héros de niveau ${pick}${hh.lvl < pick ? ' (le tien est plus faible : prudence)' : ''}. Chaque victoire ouvre le niveau suivant.</p></div>`;
-  h += `<div class="sec"><h4>La mine des gobelins</h4><div class="item"><p>Gobelins, archers, chamans qui soignent et trolls, avec le chef troll au fond. Récompenses : expérience, pierre et bois.</p>${btns('mine', pick, ' (niveau ' + pick + ')')}</div></div>`;
-  h += `<div class="sec"><h4>La crypte des rois</h4><div class="item"><p>Squelettes, goules rapides, spectres qui esquivent, nécromants qui relèvent les morts, golems d’os ; au fond, le roi squelette et sa tempête d’os.</p>${top >= DJ_OPEN.crypte ? btns('crypte', pick, ' (niveau ' + pick + ')') : locked('crypte')}</div></div>`;
-  h += `<div class="sec"><h4>Les Profondeurs</h4><div class="item"><p>Des étages sans fin, de plus en plus durs : la mine puis la crypte, un boss tous les 5 étages. À la fin de chaque étage, tu choisis : descendre plus bas, ou remonter avec tout le butin.${hh.deep ? ' Record de ' + esc(hh.name) + ' : <b>' + hh.deep + ' étage' + (hh.deep > 1 ? 's' : '') + '</b>.' : ''}</p>${top >= DJ_OPEN.prof ? btns('prof', hh.lvl, ' (départ niveau ' + hh.lvl + ')') : locked('prof')}</div></div>`;
+  h += `<div class="sec"><h4>La mine des gobelins</h4><div class="item"><p>Gobelins, archers, chamans qui soignent et trolls, avec le chef troll au fond. Récompenses : expérience, or, pierre, bois et objets (le chef troll laisse parfois une pièce de sa tenue).</p>${btns('mine', pick, ' (niveau ' + pick + ')')}</div></div>`;
+  h += `<div class="sec"><h4>La crypte des rois</h4><div class="item"><p>Squelettes, goules rapides, spectres qui esquivent, nécromants qui relèvent les morts, golems d’os ; au fond, le roi squelette et sa tempête d’os (et parfois une pièce de ses atours).</p>${top >= DJ_OPEN.crypte ? btns('crypte', pick, ' (niveau ' + pick + ')') : locked('crypte')}</div></div>`;
+  h += `<div class="sec"><h4>Les Profondeurs</h4><div class="item"><p>Des étages sans fin, de plus en plus durs : la mine puis la crypte, un boss tous les 5 étages (et la panoplie de l’abîme). À la fin de chaque étage, tu choisis : descendre plus bas, ou remonter avec tout le butin.${hh.deep ? ' Record de ' + esc(hh.name) + ' : <b>' + hh.deep + ' étage' + (hh.deep > 1 ? 's' : '') + '</b>.' : ''}</p>${top >= DJ_OPEN.prof ? btns('prof', hh.lvl, ' (départ niveau ' + hh.lvl + ')') : locked('prof')}</div></div>`;
   h += `<div class="sec"><h4>Comment ça marche</h4><ul class="help">
     <li>Pose le pouce sur la gauche de l’écran pour te déplacer. Ton héros attaque tout seul le monstre le plus proche (les soigneurs d’abord).</li>
     <li>À droite : tes compétences et ta potion. Une compétence se recharge après usage.</li>
@@ -4713,10 +5265,14 @@ function djBack() {
   if (!dj) return;
   const r = dj.res || djResult(dj.st), hid = dj.hid, name = (me && me.heroes[hid] || {}).name || 'Ton héros';
   const guest = dj.duo && dj.duo.role === 'guest';     // le butin et le prisonnier ne comptent qu'une fois : c'est l'hôte qui les rapporte
-  const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris, theme: r.theme || dj.st.d.theme, deep: r.deep || 0 }, { quiet: true });
+  const items = (r.items && r.items[hid]) || [], gems = (r.gems && r.gems[hid]) || {};
+  const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris, theme: r.theme || dj.st.d.theme, deep: r.deep || 0,
+    or: guest ? 0 : r.gold || 0, items, gems }, { quiet: true });
   djLeave();
   if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
   else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
+  else if (res && res.autoSold) toast('Sac plein : ' + res.autoSold + ' objet' + (res.autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + res.autoGold + ' or. Fais de la place dans ton sac (menu Héros).');
+  else if (res && res.items) toast(res.items + ' objet' + (res.items > 1 ? 's rangés' : ' rangé') + ' dans ton sac (menu Héros).');
   else if (!res) toast('Le retour n’a pas pu être enregistré.');
 }
 function djEnded() {
@@ -4738,7 +5294,9 @@ function djGuestQuit(lost) {
   const st = dj.st, run = dj.run, done = !!run && st.over === 'floor';
   if (run) dj.res = done ? djRunResult(run, true) : djRunResult(run, false, { xp: st.xp || 0, kills: st.kills || 0, secs: Math.round(st.t || 0), loot: {}, combos: st.combos || 0, fled: true });
   else dj.res = { win: false, fled: true, lvl: st.lvl, xp: Math.round((st.xp || 0) * 0.5), loot: {}, kills: st.kills || 0, secs: Math.round(st.t || 0), combos: st.combos || 0, theme: st.d.theme };
-  Object.assign(dj.res, { own: true, lost: !!lost, loot: {}, pris: false });
+  /* ses objets et ses pierres : ceux que l'hôte lui a signalés (toute la descente, dans les Profondeurs) */
+  const mine = { [dj.hid]: dj.myItems || [] }, mg = { [dj.hid]: dj.myGems || {} };
+  Object.assign(dj.res, { own: true, lost: !!lost, loot: {}, pris: false, gold: 0, items: djHalfItems(mine, done), gems: djHalfGems(mg, done) });
   if (!done) st.over = 'lose';
   if (!lost) liveRef('g2h').set({ bye: 1, t: now() }).catch(() => {});
   for (const u of dj.duo.unsub) u(); dj.duo.unsub = [];
@@ -4768,13 +5326,16 @@ function djResHTML() {
   const xpH = hh && hh.race === 'humain' ? Math.round(r.xp * 1.1) : r.xp;
   let up = 0, lv = hh ? hh.lvl : 1, xp = hh ? (hh.xp || 0) + xpH : 0;
   while (hh && lv < HERO_MAX_LVL && xp >= heroXpNeed(lv)) { xp -= heroXpNeed(lv); lv++; up++; }
-  const mm = Math.floor(r.secs / 60), ss = String(r.secs % 60).padStart(2, '0'), loot = r.loot || {};
+  const mm = Math.floor(r.secs / 60), ss = String(r.secs % 60).padStart(2, '0'), loot = r.loot || {}, lootAll = Object.assign({}, loot, r.gold ? { or: r.gold } : {});
+  const myItems = (r.items && r.items[dj.hid]) || [], myGems = (r.gems && r.gems[dj.hid]) || {};
   const where = r.prof ? 'Les Profondeurs · départ niveau ' + r.lvl : (DJ_THEMES[r.theme] || DJ_THEMES.mine).name + ' · niveau ' + r.lvl;
   return `<p class="eyebrow">${where}${duo ? ' · à deux' : ''}</p><h2>${title}</h2><p>${esc(lead)}</p>
     <div class="item"><div class="row split"><b>Expérience</b><span class="chip plus">+${fmtN(xpH)}</span></div>
       ${up ? `<p><b>${esc(hh.name)} passe au niveau ${lv} !</b> ${up > 1 ? up + ' niveaux d’un coup.' : ''} De nouveaux points de compétence l’attendent.</p>` : hh ? `<div class="bar"><i style="width:${Math.min(100, xp / heroXpNeed(lv) * 100).toFixed(0)}%"></i></div>` : ''}
-      ${r.own ? '<p class="note">Le butin reste avec ' + esc(mate) + ', qui le rapportera au village.</p>' : `<div class="row split"><b>Butin pour le village</b><span class="chips2">${Object.keys(loot).length ? rewChips(loot) : '<span class="note">rien</span>'}</span></div>
-      ${fromHost && Object.keys(loot).length ? '<p class="note">' + esc(mate) + ' le rapporte au village pour vous deux.</p>' : ''}`}
+      ${r.own ? '<p class="note">Le butin reste avec ' + esc(mate) + ', qui le rapportera au village.</p>' : `<div class="row split"><b>Butin pour le village</b><span class="chips2">${Object.keys(lootAll).length ? rewChips(lootAll) : '<span class="note">rien</span>'}</span></div>
+      ${fromHost && Object.keys(lootAll).length ? '<p class="note">' + esc(mate) + ' le rapporte au village pour vous deux.</p>' : ''}`}
+      ${myItems.length ? `<div class="row split"><b>Objets pour ton sac</b><small class="note">${myItems.length}${!r.win ? ' (les meilleurs)' : ''}</small></div>${itemListHTML(myItems, hh)}` : ''}
+      ${Object.keys(myGems).length ? `<div class="row split"><b>Pierres précieuses</b><span class="chips2">${Object.keys(myGems).map(k => gemChip(k, myGems[k])).join('')}</span></div>` : ''}
       ${r.pris && !r.own ? '<p><b>Un prisonnier délivré</b> : il vous attendra au village, prêt à s’installer.</p>' : ''}
       <p class="note">${r.kills} monstres vaincus${duo && r.combos ? ' · ' + r.combos + ' combo' + (r.combos > 1 ? 's' : '') : ''} · ${mm} min ${ss}${r.win && !r.prof ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
     <button class="btn primary" data-act="djBack">Retour au village</button>`;
@@ -4802,7 +5363,8 @@ function djFloorHTML() {
   const st = dj.st, run = dj.run;
   return `<p class="eyebrow">Les Profondeurs${dj.duo ? ' · à deux' : ''}</p><h2>Étage ${st.d.floor} terminé !</h2>
     <div class="item"><div class="row split"><b>Gagné jusqu’ici</b><span class="chip plus">+${fmtN(run.xp)} d’expérience</span></div>
-      <div class="row split"><b>Butin</b><span class="chips2">${Object.keys(run.loot).length ? rewChips(run.loot) : '<span class="note">rien encore</span>'}</span></div>
+      <div class="row split"><b>Butin</b><span class="chips2">${Object.keys(run.loot).length || run.gold ? rewChips(Object.assign({}, run.loot, run.gold ? { or: run.gold } : {})) : '<span class="note">rien encore</span>'}</span></div>
+      ${(run.items && run.items[dj.hid] || []).length ? `<div class="row split"><b>Objets trouvés</b><span class="chip">${run.items[dj.hid].length}</span></div>` : ''}
       <p class="note">${djNextLine()} ${dj.duo && !dj.duo.gone ? 'Si vous tombez tous les deux' : 'Si tu tombes'}, ${dj.duo && !dj.duo.gone ? 'vous ne gardez' : 'tu ne gardes'} que la moitié de tout.</p></div>
     <div class="row"><button class="btn grow" data-act="djUp">Remonter (tout garder)</button><button class="btn primary grow" data-act="djDown">${djIco('sword')}Descendre</button></div>`;
 }
@@ -4810,7 +5372,7 @@ function djFloorWaitHTML() {
   const run = dj.run;
   return `<p class="eyebrow">Les Profondeurs · à deux</p><h2>Étage ${dj.st.d.floor} terminé !</h2>
     <p>${esc(dj.duo.mateName || 'Ton partenaire')} choisit : descendre plus bas, ou remonter avec tout le butin…</p>
-    <div class="item"><div class="row split"><b>Gagné jusqu’ici</b><span class="chip plus">+${fmtN(run.xp)} d’expérience</span></div><p class="note">${djNextLine()}</p></div>
+    <div class="item"><div class="row split"><b>Gagné jusqu’ici</b><span class="chip plus">+${fmtN(run.xp)} d’expérience</span></div>${(dj.myItems || []).length ? `<div class="row split"><b>Tes objets</b><span class="chip">${dj.myItems.length}</span></div>` : ''}<p class="note">${djNextLine()}</p></div>
     <button class="btn" data-act="djLeaveFloor">Rentrer au village maintenant (tout garder)</button>`;
 }
 function djDescend() {
@@ -4836,7 +5398,7 @@ function djAscend() {
 /* Fin d'une descente (défaite ou fuite pendant un étage) : la moitié de tout, étage en cours compris. */
 function djRunLost() {
   const st = dj.st;
-  dj.res = djRunResult(dj.run, false, { xp: st.xp, kills: st.kills, secs: Math.round(st.t), loot: st.loot, combos: st.combos || 0, pris: !!(st.pris && st.pris.freed), fled: !!st.fled });
+  dj.res = djRunResult(dj.run, false, { xp: st.xp, kills: st.kills, secs: Math.round(st.t), loot: st.loot, combos: st.combos || 0, pris: !!(st.pris && st.pris.freed), fled: !!st.fled, gold: st.gold, items: st.items, gems: st.gems });
 }
 /* Chez l'invitée : l'hôte est descendu, on fabrique le même étage (même graine), puis l'instantané s'y applique. */
 function djGuestFloorGo(sn) {
@@ -4965,6 +5527,10 @@ function djEvents(st) {
       case 'storm': SND.sfx('storm'); break;
       case 'summon': if (e.boss) SND.sfx('alarm'); break;
       case 'combo': if (performance.now() - (dj.comboT || 0) > 250) { dj.comboT = performance.now(); SND.sfx('combo'); } break;
+      case 'item': if (mine) { SND.sfx(e.r >= 3 || e.set ? 'star' : 'coin'); if (e.r >= 2 || e.set) toast((e.set ? 'Pièce d’ensemble' : 'Objet ' + RARITY[e.r].name.toLowerCase()) + ' : ' + SLOT_ART[e.sl] + (e.r >= 4 ? ' légendaire !!!' : ' !')); } break;
+      case 'gem': if (mine) { SND.sfx('coin'); const G = gemOf(e.g); if (G) toast('Pierre précieuse : ' + G.name.toLowerCase() + ' !'); } break;
+      case 'echo': if (mine) SND.sfx('star'); break;
+      case 'sursis': if (mine) { SND.sfx('power'); toast('Dernier Rempart : tu tiens bon !'); } break;
       case 'wall': SND.sfx('wallbreak'); break;
       case 'trap': if (mine) SND.sfx('wallhit'); break;
       case 'revive': toast('Increvable : ton héros se relève !'); SND.sfx('power'); break;
@@ -5013,6 +5579,10 @@ function djSendSnap() {
   if (st.over) duo.sentFinal = true;
   const sn = djSnap(st, duo.evBuf.slice(-80), ++duo.snapN, djFinalRes() || 0); duo.evBuf = [];
   if (run) sn.ru = [run.done, Math.round(run.xp), run.kills, run.secs, run.combos, run.pris ? 1 : 0, run.start];
+  /* les objets et pierres trouvés par l'invitée (toute la descente dans les Profondeurs), seulement quand ça change */
+  const gid = duo.mateHid, cur = (st.items && st.items[gid]) || [], all = run ? ((run.items && run.items[gid]) || []).concat(cur) : cur;
+  const gems = run ? djAddGems(run.gems && run.gems[gid], st.gems && st.gems[gid]) : (st.gems && st.gems[gid]) || {}, sig = all.length + JSON.stringify(gems);
+  if (sig !== duo.giSig || duo.snapN % 20 === 0) { duo.giSig = sig; sn.gi = all.map(djPack); sn.gg = gems; }
   liveRef('h2g').set(sn).catch(() => {});
 }
 function djGuestFrame(dt, tNow) {
@@ -5040,10 +5610,223 @@ function djGuestSnap(sn) {
   const evs = djApplySnap(dj.st, sn, dj.hid);
   if (evs === null) return;
   if (dj.run && sn.ru) { const [done, xp, kills, secs, combos, pris] = sn.ru; Object.assign(dj.run, { done, xp, kills, secs, combos, pris: !!pris }); }
+  if (sn.gi) dj.myItems = sn.gi.map(djUnpack).filter(Boolean);
+  if (sn.gg) dj.myGems = Object.assign({}, sn.gg);
   duo.snapDt = Math.max(80, Math.min(400, duo.snapDt * 0.8 + (t - duo.lastSnapAt) * 0.2)); duo.lastSnapAt = t; duo.waitShown = false;
   dj.st.ev = evs; djEvents(dj.st);
 }
 V3.onFrame(djFrame);
+
+/* ===================== ÉQUIPEMENT : interface (équipement du héros, sac, forge, marchand) =====================
+   Ce fichier ne fait que définir des fonctions et des actions (ACT_EQ) : l'application (p4_app) les appelle. */
+let bagSel = null, bagFilter = '';
+const SLOT_ART = { arme: 'une arme', casque: 'un casque', armure: 'une armure', bottes: 'des bottes', bijou: 'un bijou' };
+const SLOT_PLURAL = { arme: 'Armes', casque: 'Casques', armure: 'Armures', bottes: 'Bottes', bijou: 'Bijoux' };
+const myBag = () => (me && me.bag && me.bag[uid]) || { it: {}, gm: {}, n: 1 };
+const rcls = it => it.set ? 'rcs' : 'rc' + (it.r | 0);
+const rarTag = it => `<span class="rtag ${rcls(it)}">${it.set ? 'Ensemble' : RARITY[it.r | 0].name}</span>`;
+const slotIco = sl => `<span class="ic sl">${IC['s_' + sl] || ''}</span>`;
+const itemNameH = it => `<b class="iname ${rcls(it)}">${esc(itemInfo(it).name)}</b>`;
+const arrowH = c => c === 1 ? '<span class="arr up" aria-label="mieux que l’objet porté">▲</span>' : c === -1 ? '<span class="arr down" aria-label="moins bien que l’objet porté">▼</span>' : c === 0 ? '<span class="arr eq" aria-label="pareil que l’objet porté">=</span>' : '';
+const statsTxt = o => Object.keys(o).map(k => STATS[k].t(o[k])).join(' · ');
+const gemChip = (key, n) => { const G = gemOf(key); return G ? `<span class="chip gemc"><i class="gdot" style="background:${G.col}"></i>${n > 1 ? n + ' × ' : ''}${esc(G.name)}</span>` : ''; };
+/* Ce que l'équipement apporte, en une phrase. */
+function gearSummary(G) {
+  const parts = Object.keys(STATS).filter(k => G[k] > 0).map(k => STATS[k].t(G[k]));
+  return parts.length ? parts.join(', ') : '';
+}
+/* Une ligne d'objet (dans une liste) : nom coloré selon la rareté, niveau, bonus principaux, flèche de comparaison. */
+function itemRow(it, hh, act, data, on) {
+  const I = itemInfo(it), cmp = hh ? compareItem(hh, it) : null, cw = hh ? canWear(hh, it) : { ok: true };
+  return `<button class="item opt irow${on ? ' on' : ''}" data-act="${act}" ${data}>
+    <div class="head"><span class="row">${slotIco(it.sl)}${itemNameH(it)}${arrowH(cmp)}</span><small>${rarTag(it)} niv. ${it.il}</small></div>
+    <p>${esc(statsTxt(I.main))}${Object.keys(I.af).length ? ' · ' + esc(statsTxt(I.af)) : ''}${hh && !cw.ok ? ' · <span class="why">' + esc(cw.why) + '</span>' : ''}</p></button>`;
+}
+/* Liste courte, sans bouton (bilan de donjon). */
+function itemListHTML(list, hh) {
+  return list.slice().sort((a, b) => b.r - a.r || b.il - a.il).map(it => { const I = itemInfo(it); return `<div class="irow2"><span class="row">${slotIco(it.sl)}${itemNameH(it)}${arrowH(hh ? compareItem(hh, it) : null)}</span><small>${rarTag(it)} ${esc(statsTxt(I.main))}</small></div>`; }).join('');
+}
+/* Tout sur un objet, avec ce qu'on peut en faire. where : { id } (sac) ou { hid, sl } (porté). */
+function itemDetail(it, hh, where) {
+  const v = me, I = itemInfo(it), f = forgeLvlOf(v), worn = !!where.hid, loc = worn ? `data-hid="${where.hid}" data-sl="${where.sl}"` : `data-id="${where.id}"`;
+  const cw = hh ? canWear(hh, it) : { ok: false };
+  let h = `<div class="item idet">`;
+  h += `<p><b>${esc(statsTxt(I.main))}</b>${Object.keys(I.af).length ? '<br>' + esc(statsTxt(I.af)) : ''}</p>`;
+  if (it.pw && POWERS[it.pw]) h += `<p class="pow"><b>${esc(POWERS[it.pw].title)}</b> : ${esc(POWERS[it.pw].txt)}</p>`;
+  if (it.set && SETS[it.set]) { const S = SETS[it.set], n = hh ? gearOf(hh).sets[it.set] || 0 : 0; h += `<p class="setp"><b>${esc(S.name)}</b>${hh ? ' (' + n + ' pièce' + (n > 1 ? 's' : '') + ' sur 4 portée' + (n > 1 ? 's' : '') + ')' : ''} · 2 pièces : ${esc(S.b2t)} · 4 pièces : ${esc(S.b4t)}</p>`; }
+  /* Pierres serties */
+  if (I.so) {
+    const stock = myBag().gm, have = Object.keys(stock).filter(k => stock[k] > 0 && gemOf(k)).sort();
+    h += '<div class="sockets">';
+    I.gems.forEach((g, s) => {
+      if (g) h += `<div class="row split"><span class="row">${gemChip(g)}<small class="note">${esc(STATS[gemOf(g).stat].t(gemOf(g).v))}</small></span>${f ? `<button class="btn small" data-act="unsocket" ${loc} data-s="${s}">Retirer</button>` : ''}</div>`;
+      else h += `<div class="row split"><span class="note">Emplacement libre pour une pierre précieuse</span></div>${f && have.length ? `<div class="chips2">${have.map(k => `<button class="btn small" data-act="socket" ${loc} data-s="${s}" data-g="${k}">${gemChip(k, stock[k])}</button>`).join('')}</div>` : ''}`;
+    });
+    if (!f) h += '<p class="note">Il faut une forge pour sertir une pierre.</p>';
+    h += '</div>';
+  }
+  h += `<p class="note">Niveau requis : ${I.req}${it.sl === 'arme' ? ' · ' + esc(FAMILY_LABEL[I.fam]) : ''}${it.sl === 'bijou' ? ' · se porte au niveau ' + BIJOU_LVL : ''}${it.up ? ' · amélioré +' + it.up : ''}. Se vend ${I.sell} or${f ? ', se fond en ' + I.melt + ' fer' : ''}.</p>`;
+  /* Actions */
+  const btns = [];
+  if (!worn && hh && cw.ok) btns.push(`<button class="btn small primary" data-act="equip" data-hid="${hh.id}" data-id="${where.id}">Équiper sur ${esc(hh.name)}</button>`);
+  if (!worn && hh && !cw.ok) h += `<p class="why">${esc(cw.why)}</p>`;
+  if (worn) btns.push(`<button class="btn small" data-act="unequip" ${loc}>Retirer</button>`);
+  if (f) {
+    const mx = maxUpOf(f), up = it.up | 0;
+    if (up < 5) { const c = improveCost(it); btns.push(up < mx ? `<button class="btn small${missingTxt(v, c) ? ' off' : ''}" data-act="improve" ${loc}>Améliorer +${up + 1} <span class="sub">${chipsRes(c, v.r)}</span></button>` : `<span class="note">+${up + 1} : forge niveau ${up + 1 >= 5 ? 3 : 2}</span>`); }
+  }
+  if (!worn) {
+    btns.push(`<button class="btn small" data-act="sell" data-id="${where.id}">Vendre <span class="sub">${ico('or')}${I.sell}</span></button>`);
+    if (f) btns.push(`<button class="btn small" data-act="melt" data-id="${where.id}">Fondre <span class="sub">${ico('fer')}${I.melt}</span></button>`);
+  }
+  h += `<div class="row wrap">${btns.join('')}</div></div>`;
+  return h;
+}
+
+/* ---------- la fiche du héros : son équipement et son familier ---------- */
+function heroGearHTML(v, hh, own) {
+  const G = gearOf(hh), sum = gearSummary(G), B = myBag(), f = forgeLvlOf(v);
+  let h = `<div class="sec"><h4>Équipement de ${esc(hh.name)}</h4><div class="item">`;
+  for (const sl of SLOTS) {
+    const it = hh.eq && hh.eq[sl], lock = sl === 'bijou' && hh.lvl < BIJOU_LVL, cw = it ? canWear(hh, it) : null;
+    const nBetter = own && !lock ? Object.values(B.it).filter(x => x.sl === sl && compareItem(hh, x) === 1).length : 0;
+    h += `<button class="slotrow${lock ? ' off' : ''}" data-act="${own && !lock ? 'gearSlot' : 'noop'}" data-id="${hh.id}" data-sl="${sl}"${own && !lock ? '' : ' disabled'}>
+      ${slotIco(sl)}<span class="sltxt"><small>${SLOT_LABEL[sl]}</small>${it ? itemNameH(it) : `<span class="note">${lock ? 'au niveau ' + BIJOU_LVL : 'rien'}</span>`}
+      ${it ? `<em>${esc(statsTxt(itemInfo(it).main))}${cw && !cw.ok ? ' · ' + esc(cw.why) : ''}</em>` : ''}</span>${nBetter ? `<span class="chip plus">▲ ${nBetter}</span>` : ''}</button>`;
+  }
+  if (sum) h += `<p class="note">Avec son équipement : ${esc(sum)}.</p>`;
+  for (const k in G.sets) { const S = SETS[k], n = G.sets[k]; h += `<p class="setp"><b>${esc(S.name)}</b> : ${n} pièce${n > 1 ? 's' : ''} sur 4${n >= 2 ? ' · ' + esc(S.b2t) : ''}${n >= 4 ? ' · ' + esc(S.b4t) : ''}</p>`; }
+  for (const p in G.pw) h += `<p class="pow"><b>${esc(POWERS[p].title)}</b> : ${esc(POWERS[p].txt)}</p>`;
+  if (own) h += `<div class="row"><button class="btn small primary" data-act="sheet" data-s="bag" data-k="${hh.id}">${ico('s_bag', '')}Mon sac · ${bagCount(B)} / ${bagMax(v)}</button>${f ? `<button class="btn small" data-act="sheet" data-s="forge" data-k="${hh.id}">${ico('s_anvil', '')}La forge</button>` : ''}</div>`;
+  h += '</div>';
+  /* Le familier (niveau 6) */
+  const pet = PETS[hh.pet] ? hh.pet : 'loup';
+  h += `<div class="item"><b class="row">${ico('s_paw', 'c-tro')}Familier${hh.lvl >= PET_LVL ? ' : ' + esc(PETS[pet].name) : ' · niveau ' + PET_LVL}</b>`;
+  if (hh.lvl < PET_LVL) h += `<p>Au niveau ${PET_LVL}, un animal accompagne ${esc(hh.name)} en donjon : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.</p>`;
+  else if (own) h += `<div class="chips2">${PET_KEYS.map(p => `<button class="btn small${p === pet ? ' primary' : ''}" data-act="pet" data-hid="${hh.id}" data-p="${p}" aria-pressed="${p === pet}">${esc(PETS[p].name)}</button>`).join('')}</div><p class="note">${esc(PETS[pet].txt)}</p>`;
+  else h += `<p class="note">${esc(PETS[pet].txt)}</p>`;
+  return h + '</div></div>';
+}
+
+/* ---------- le sac ---------- */
+function sheetBag() {
+  const v = me, B = myBag(), [hid, sl0] = String(sheetArg || '').split(':');
+  const hh = (hid && v.heroes[hid] && v.heroes[hid].own === uid && v.heroes[hid]) || activeHero(v, uid);
+  if (!hh) return '<p class="note">Crée d’abord ton héros.</p>';
+  const flt = SLOTS.includes(bagFilter) ? bagFilter : '', f = forgeLvlOf(v);
+  const mine = heroesOf(v, uid);
+  let h = `<p class="note">Ton sac : <b>${bagCount(B)} objet${bagCount(B) > 1 ? 's' : ''} sur ${bagMax(v)}</b>${f ? '' : ' (une forge donne 10 places de plus par niveau)'}. Les flèches comparent avec ce que porte <b>${esc(hh.name)}</b> : ▲ mieux, ▼ moins bien. Bourse commune : <b>${fmtN(v.r.or || 0)} or</b>.</p>`;
+  if (mine.length > 1) h += `<div class="chips2">${mine.map(x => `<button class="btn small${x === hh ? ' primary' : ''}" data-act="sheet" data-s="bag" data-k="${x.id}${flt ? ':' + flt : ''}">${esc(x.name)}</button>`).join('')}</div>`;
+  h += `<div class="chips2 bagf"><button class="btn small${flt ? '' : ' primary'}" data-act="bagFilter" data-sl="">Tout</button>${SLOTS.map(s => `<button class="btn small${flt === s ? ' primary' : ''}" data-act="bagFilter" data-sl="${s}">${slotIco(s)}${SLOT_PLURAL[s]}</button>`).join('')}</div>`;
+  /* L'objet porté à cet emplacement */
+  if (flt) {
+    const cur = hh.eq && hh.eq[flt];
+    h += `<div class="sec"><h4>Porté par ${esc(hh.name)} · ${SLOT_LABEL[flt].toLowerCase()}</h4>`;
+    h += cur ? itemRow(cur, null, 'bagSel', `data-id="eq:${flt}"`, bagSel === 'eq:' + flt) + (bagSel === 'eq:' + flt ? itemDetail(cur, hh, { hid: hh.id, sl: flt }) : '') : `<p class="note">Rien pour l’instant.</p>`;
+    h += '</div>';
+  }
+  const wear = it => canWear(hh, it).ok ? 1 : 0;   // d'abord ce que ce héros peut porter, puis du meilleur au moins bon
+  const list = Object.values(B.it).filter(it => !flt || it.sl === flt).sort((a, b) => SLOTS.indexOf(a.sl) - SLOTS.indexOf(b.sl) || wear(b) - wear(a) || itemInfo(b).score - itemInfo(a).score);
+  h += `<div class="sec"><h4>Dans le sac${flt ? ' · ' + SLOT_PLURAL[flt].toLowerCase() : ''}</h4>`;
+  if (!list.length) h += '<p class="note">Rien ici. Les objets se trouvent en donjon (coffres, boss, parfois un monstre), à la forge ou chez le marchand ambulant.</p>';
+  for (const it of list) { h += itemRow(it, hh, 'bagSel', `data-id="${it.id}"`, bagSel === it.id); if (bagSel === it.id) h += itemDetail(it, hh, { id: it.id }); }
+  const junk = Object.values(B.it).filter(it => it.r === 0 && !it.set);
+  if (junk.length > 1) h += `<div class="row"><button class="btn small" data-act="sellJunk">Vendre les ${junk.length} objets communs <span class="sub">${ico('or')}${junk.reduce((a, it) => a + itemInfo(it).sell, 0)}</span></button></div>`;
+  h += '</div>';
+  /* Les pierres précieuses */
+  const gk = Object.keys(B.gm).filter(k => B.gm[k] > 0 && gemOf(k)).sort();
+  h += `<div class="sec"><h4>Pierres précieuses</h4>${gk.length ? `<div class="chips2">${gk.map(k => gemChip(k, B.gm[k])).join('')}</div><p class="note">À sertir dans un objet rare ou mieux (touche l’objet, il faut une forge). Trois pierres pareilles se fusionnent en une plus belle à la forge (niveau 2).</p>` : '<p class="note">Aucune pour l’instant : on en trouve dans les coffres et sur les boss.</p>'}</div>`;
+  return h;
+}
+
+/* ---------- la forge ---------- */
+function sheetForge() {
+  const v = me, f = forgeLvlOf(v);
+  if (!f) return `<p class="note">Il faut d’abord construire la forge (menu Construire, rubrique « Pour les héros »), et une mine de fer pour avoir du fer.</p>`;
+  const hh = (sheetArg && v.heroes[sheetArg] && v.heroes[sheetArg].own === uid && v.heroes[sheetArg]) || activeHero(v, uid);
+  if (!hh) return '<p class="note">Crée d’abord ton héros.</p>';
+  const B = myBag(), tbl = DROP['forge' + Math.min(3, f)], c = craftCost(hh.lvl), miss = missingTxt(v, c), full = bagCount(B) >= bagMax(v);
+  const mine = heroesOf(v, uid);
+  let h = `<p class="note">Forge de niveau ${f} : améliorations jusqu’à +${maxUpOf(f)}${f < 3 ? ' (agrandissez-la pour aller plus loin et forger mieux)' : ''}. Fer : <b>${fmtN(v.r.fer || 0)}</b> · or : <b>${fmtN(v.r.or || 0)}</b>.</p>`;
+  if (mine.length > 1) h += `<div class="chips2">${mine.map(x => `<button class="btn small${x === hh ? ' primary' : ''}" data-act="sheet" data-s="forge" data-k="${x.id}">${esc(x.name)}</button>`).join('')}</div>`;
+  h += `<div class="sec"><h4>Forger pour ${esc(hh.name)} (niveau ${hh.lvl})</h4><div class="item">
+    <p>Un objet de niveau ${hh.lvl}, au hasard parmi : ${tbl.map((p, r) => p ? RARITY[r].name.toLowerCase() + ' ' + p + ' %' : '').filter(Boolean).join(', ')}. Les armes sont faites pour sa classe.</p>
+    <div class="row split"><span class="chips2">${chipsRes(c, v.r)}</span>${full ? '<span class="why">Sac plein</span>' : ''}</div>
+    <div class="chips2">${SLOTS.map(sl => `<button class="btn small${miss || full ? ' off' : ' primary'}" data-act="craft" data-hid="${hh.id}" data-sl="${sl}">${slotIco(sl)}${SLOT_LABEL[sl]}</button>`).join('')}</div></div></div>`;
+  /* Améliorer ce qu'il porte */
+  const worn = SLOTS.filter(sl => hh.eq && hh.eq[sl]);
+  h += `<div class="sec"><h4>Améliorer l’équipement de ${esc(hh.name)}</h4>`;
+  if (!worn.length) h += '<p class="note">Il ne porte encore rien. On peut aussi améliorer un objet du sac : touche-le dans le sac.</p>';
+  for (const sl of worn) {
+    const it = hh.eq[sl], up = it.up | 0, cc = improveCost(it), can = up < maxUpOf(f);
+    h += `<div class="item"><div class="head"><span class="row">${slotIco(sl)}${itemNameH(it)}</span><small>${rarTag(it)}</small></div>
+      <div class="foot"><span class="chips2">${up >= 5 ? '<span class="note">au maximum</span>' : can ? chipsRes(cc, v.r) : '<span class="note">+' + (up + 1) + ' : forge plus grande</span>'}</span>${up < 5 && can ? `<button class="btn small${missingTxt(v, cc) ? ' off' : ' primary'}" data-act="improve" data-hid="${hh.id}" data-sl="${sl}">+${up + 1}</button>` : ''}</div></div>`;
+  }
+  h += '<p class="note">Chaque amélioration : +10 % sur les bonus principaux de l’objet.</p></div>';
+  /* Pierres : fusion */
+  const gk = Object.keys(B.gm).filter(k => B.gm[k] > 0 && gemOf(k)).sort();
+  h += `<div class="sec"><h4>Pierres précieuses</h4>${gk.length ? `<div class="chips2">${gk.map(k => gemChip(k, B.gm[k])).join('')}</div>` : '<p class="note">Aucune pour l’instant.</p>'}`;
+  const fusable = gk.filter(k => B.gm[k] >= 3 && gemOf(k).n < 3);
+  if (fusable.length) h += fusable.map(k => { const G = gemOf(k), to = gemOf(G.type + (G.n + 1)), cc = { or: GEM_FUSE_COST[G.n] }; return `<div class="row split"><span class="note">3 × ${esc(G.name)} → ${esc(to.name)}</span>${f >= 2 ? `<button class="btn small${missingTxt(v, cc) ? ' off' : ' primary'}" data-act="fuse" data-g="${k}">Fusionner <span class="sub">${chipsRes(cc, v.r)}</span></button>` : '<span class="note">forge niveau 2</span>'}</div>`; }).join('');
+  h += '<p class="note">Pour sertir une pierre, ou pour fondre un objet (il rend du fer), touche-le dans ton sac.</p>';
+  h += `<div class="row"><button class="btn small primary" data-act="sheet" data-s="bag" data-k="${hh.id}">${ico('s_bag', '')}Ouvrir mon sac</button></div></div>`;
+  return h;
+}
+
+/* ---------- le marchand ambulant ---------- */
+function sheetMerch() {
+  const v = me, t = now();
+  if (!merchHere(v, t)) return '<p class="note">Le marchand ambulant est reparti. Il revient un jour sur deux, avec de nouveaux objets.</p>';
+  const M = v.merch, hh = activeHero(v, uid), sold = String(M.sold || ''), full = bagCount(myBag()) >= bagMax(v);
+  let h = `<p class="note">Il repart dans <b>${fmtDur(merchLeaves(v, t) - t)}</b>. On paie avec la bourse commune : <b>${fmtN(v.r.or || 0)} or</b>.${hh ? ' Les flèches comparent avec ce que porte ' + esc(hh.name) + '.' : ''}</p>`;
+  h += '<div class="sec"><h4>Objets</h4>';
+  M.it.forEach((it, i) => {
+    const done = sold.includes('i' + i + ';'), price = merchPrice(it), I = itemInfo(it);
+    h += `<div class="item${done ? ' off' : ''}"><div class="head"><span class="row">${slotIco(it.sl)}${itemNameH(it)}${done ? '' : arrowH(hh ? compareItem(hh, it) : null)}</span><small>${rarTag(it)} niv. ${it.il}</small></div>
+      <p>${esc(statsTxt(I.main))}${Object.keys(I.af).length ? ' · ' + esc(statsTxt(I.af)) : ''}${it.pw ? ' · <b>' + esc(POWERS[it.pw].title) + '</b> : ' + esc(POWERS[it.pw].txt) : ''}${I.so ? ' · ' + I.so + ' emplacement' + (I.so > 1 ? 's' : '') + ' de pierre' : ''}${hh && !done && !canWear(hh, it).ok ? ' · <span class="why">' + esc(canWear(hh, it).why) + '</span>' : ''}</p>
+      <div class="foot"><span class="chip${(v.r.or || 0) < price ? ' short' : ''}">${ico('or')}${fmtN(price)}</span>${done ? '<span class="note">vendu</span>' : `<button class="btn small${(v.r.or || 0) < price || full ? ' off' : ' primary'}" data-act="buy" data-i="${i}">Acheter</button>`}</div></div>`;
+  });
+  h += '</div><div class="sec"><h4>Pierres précieuses</h4>';
+  M.gm.forEach((key, i) => {
+    const done = sold.includes('g' + i + ';'), price = gemPrice(key), G = gemOf(key); if (!G) return;
+    h += `<div class="item${done ? ' off' : ''}"><div class="foot"><span class="row">${gemChip(key)}<small class="note">${esc(STATS[G.stat].t(G.v))}</small></span>
+      <span class="row"><span class="chip${(v.r.or || 0) < price ? ' short' : ''}">${ico('or')}${fmtN(price)}</span>${done ? '<span class="note">vendu</span>' : `<button class="btn small${(v.r.or || 0) < price ? ' off' : ' primary'}" data-act="buyGem" data-g="${i}">Acheter</button>`}</span></div></div>`;
+  });
+  return h + '</div>' + (full ? '<p class="why">Ton sac est plein : vends ou fonds un objet pour acheter.</p>' : '');
+}
+
+/* ---------- actions de l'équipement (réunies dans ACT par p4_app) ---------- */
+const eqWhere = b => b.dataset.hid ? { hid: b.dataset.hid, sl: b.dataset.sl } : { id: b.dataset.id };
+const ACT_EQ = {
+  bagSel: b => { bagSel = bagSel === b.dataset.id ? null : b.dataset.id; renderAll(); },
+  bagFilter: b => { bagFilter = b.dataset.sl || ''; bagSel = null; renderSheet.scrolled = false; renderAll(); },
+  gearSlot: b => { bagFilter = b.dataset.sl; bagSel = null; renderSheet.scrolled = false; openSheet('bag', b.dataset.id + ':' + b.dataset.sl); },
+  equip: b => { const r = act({ type: 'equip', hid: b.dataset.hid, id: b.dataset.id }); if (r) { bagSel = null; const hh = me.heroes[b.dataset.hid]; toast((hh ? hh.name : 'Ton héros') + ' porte maintenant : ' + r.name + '.'); renderAll(); } },
+  unequip: b => { if (act({ type: 'unequip', hid: b.dataset.hid, sl: b.dataset.sl })) { bagSel = null; renderAll(); } },
+  sell: b => {
+    const it = myBag().it[b.dataset.id]; if (!it) return;
+    if ((it.r >= 2 || it.set) && !confirm('Vendre ' + itemInfo(it).name + ' pour ' + itemInfo(it).sell + ' or ?')) return;
+    const r = act({ type: 'sell', ids: [b.dataset.id] }); if (r) { bagSel = null; toast('+' + r.gain + ' or pour la bourse commune.'); renderAll(); }
+  },
+  sellJunk: () => {
+    const ids = Object.values(myBag().it).filter(it => it.r === 0 && !it.set).map(it => it.id); if (!ids.length) return;
+    if (!confirm('Vendre les ' + ids.length + ' objets communs du sac ?')) return;
+    const r = act({ type: 'sell', ids }); if (r) { bagSel = null; toast(r.n + ' objets vendus : +' + r.gain + ' or.'); renderAll(); }
+  },
+  melt: b => {
+    const it = myBag().it[b.dataset.id]; if (!it) return;
+    if ((it.r >= 2 || it.set) && !confirm('Fondre ' + itemInfo(it).name + ' pour ' + itemInfo(it).melt + ' fer ?')) return;
+    const r = act({ type: 'melt', ids: [b.dataset.id] }); if (r) { bagSel = null; toast('Fondu : +' + r.gain + ' fer.'); renderAll(); }
+  },
+  craft: b => { const r = act({ type: 'craft', hid: b.dataset.hid, sl: b.dataset.sl }); if (r) { toast('La forge a fait : ' + r.name + ' (' + RARITY[r.r].name.toLowerCase() + '). Il est dans ton sac.'); if (r.r >= 3) SND.sfx('star'); } },
+  improve: b => { const r = act(Object.assign({ type: 'improve' }, eqWhere(b))); if (r) toast('Amélioré : +' + r.up + '.'); },
+  socket: b => { if (act(Object.assign({ type: 'socket', s: +b.dataset.s, g: b.dataset.g }, eqWhere(b)))) toast('Pierre sertie.'); },
+  unsocket: b => { if (act(Object.assign({ type: 'unsocket', s: +b.dataset.s }, eqWhere(b)))) toast('La pierre retourne dans ton sac.'); },
+  fuse: b => { const r = act({ type: 'fuse', g: b.dataset.g }); if (r) toast('Fusion réussie : ' + r.name + ' !'); },
+  buy: b => { const r = act({ type: 'buy', i: +b.dataset.i }); if (r) toast('Acheté : ' + r.name + '. Il est dans ton sac.'); },
+  buyGem: b => { const r = act({ type: 'buy', g: +b.dataset.g }); if (r) toast('Acheté : ' + r.name + '.'); },
+  pet: b => { const p = b.dataset.p; if (act({ type: 'pet', hid: b.dataset.hid, p })) toast(PETS[p].name + ' : ' + PETS[p].txt); },
+};
 
 /* ===================== APPLICATION (village commun) ===================== */
 const $ = s => document.querySelector(s);
@@ -5104,8 +5887,21 @@ const IC = {
   s3: '<svg viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/></g></svg>',
 };
 IC.biere = IC.mug;
+/* Équipement : or, fer, emplacements, sac, enclume, patte */
+Object.assign(IC, {
+  or: '<svg viewBox="0 0 20 20"><ellipse cx="10" cy="13.2" rx="7" ry="3" fill="currentColor" opacity=".7"/><rect x="3" y="9.4" width="14" height="3.8" fill="currentColor" opacity=".7"/><ellipse cx="10" cy="9.4" rx="7" ry="3" fill="currentColor"/><ellipse cx="10" cy="9.4" rx="4" ry="1.4" fill="#fff" opacity=".4"/></svg>',
+  fer: '<svg viewBox="0 0 20 20"><path d="M5 7.5h10l2.6 6.5H2.4z" fill="currentColor"/><path d="M5 7.5h10l-1 2.2H6z" fill="#fff" opacity=".35"/></svg>',
+  s_arme: '<svg viewBox="0 0 24 24"><path d="M14.5 3H21v6.5L10.7 19.8l-2.1-2.1L18.4 8V5.6H16L6.3 15.4l-2.1-2.1z" fill="currentColor"/><path d="m3 17.6 3.4 3.4M6.6 14.6l2.8 2.8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  s_casque: '<svg viewBox="0 0 24 24"><path d="M4 15a8 8 0 0 1 16 0v2H4z" fill="currentColor"/><path d="M12 7v10M4 17h16v3H4z" stroke="currentColor" stroke-width="2"/><path d="M8.5 13h2.5v3H8.5z" fill="#fff" opacity=".45"/></svg>',
+  s_armure: '<svg viewBox="0 0 24 24"><path d="M8 3 4 5.5 5.5 11 7 10v10h10V10l1.5 1L20 5.5 16 3l-1.5 2h-5z" fill="currentColor"/><path d="M12 6v13" stroke="#fff" stroke-opacity=".4" stroke-width="1.5"/></svg>',
+  s_bottes: '<svg viewBox="0 0 24 24"><path d="M7 2.5h6V14l6.5 2.5c1 .4 1.5 1.3 1.5 2.3V21H4v-3l3-2z" fill="currentColor"/><path d="M7 7h6" stroke="#fff" stroke-opacity=".4" stroke-width="1.5"/></svg>',
+  s_bijou: '<svg viewBox="0 0 24 24"><path d="M5 3c0 4 3 7 7 7s7-3 7-7" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M12 9.5 16.5 14 12 21l-4.5-7z" fill="currentColor"/><path d="M12 9.5 14 14l-2 5" fill="#fff" opacity=".35"/></svg>',
+  s_bag: '<svg viewBox="0 0 24 24"><path d="M8 7a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="2" fill="none"/><path d="M5 8h14l1.5 12.5H3.5z" fill="currentColor"/><path d="M9 12h6" stroke="#fff" stroke-opacity=".45" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  s_anvil: '<svg viewBox="0 0 24 24"><path d="M3 7h13c0 3 2 4.5 5 5v1h-6l-1 3h3v3H7v-3h3l-1-3H8C5 13 3 11 3 7z" fill="currentColor"/></svg>',
+  s_paw: '<svg viewBox="0 0 24 24"><g fill="currentColor"><ellipse cx="12" cy="16" rx="5" ry="4.2"/><ellipse cx="6" cy="10" rx="2" ry="2.6"/><ellipse cx="18" cy="10" rx="2" ry="2.6"/><ellipse cx="9.3" cy="6.3" rx="2" ry="2.6"/><ellipse cx="14.7" cy="6.3" rx="2" ry="2.6"/></g></svg>',
+});
 const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k] || ''}</span>`;
-const RES_SHOW = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere'];
+const RES_SHOW = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere', 'fer', 'or'];
 function chipsRes(c, have, cls) { return RES.filter(k => c[k]).map(k => `<span class="chip${have && (have[k] || 0) < c[k] ? ' short' : ''}${cls ? ' ' + cls : ''}">${ico(k)}${fmtN(c[k])}</span>`).join(''); }
 const SPEC_ICON = { buch: 'bois', mine: 'pierre', agri: 'ble', chasse: 'viande', arti: 'pain', constr: 'hammer' };
 
@@ -5147,7 +5943,8 @@ function act(a, opts) {
   if (!test.ok) { if (!(opts && opts.quiet)) { toast(test.err); SND.sfx('error'); } return null; }
   pending.push(a); recompute(); renderAll(); refreshScene();
   scheduleCommit(150);
-  const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click', skill: 'star', spec: 'hero' }[a.type];
+  const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click', skill: 'star', spec: 'hero',
+    equip: 'upgrade', unequip: 'click', sell: 'coin', melt: 'wallhit', craft: 'upgrade', improve: 'upgrade', socket: 'built', unsocket: 'click', fuse: 'star', buy: 'coin', pet: 'click' }[a.type];
   if (fx && !(opts && opts.quiet)) SND.sfx(fx);
   return test;
 }
@@ -5197,8 +5994,8 @@ function onVillage(snap) {
   if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
-const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj']);
-const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal']);
+const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge']);
+const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch']);
 /* Nouvelles du journal pendant qu'on joue : une bulle pour la plus récente. */
 function newsCheck() {
   if (!me || !me.log.length) return;
@@ -5220,6 +6017,8 @@ function items(v, editable) {
     return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined };
   });
   if (editable && place && place.kind === 'new') out.push({ key: 'ghost', id: 0, type: place.type, lvl: 1, gx: place.gx, gz: place.gz, up: null, col: safeColor(v.c) });
+  /* Le marchand ambulant : sa charrette, près de la halle, les jours où il est là */
+  if (merchHere(v, now())) { const hall = v.b.find(b => b.type === 'halle'), spot = freeSpot(v, 'marchand', hall ? hall.gx + 3 : 12, hall ? hall.gz + 1 : 11); if (spot) out.push({ key: 'merch', id: 0, type: 'marchand', lvl: 1, gx: spot[0], gz: spot[1], up: null, col: safeColor(v.c) }); }
   return out;
 }
 function peopleOf(v) {
@@ -5272,6 +6071,7 @@ function onTap(cx, cy) {
   const k = V3.pickBuilding(cx, cy);
   const pk = V3.pickPerson(cx, cy, 16) || (k ? null : V3.pickPerson(cx, cy, 30));
   if (pk) { selP = pk; sel = null; SND.sfx('click'); refreshScene(); renderAll(); return; }
+  if (k === 'merch') { sel = null; selP = null; SND.sfx('click'); openSheet('merch'); return; }
   sel = k && k[0] === 'm' ? +k.slice(1) : null; selP = null;
   refreshScene(); renderAll();
 }
@@ -5311,17 +6111,19 @@ function topHTML() {
   if (pk) chips += `<button class="glass chipb${isOnline(pk) ? ' live' : ''}" data-act="sheet" data-s="village">${isOnline(pk) ? '<span class="dot"></span>' : ''}${esc(v.members[pk].name)}${isOnline(pk) ? '' : ' (absent·e)'}</button>`;
   else chips += `<button class="glass chipb" data-act="sheet" data-s="village">${ico('link', 'c-tro')}Inviter</button>`;
   if (v.feast > t) chips += `<span class="glass chipb">${ico('mug', 'c-tro')}Fête · ${fmtDur(v.feast - t)}</span>`;
+  if (merchHere(v, t)) chips += `<button class="glass chipb live" data-act="sheet" data-s="merch">${ico('or')}Marchand · ${fmtDur(merchLeaves(v, t) - t)}</button>`;
   const head = `<div class="idrow"><button class="glass me" data-act="sheet" data-s="village"><span class="crest" style="background:${safeColor(v.c)}">${esc(initial(v.name))}</span>
     <span class="idtxt"><b>${esc(v.name)}</b><small>${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</small></span></button>
     <div class="chips">${chips}</div></div>`;
   const cap = capOf(v), food = foodOf(v), mor = moraleOf(v, t), pop = v.vil.length, house = housingOf(v);
-  const pill = (k, icon, val, sub, frac, cls, act) => `<button class="glass pill c-${icon}${cls ? ' ' + cls : ''}" data-act="sheet" data-s="${act}"><div class="v">${ico(icon)}<span>${val}${sub ? '<small>' + sub + '</small>' : ''}</span></div><div class="fill"><i style="width:${Math.max(0, Math.min(100, frac * 100)).toFixed(0)}%"></i></div></button>`;
+  const pill = (k, icon, val, sub, frac, cls, act) => `<button class="glass pill c-${icon}${cls ? ' ' + cls : ''}" data-act="sheet" data-s="${act}"><div class="v">${ico(icon)}<span>${val}${sub ? '<small>' + sub + '</small>' : ''}</span></div>${frac == null ? '<div class="fill none"></div>' : `<div class="fill"><i style="width:${Math.max(0, Math.min(100, frac * 100)).toFixed(0)}%"></i></div>`}</button>`;
   const stock = `<div class="stock">
     ${pill('bois', 'bois', fmtN(v.r.bois), '', v.r.bois / cap, v.r.bois >= cap ? 'full' : '', 'stock')}
     ${pill('pierre', 'pierre', fmtN(v.r.pierre), '', v.r.pierre / cap, v.r.pierre >= cap ? 'full' : '', 'stock')}
     ${pill('food', 'pain', fmtN(food), '', food / (2 * cap), food < 1 ? 'warn' : '', 'stock')}
     ${pill('pop', 'people', pop, '/' + house, house ? pop / house : 0, '', 'people')}
-    ${pill('mor', 'heart', mor, ' %', mor / 100, mor < 35 ? 'warn' : '', 'people')}</div>`;
+    ${pill('mor', 'heart', mor, ' %', mor / 100, mor < 35 ? 'warn' : '', 'people')}
+    ${pill('or', 'or', fmtN(v.r.or || 0), '', null, '', 'stock')}</div>`;
   return head + stock + goalsHTML();
 }
 /* Objectifs : trois à la fois, sous la barre du haut. Repliés quand un panneau est ouvert en bas. */
@@ -5367,6 +6169,7 @@ function bldLine(v, b, t) {
   if (b.type === 'taverne') return '+' + (BLD.taverne.mor + 4 * (b.lvl - 1)) + ' de moral, et +' + BEER.mor + ' de plus quand on y sert de la bière. Attire de nouveaux villageois ; on peut y offrir une fête.';
   if (d.deco) return '+' + d.deco + ' de moral (les décorations comptent jusqu’à +' + DECO_MAX + ').';
   if (b.type === 'halle') return buildersMax(v) + ' bâtisseurs au plus · ' + sitesMax(v) + ' chantiers à la fois · bâtiments jusqu’au niveau ' + Math.min(3, hallLvl(v) + 1) + '.';
+  if (b.type === 'forge') return 'Forge de niveau ' + b.lvl + ' : objets ' + (b.lvl >= 3 ? 'jusqu’à légendaires' : b.lvl >= 2 ? 'jusqu’à épiques' : 'jusqu’à rares') + ', améliorations jusqu’à +' + maxUpOf(b.lvl) + ', sacs de ' + bagMax(v) + ' places' + (b.lvl >= 2 ? ', fusion des pierres' : '') + '.';
   return d.desc;
 }
 function bldPanel() {
@@ -5396,7 +6199,7 @@ function bldPanel() {
       else { const c = costOf(b.type, to), miss = missingTxt(v, c); h += `<div class="row split"><span class="chips2">${chipsRes(c, v.r)}</span><button class="btn${miss ? ' off' : ' primary'}" data-act="upgrade" data-id="${b.id}">Niveau ${to}</button></div>`; }
     } else if (b.lvl > 0) h += '<p class="note">Niveau maximum atteint.</p>';
   }
-  h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button>${b.type !== 'halle' ? `<button class="btn small" data-act="demolish" data-id="${b.id}">Démolir</button>` : ''}${b.type === 'taverne' && b.lvl > 0 ? '<button class="btn small" data-act="sheet" data-s="village" data-k="feast">' + ico('mug', '') + 'Fête</button>' : ''}</div>`;
+  h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button>${b.type !== 'halle' ? `<button class="btn small" data-act="demolish" data-id="${b.id}">Démolir</button>` : ''}${b.type === 'taverne' && b.lvl > 0 ? '<button class="btn small" data-act="sheet" data-s="village" data-k="feast">' + ico('mug', '') + 'Fête</button>' : ''}${b.type === 'forge' && b.lvl > 0 ? '<button class="btn small primary" data-act="sheet" data-s="forge">' + ico('s_anvil', '') + 'Ouvrir la forge</button>' : ''}</div>`;
   return h + '</div>';
 }
 function personPanel() {
@@ -5587,12 +6390,12 @@ function sheetHero() {
   let h = `<div class="sec"><h4>Tes héros · ${mine.length} sur ${slots}</h4>${mine.map(x => heroCard(v, x, x === sel)).join('')}`;
   if (mine.length < slots) h += `<button class="btn primary" data-act="newHero">${ico('crown', '')}Nouveau héros</button>`;
   else if (mine.length < 4) h += `<p class="note">${hasTavern(v) ? 'Agrandissez la taverne' : 'Construisez la taverne'} pour loger un héros de plus (4 au plus).</p>`;
-  h += '</div>' + heroDetail(v, sel, sel.own === uid);
+  h += '</div>' + heroGearHTML(v, sel, sel.own === uid) + heroDetail(v, sel, sel.own === uid);
   const pk = partnerId(v), ph = pk ? heroesOf(v, pk) : [];
   if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
-const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown' };
+const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil' };
 function sheetJournal() {
   const v = me;
   if (!v.log.length) return '<p class="note">Rien pour l’instant.</p>';
@@ -5629,7 +6432,7 @@ function sheetStock() {
   let h = `<p class="note">Chaque ressource peut monter jusqu’à <b>${fmtN(cap)}</b> : construisez des entrepôts pour en garder plus.</p><div class="item">`;
   for (const k of RES_SHOW) h += `<div class="row split stockrow"><b class="row">${ico(k)}${RES_LABEL[k]}</b><span><b>${fmtN(v.r[k] || 0)}</b> <small class="note">${fmtR(rt[k] || 0)}/h</small></span></div>`;
   h += `<div class="row split stockrow"><b class="row">${ico('people', 'c-tro')}Repas des villageois</b><span><small class="note">${fmtR(rt.food)}/h (pain et viande)</small></span></div></div>`;
-  h += '<p class="note">Le blé devient farine au moulin, puis pain à la boulangerie. Le pain et la viande nourrissent le village. L’orge devient bière à la brasserie : servie à la taverne, elle remonte le moral, et il en faut pour les fêtes.</p>';
+  h += '<p class="note">Le blé devient farine au moulin, puis pain à la boulangerie. Le pain et la viande nourrissent le village. L’orge devient bière à la brasserie : servie à la taverne, elle remonte le moral, et il en faut pour les fêtes. Le fer vient de la mine de fer : la forge s’en sert pour les objets des héros. L’or (la bourse commune, sans limite de place) se gagne en donjon et en vendant des objets.</p>';
   return h;
 }
 function sheetHelp() {
@@ -5640,14 +6443,15 @@ function sheetHelp() {
     + sec('Nourriture et saisons', ['Chaque villageois mange une ration par heure : du pain ou de la viande. Des repas variés remontent le moral.', 'Une saison dure 2 jours. En hiver, les champs ne donnent rien : faites des réserves en automne.', 'Sans nourriture, le moral s’effondre, et au bout d’un jour quelqu’un quitte le village.', 'Touchez un champ pour choisir sa culture : blé ou orge. L’orge devient bière à la brasserie ; servie à la taverne, la bière remonte le moral, et il en faut pour les fêtes.'])
     + sec('Construire', ['Les bâtisseurs font avancer les chantiers, plus vite s’ils sont doués en construction. Sans bâtisseur, ça avance quand même un peu.', 'Agrandir la halle débloque des bâtiments, plus de bâtisseurs et plus de chantiers à la fois.'])
     + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence (menu Héros, bouton +1) ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10.'])
-    + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de la pierre et du bois pour le village, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié.', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
+    + sec('L’équipement', ['Chaque héros porte une arme, un casque, une armure, des bottes et, dès le niveau 8, un bijou (menu Héros). Chaque classe manie sa famille d’armes : lames, arcs ou bâtons.', 'Les objets ont 5 raretés : commun (gris), peu commun (vert), rare (bleu), épique (violet), légendaire (orange, avec un pouvoir). Les objets d’ensemble (turquoise) donnent un bonus à 2 et à 4 pièces portées.', 'On les trouve en donjon : dans les coffres, sur les boss, parfois sur un monstre ; mieux dans les donjons plus hauts. À deux, chacun trouve ses propres objets.', 'Dans le sac, les flèches comparent avec l’objet porté : ▲ mieux, ▼ moins bien. Vendre un objet rapporte de l’or (la bourse commune) ; le fondre à la forge rend du fer.', 'La forge (avec le fer de la mine) fabrique un objet au choix, l’améliore jusqu’à +5 et sertit les pierres précieuses : trois pierres pareilles se fusionnent en une plus belle.', 'Un jour sur deux, un marchand ambulant s’installe près de la halle avec quelques objets à vendre.', 'Au niveau 6, un familier accompagne le héros : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.'])
+    + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de l’or, de la pierre et du bois pour le village, des objets et des pierres précieuses dans ton sac, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié (on garde les meilleurs objets).', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons' };
+  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon }[sheet];
+  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch }[sheet];
   setHTML(els.sheetBody, f ? f() : '');
   if (sheet === 'village' && sheetArg === 'feast' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#feastSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
@@ -5773,6 +6577,7 @@ const release = () => { pressing = null; };
 document.addEventListener('pointerup', release, true);
 document.addEventListener('pointercancel', release, true);
 const ACT = {
+  ...ACT_EQ,
   noop() {},
   orient: b => { orient = b.dataset.o; LS.set('mk2.orient', orient); applyOrientation(); renderAll(); },
   sheet: b => { renderSheet.scrolled = false; openSheet(b.dataset.s, b.dataset.k); },
@@ -5827,7 +6632,8 @@ const ACT = {
   install: () => { const e = installEvt; if (!e) return; installEvt = null; e.prompt(); (e.userChoice || Promise.resolve()).finally(() => renderAll()); },
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
-const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill', 'djInvite', 'djYes', 'djDown']);
+const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill', 'djInvite', 'djYes', 'djDown',
+  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (!QUIET.has(b.dataset.act)) SND.sfx('click');
