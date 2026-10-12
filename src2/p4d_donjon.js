@@ -18,6 +18,7 @@ const DJ_IC = {
   paw: '<svg viewBox="0 0 24 24"><g fill="currentColor"><ellipse cx="12" cy="16" rx="5" ry="4.2"/><ellipse cx="6" cy="10" rx="2" ry="2.6"/><ellipse cx="18" cy="10" rx="2" ry="2.6"/><ellipse cx="9.3" cy="6.3" rx="2" ry="2.6"/><ellipse cx="14.7" cy="6.3" rx="2" ry="2.6"/></g></svg>',
   leaf: '<svg viewBox="0 0 24 24"><path d="M20 3C9 3 4 8.5 4 15c0 2 .6 3.7 1.4 5L9 16.4C12.3 13 15 11 18 9.6 14.6 12 12 14.4 9.6 18c1 .5 2.1.8 3.4.8C19 18.8 21 12 20 3z" fill="currentColor"/></svg>',
   skull: '<svg viewBox="0 0 24 24"><path d="M12 2.5c4.7 0 8 3.3 8 7.6 0 2.5-1.2 4.4-3 5.5V19a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 7 19v-3.4c-1.8-1.1-3-3-3-5.5 0-4.3 3.3-7.6 8-7.6z" fill="currentColor"/><circle cx="8.8" cy="11" r="2" fill="#000" opacity=".55"/><circle cx="15.2" cy="11" r="2" fill="#000" opacity=".55"/></svg>',
+  roll: '<svg viewBox="0 0 24 24"><path d="M19.6 12.2a7.6 7.6 0 1 1-2.3-5.6" stroke="currentColor" stroke-width="2.7" fill="none" stroke-linecap="round"/><path d="M21 3.2v6.4h-6.4z" fill="currentColor"/></svg>',
   potion: '<svg viewBox="0 0 24 24"><path d="M9.5 2.5h5v2h-1v4.2c3 1 5 3.6 5 6.8a6.5 6.5 0 0 1-13 0c0-3.2 2-5.8 5-6.8V4.5h-1z" fill="currentColor"/><path d="M6.6 14h10.8a5.4 5.4 0 0 1-10.8 0z" fill="#fff" opacity=".35"/></svg>',
 };
 const djIco = k => `<span class="ic">${DJ_IC[k] || ''}</span>`;
@@ -46,6 +47,7 @@ function sheetDonjon() {
   h += `<div class="sec"><h4>Comment ça marche</h4><ul class="help">
     <li>Pose le pouce sur la gauche de l’écran pour te déplacer. Ton héros attaque tout seul le monstre le plus proche (les soigneurs d’abord).</li>
     <li>À droite : tes compétences et ta potion. Une compétence se recharge après usage.</li>
+    <li>Le bouton « Roulade » (la flèche qui tourne) : un bond dans la direction de ton pouce, intouchable un instant (parfait pour sortir d’un cercle rouge ou passer un piège). Il revient toutes les 4 secondes.</li>
     <li>En entrant dans une salle, les grilles se ferment jusqu’à la fin des vagues de monstres. Entre deux salles, ton héros reprend son souffle.</li>
     <li>Les boss préviennent avant de frapper : sors des cercles rouges et écarte-toi des charges.</li>
     <li>À deux : une compétence marque le monstre touché ; si l’autre le frappe, c’est un combo (+50 %). Pareil sur un monstre étourdi, gelé ou enraciné par l’autre. Un héros tombé se relève si l’autre reste 3 secondes à côté.</li>
@@ -188,7 +190,7 @@ function djBeginDuo(role, r) {
 }
 function djRun(st, lvl, seed, hid, duo, run) {
   if (!gl) { toast('Les donjons ont besoin de la 3D, indisponible sur cet appareil.'); return; }
-  dj = { st, d: st.d, lvl, seed, hid, duo, run: run || null, acc: 0, inp: { mx: 0, my: 0, sk: -1, pot: false }, joy: null, keys: {}, els: {}, ended: false, res: null, nocastT: 0 };
+  dj = { st, d: st.d, lvl, seed, hid, duo, run: run || null, acc: 0, inp: { mx: 0, my: 0, sk: -1, pot: false, rl: false }, joy: null, keys: {}, els: {}, ended: false, res: null, nocastT: 0 };
   closeSheet(true); sel = null; selP = null; place = null; modal = null;
   mode = 'donjon';
   V3.dj.enter(st, hid);
@@ -377,9 +379,10 @@ function djHudBuild() {
     <div class="glass djboss" id="djBoss" hidden><b>${esc(dj.bossN)}</b><div class="djhp boss"><i id="djBossHp"></i></div></div>
     <div class="djjoy" id="djJoy"><p class="djhint" id="djHint">Pose le pouce ici pour te déplacer</p></div>
     <div class="djbase" id="djBase" hidden><div class="djknob" id="djKnob"></div></div>
-    <div class="djbtns">${[0, 1, 2].map(i => { const on = h.rank[i] > 0, name = C.skills[i][0]; return `<button class="djsk${on ? '' : ' lock'}" data-djsk="${i}" aria-label="${esc(name)}"${on ? '' : ' disabled'}>
+    <div class="djbtns">${[0, 1, 2].map(i => { const on = h.rank[i] > 0, name = C.skills[i][0]; return `<button class="djsk${on ? '' : ' lock'}" data-djsk="${i}" aria-label="${esc(name)}"${on ? '' : ' disabled'} style="grid-column:${i === 1 ? 3 : 2};grid-row:${i === 2 ? 2 : 1}">
         <span class="djico">${djIco(DJ_SK_ICON[sk[i].id])}</span><span class="djcd" id="djCd${i}"></span><small>${on ? esc(name) : 'niv. ' + SKILL_LVLS[i]}</small></button>`; }).join('')}
-      <button class="djsk pot" data-djpot="1" aria-label="Potion"><span class="djico">${djIco('potion')}</span><span class="djcd" id="djCdP"></span><b class="djn" id="djPot"></b><small>Potion</small></button></div>`;
+      <button class="djsk pot" data-djpot="1" aria-label="Potion" style="grid-column:3;grid-row:2"><span class="djico">${djIco('potion')}</span><span class="djcd" id="djCdP"></span><b class="djn" id="djPot"></b><small>Potion</small></button>
+      <button class="djsk roll" data-djroll="1" aria-label="Roulade" style="grid-column:1;grid-row:2"><span class="djico">${djIco('roll')}</span><span class="djcd" id="djCdR"></span><small>Roulade</small></button></div>`;
   dj.els = {};
   el.hidden = false;
 }
@@ -394,8 +397,8 @@ function djBind(el) {
   const R = 52;
   el.addEventListener('pointerdown', e => {
     if (!dj) return;
-    const b = e.target.closest('[data-djsk],[data-djpot]');
-    if (b) { e.preventDefault(); if (b.disabled) return; if (b.dataset.djpot) dj.inp.pot = true; else dj.inp.sk = +b.dataset.djsk; b.classList.add('press'); setTimeout(() => b.classList.remove('press'), 140); SND.unlock(); return; }
+    const b = e.target.closest('[data-djsk],[data-djpot],[data-djroll]');
+    if (b) { e.preventDefault(); if (b.disabled) return; if (b.dataset.djpot) dj.inp.pot = true; else if (b.dataset.djroll) dj.inp.rl = true; else dj.inp.sk = +b.dataset.djsk; b.classList.add('press'); setTimeout(() => b.classList.remove('press'), 140); SND.unlock(); return; }
     if (!e.target.closest('#djJoy') || dj.joy) return;
     e.preventDefault(); SND.unlock();
     try { el.setPointerCapture(e.pointerId); } catch (x) { /* rien */ }
@@ -415,7 +418,7 @@ function djBind(el) {
   const up = e => { if (!dj || !dj.joy || e.pointerId !== dj.joy.id) return; dj.joy = null; dj.inp.mx = 0; dj.inp.my = 0; const base = $('#djBase'); if (base) base.hidden = true; };
   el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
 }
-/* Clavier (ordinateur) : flèches ou ZQSD/WASD pour bouger, 1 2 3 pour les compétences, 4 ou P pour la potion. */
+/* Clavier (ordinateur) : flèches ou ZQSD/WASD pour bouger, 1 2 3 pour les compétences, 4 ou P pour la potion, espace ou 5 pour la roulade. */
 const DJ_KEYS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], z: [0, 1], w: [0, 1], s: [0, -1], q: [-1, 0], a: [-1, 0], d: [1, 0] };
 document.addEventListener('keydown', e => {
   if (!dj || e.target.closest && e.target.closest('input,textarea')) return;
@@ -423,6 +426,7 @@ document.addEventListener('keydown', e => {
   if (DJ_KEYS[k]) { dj.keys[k] = 1; e.preventDefault(); }
   else if (k === '1' || k === '2' || k === '3') dj.inp.sk = +k - 1;
   else if (k === '4' || k === 'p') dj.inp.pot = true;
+  else if (k === ' ' || k === '5') { dj.inp.rl = true; e.preventDefault(); }
 });
 document.addEventListener('keyup', e => { if (!dj) return; const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; delete dj.keys[k]; });
 function djKeyVec() {
@@ -445,6 +449,7 @@ function djHudUpdate() {
   }
   for (let i = 0; i < 3; i++) set('djCd' + i, 'cd', h.rank[i] && h.cd[i] > 0 ? (h.cd[i] / h.cdMax[i] * 360).toFixed(0) + 'deg' : '0deg');
   set('djPot', 't', String(h.pot));
+  set('djCdR', 'cd', h.dead ? '360deg' : h.rollCd > 0 ? (h.rollCd / DJ_ROLL.cd * 360).toFixed(0) + 'deg' : '0deg');
   set('djCdP', 'cd', h.pot <= 0 ? '360deg' : h.potT > 0 ? (h.potT * 360).toFixed(0) + 'deg' : '0deg');
   const pr = djProgress(st), fl = st.d.floor ? 'Étage ' + st.d.floor + ' · ' : '', bn = 'le ' + (dj.bossN || 'boss').toLowerCase();
   set('djInfo', 't', fl + (st.exit ? (st.d.floor ? 'Passage ouvert : rejoins la lumière' : 'Sortie ouverte : rejoins la lumière') : pr.boss ? cap1(bn) : pr.fighting ? `Salle ${pr.done + 1} sur ${pr.total} · vague ${pr.wave} sur ${pr.waves}` : pr.done >= pr.total && dj.bossN ? 'Au fond : ' + bn : `Salles nettoyées : ${pr.done} sur ${pr.total}`));
@@ -464,6 +469,7 @@ function djEvents(st) {
       case 'cast': if (mine) SND.sfx('power'); break;
       case 'nocast': if (mine && performance.now() - dj.nocastT > 1200) { dj.nocastT = performance.now(); toast('Pas de cible à portée pour cette compétence.'); } break;
       case 'potion': if (mine) SND.sfx('built'); break;
+      case 'roll': if (mine && !(dj.duo && dj.duo.role === 'guest')) SND.sfx('whoosh'); break;
       case 'chest': SND.sfx('coin'); toast('Coffre : ' + rewTxt(e.got) + '.'); break;
       case 'loot': toast((crypt ? 'Trésor du roi : ' : portal ? 'Trésor du gardien : ' : 'Butin du chef : ') + rewTxt(e.got) + '.'); break;
       case 'altar': SND.sfx('star'); toast('Autel des anciens rois · ' + DJ_BLESS[e.b] + ', jusqu’à la sortie.'); break;
@@ -500,10 +506,10 @@ function djFrame(dt, tNow) {
     dj.acc = Math.min(dj.acc + dt, 0.25);
     let n = 0;
     while (dj.acc >= DJ_DT && n < 5 && !st.over) {
-      const inputs = { [dj.hid]: { mx, my, sk: dj.inp.sk, pot: dj.inp.pot } };
+      const inputs = { [dj.hid]: { mx, my, sk: dj.inp.sk, pot: dj.inp.pot, rl: dj.inp.rl } };
       if (duo && !duo.gone) inputs[duo.mateHid] = djRemoteInput(duo);
       djStep(st, inputs);
-      dj.inp.sk = -1; dj.inp.pot = false; dj.acc -= DJ_DT; n++;
+      dj.inp.sk = -1; dj.inp.pot = false; dj.inp.rl = false; dj.acc -= DJ_DT; n++;
       djEvents(st);
       if (st.over === 'floor' && !dj.floorShown) djFloorDone();      // Profondeurs : le cumul est à jour avant l'envoi à l'invitée
       if (duo && (st.n % 3 === 0 || st.over)) djSendSnap();
@@ -518,7 +524,7 @@ function djFrame(dt, tNow) {
 /* Commandes de l'invitée (dernier message reçu) : sa position, et ses boutons, un par pas. */
 function djRemoteInput(duo) {
   const m = duo.inLast, gi = { pos: m && m.p, tp: m ? m.tp | 0 : 0 };
-  if (m && m.q) for (const it of m.q) { const n = it && it[0], c = it && String(it[1]); if (n > duo.done) { duo.done = n; if (c === 'p') gi.pot = true; else gi.sk = +c.slice(1); break; } }
+  if (m && m.q) for (const it of m.q) { const n = it && it[0], c = it && String(it[1]); if (n > duo.done) { duo.done = n; if (c === 'p') gi.pot = true; else if (c === 'r') gi.rl = true; else gi.sk = +c.slice(1); break; } }
   return gi;
 }
 /* Instantané pour l'invitée ; dans les Profondeurs, avec le cumul de la descente (ru : étages finis, expérience, monstres, secondes, combos, prisonnier). */
@@ -537,6 +543,7 @@ function djGuestFrame(dt, tNow) {
   const st = dj.st, duo = dj.duo, me2 = st.heroes.find(h => h.id === dj.hid), t = performance.now();
   if (!st.over && me2) {
     const kv = djKeyVec(), mx = kv ? kv[0] : dj.inp.mx, my = kv ? kv[1] : dj.inp.my;
+    if (dj.inp.rl) { dj.inp.rl = false; if (djLocalRoll(st, me2, mx, my)) { duo.q.push([++duo.qSeq, 'r']); duo.sendAt = 0; SND.sfx('whoosh'); } }
     djLocalMove(st, me2, mx, my, Math.min(dt, 0.1));
     me2.px = me2.x; me2.py = me2.y;
     if (dj.inp.sk >= 0) { duo.q.push([++duo.qSeq, 'k' + dj.inp.sk]); dj.inp.sk = -1; duo.sendAt = 0; }

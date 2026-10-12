@@ -696,11 +696,19 @@ const V3 = (() => {
   function buildWorldModels() { /* le décor est maintenant entièrement généré (forêts, relief, eau) */ }
 
   /* ---------- initialisation ---------- */
-  function init(cv) {
-    canvas = cv;
-    try { renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' }); } catch (e) { return false; }
+  let light = false, fpsAvg = 30;
+  const pixelRatio = () => light ? 1 : Math.min(2, window.devicePixelRatio || 1);
+  /* Graphismes légers : une image moins fine (1 pixel par point) et pas d'ombres (le plus coûteux sur un téléphone). */
+  function setLight(on) {
+    light = !!on; if (!renderer) return;
+    renderer.setPixelRatio(pixelRatio()); resize();
+    if (sun) sun.castShadow = !light;
+  }
+  function init(cv, opts) {
+    canvas = cv; light = !!(opts && opts.light);
+    try { renderer = new THREE.WebGLRenderer({ canvas, antialias: !light, powerPreference: 'high-performance' }); } catch (e) { return false; }
     if (!renderer || !renderer.getContext()) return false;
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.setPixelRatio(pixelRatio());
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.88;
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -709,7 +717,7 @@ const V3 = (() => {
     scene.fog = new THREE.Fog(0xe9c27e, 70, 150);
     camera = new THREE.OrthographicCamera(-10, 10, 10, -10, -200, 400);
     hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.7); scene.add(hemi);
-    sun = new THREE.DirectionalLight(0xffffff, 1.1); sun.castShadow = true;
+    sun = new THREE.DirectionalLight(0xffffff, 1.1); sun.castShadow = !light;
     sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -19, right: 19, top: 19, bottom: -19, near: 1, far: 140 });
     sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.03;
@@ -1773,13 +1781,12 @@ const V3 = (() => {
 
   /* ---------- chargement des modèles ---------- */
   const MODEL_NAMES = ['castle', 'lumbermill', 'mine', 'windmill', 'market', 'barracks', 'tavern', 'tower_A', 'tower_B', 'tower_catapult', 'church', 'destroyed', 'scaffolding', 'trees_A_large', 'trees_A_medium', 'trees_B_large', 'tree_A', 'tree_B', 'mountain_A', 'mountain_B', 'mountain_C', 'hills_A', 'hills_C', 'rock_A', 'rock_C', 'rock_E'];
-  function loadModels(base, onProgress, base2) {
+  function loadModels(base, onProgress, base2, onMore) {
     if (!ok || !THREE.GLTFLoader) return Promise.resolve(false);
     THREE.Cache.enabled = true;
     const loader = new THREE.GLTFLoader(), tl = new THREE.TextureLoader();
     const chars = ['barbarian', 'rogue', 'knight'], texs = ['orc_barbarian', 'orc_rogue', 'troll'];
-    const m2 = base2 ? M2_NAMES : [];
-    const total = MODEL_NAMES.length + chars.length + texs.length + m2.length;
+    const total = MODEL_NAMES.length + chars.length + texs.length;
     let done = 0;
     const tick = () => { done++; if (onProgress) onProgress(done, total); };
     const one = n => new Promise(res => loader.load(base + n + '.json', g => { LIB.b[n] = g; tick(); res(); }, undefined, () => { tick(); res(); }));
@@ -1789,8 +1796,8 @@ const V3 = (() => {
       tick(); res();
     }, undefined, () => { tick(); res(); }));
     const tx = n => new Promise(res => tl.load(base + n + '.png', t => { t.flipY = false; t.encoding = THREE.sRGBEncoding; LIB.tex[n] = t; tick(); res(); }, undefined, () => { tick(); res(); }));
-    const one2 = n => new Promise(res => loader.load(base2 + n + '.glb', g => { LIB.m2[n] = g; tick(); res(); }, undefined, () => { tick(); res(); }));
-    return Promise.all([...MODEL_NAMES.map(one), ...chars.map(ch), ...texs.map(tx), ...m2.map(one2)]).then(() => {
+    const one2 = n => new Promise(res => loader.load(base2 + n + '.glb', g => res(g), undefined, () => res(null)));
+    return Promise.all([...MODEL_NAMES.map(one), ...chars.map(ch), ...texs.map(tx)]).then(() => {
       if (!LIB.b.castle || !LIB.b.tower_A) return false;
       if (LIB.ch.rogue) LIB.ch.rogue.scene.traverse(o => { if (o.name === '2H_Crossbow' && o.parent && !LIB.xbow) LIB.xbow = { parent: o.parent.name, obj: o }; });
       /* Les personnages KayKit partagent le même squelette : armes et animations passent de l'un à l'autre. */
@@ -1801,11 +1808,19 @@ const V3 = (() => {
       }
       const matte = o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial) { o.material.roughness = 0.88; o.material.envMapIntensity = 0.55; } };
       for (const k in LIB.b) LIB.b[k].scene.traverse(matte);
-      for (const k in LIB.m2) LIB.m2[k].scene.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial) { o.material.envMapIntensity = 0.5; o.material.roughness = Math.max(0.75, o.material.roughness); } });
       for (const k in LIB.ch) LIB.ch[k].scene.traverse(matte);
       for (const k in LIB.tex) if (LIB.tex[k]) LIB.tex[k].anisotropy = 4;
       LIB.ok = true; LIB.ver++; protos.clear(); groundSig = '';
       buildWorldModels();
+      /* Les modèles Meshy (plusieurs Mo chacun) arrivent ensuite, l'un après l'autre (la halle d'abord) : le village s'affiche sans les attendre. */
+      if (base2) (async () => {
+        for (const n of ['halle', 'chantier'].concat(M2_NAMES).filter((x, i, a) => M2_NAMES.includes(x) && a.indexOf(x) === i)) {
+          const g = await one2(n); if (!g) continue;
+          g.scene.traverse(o => { if (o.isMesh && o.material && o.material.isMeshStandardMaterial) { o.material.envMapIntensity = 0.5; o.material.roughness = Math.max(0.75, o.material.roughness); } });
+          LIB.m2[n] = g; LIB.ver++; protos.clear();
+          if (onMore) onMore(n);
+        }
+      })();
       return true;
     });
   }
@@ -1929,7 +1944,18 @@ const V3 = (() => {
     djPrepAnims(g);
     const mats = []; g.traverse(o => { if (o.isMesh && o.material && !o.material.isSpriteMaterial && o.geometry !== geo('plane')) { o.material = o.material.clone(); mats.push(o.material); } });
     const bar = makeBar(0.8, 0x6fd35a); bar.position.y = 1.72; g.add(bar);
-    return { g, kind: 'hero', bar, mats, atkN: 0, castN: 0, atkT: -9, castT: -9, cast: '', lx: h.x, ly: h.y, scale: 1 };
+    return { g, kind: 'hero', bar, mats, atkN: 0, castN: 0, atkT: -9, castT: -9, cast: '', lx: h.x, ly: h.y, scale: 1, rollN: h.rollN | 0 };
+  }
+  /* Roulade : une culbute en avant, ramassée en boule (le corps tourne autour de son milieu). */
+  function djRollPose(r, h, tNow) {
+    if ((h.rollN | 0) !== (r.rollN | 0)) { r.rollN = h.rollN | 0; r.rollT = tNow; }
+    const body = r.g.userData.body; if (!body) return;
+    const k = r.rollT != null ? (tNow - r.rollT) / 0.32 : 1, s = r.scale || 1;
+    if (k >= 0 && k < 1 && !h.dead) {
+      const th = k * Math.PI * 2, sq = 1 - 0.4 * Math.sin(k * Math.PI), cs = 0.5 * s * sq;
+      body.scale.set(s, s * sq, s); body.rotation.x = th;
+      body.position.set(0, 0.5 * s - cs * Math.cos(th), -cs * Math.sin(th));
+    } else if (body.rotation.x) { body.rotation.x = 0; body.position.set(0, 0, 0); body.scale.setScalar(s); r.rollT = null; }
   }
   function djMobRec(m) {
     const def = DJ_U[m.type] || DJ_U.gobelin, g = djModel(def);
@@ -2126,6 +2152,7 @@ const V3 = (() => {
       case 'nova': wave(e.x, e.y, DJ_FX[e.c] || 0xffffff, e.r, 0.5); wave(e.x, e.y, DJ_FX[e.c] || 0xffffff, e.r * 0.6, 0.35); for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; spark(e.x + Math.cos(a) * e.r * 0.7, 0.5, e.y + Math.sin(a) * e.r * 0.7, DJ_FX[e.c]); } break;
       case 'boom': burst(e.x, e.y, 0.5, DJ_FX[e.c] || 0xff7a2a, 9); wave(e.x, e.y, DJ_FX[e.c] || 0xff7a2a, e.r, 0.45); shake(0.18); break;
       case 'dash': for (let i = 0; i <= 4; i++) dustRing(e.x0 + (e.x1 - e.x0) * i / 4, e.y0 + (e.y1 - e.y0) * i / 4, 0.2); break;
+      case 'roll': dustRing(e.x, e.y, 0.35); break;
       case 'blink': for (let i = 0; i < 4; i++) { spark(e.x0, 0.4 + i * 0.3, e.y0, 0xc9a0ff); spark(e.x1, 0.4 + i * 0.3, e.y1, 0xc9a0ff); } break;
       case 'bolt': { const a = P2(e.id), b = P2(e.tgt); if (a && b) { const c = e.c === 'marteau' ? 0xffd27a : 0xfff4c0; const s = makeGlow(c, 0.9, 1); s.position.set(a[0] - half, 1, a[1] - half); djGroup.add(s); DJ.teles.push({ m: s, t: 0, T: 0.18, fly: [a[0], a[1], b[0], b[1]] }); setTimeout(() => { if (DJ) { const p = djEntPos(st, e.tgt) || b; burst(p[0], p[1], 0.8, c, 4); } }, 180); } break; }
       case 'line': { const L = Math.hypot(e.x1 - e.x0, e.y1 - e.y0), g2 = new THREE.PlaneGeometry(0.35, L); g2.rotateX(-Math.PI / 2); g2.translate(0, 0, L / 2); const m = new THREE.Mesh(g2, basic(0xfff0b0, { transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })); m.position.set(e.x0 - half, 0.9, e.y0 - half); m.rotation.y = Math.atan2(e.x1 - e.x0, e.y1 - e.y0); djGroup.add(m); DJ.teles.push({ m, t: 0, T: 0.3, fade: true }); break; }
@@ -2183,6 +2210,7 @@ const V3 = (() => {
       djPose(r, h, alpha, tNow);
       djBar(r, h.hp / h.hpMax, !h.dead && (st.heroes.length > 1 || h.hp < h.hpMax));
       const sc = h.form === 'ours' ? 1.3 : h.form === 'loup' ? 0.85 : 1; r.scale += (sc - r.scale) * Math.min(1, dt * 8); r.g.userData.body.scale.setScalar(r.scale);
+      djRollPose(r, h, tNow);
       const ghost = h.b.stealth > 0, inv = h.b.inv > 0 && !h.dead;
       for (const m of r.mats) { const op = ghost ? 0.35 : inv ? 0.6 + 0.4 * Math.sin(tNow * 30) : 1; if (m.opacity !== op) { m.transparent = op < 1; m.opacity = op; m.needsUpdate = true; } }
       if (h.dead && !h.gone && st.heroes.length > 1 && !r.revRing) { const rg = new THREE.RingGeometry(0.62, 0.78, 32, 1, 0, Math.PI * 2); rg.rotateX(-Math.PI / 2); r.revRing = new THREE.Mesh(rg, basic(0xffe08a, { transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide })); r.revRing.position.y = 0.06; r.revRing.renderOrder = 4; r.g.add(r.revRing); }
@@ -2496,7 +2524,8 @@ const V3 = (() => {
     requestAnimationFrame(loop);
     if (document.hidden || !ok) return;
     if (ts - lastFrame < 30) return;
-    const dt = Math.min(0.1, (ts - (lastFrame || ts)) / 1000); lastFrame = ts;
+    const raw = (ts - (lastFrame || ts)) / 1000, dt = Math.min(0.1, raw); lastFrame = ts;
+    if (raw > 0 && raw < 1) fpsAvg += (1 / raw - fpsAvg) * 0.03;      // images par seconde (moyenne glissante, pour le conseil « graphismes légers »)
     const tNow = ts / 1000;
     if (frameHook) frameHook(dt, tNow);
     updateCamera(dt);
@@ -2605,13 +2634,13 @@ const V3 = (() => {
   }
 
   return {
-    setPeople, pickPerson, setSeason,
+    setPeople, pickPerson, setSeason, setLight, fps: () => fpsAvg,
     init, ok: () => ok, resize, resetCamera, setBuildings, clearBuildings, setBldHp, bldInfo, aimAt, select, ghost, showZone, showRanges,
     syncUnits, clearUnits, spawnShot, burst, pickGround, pickBuilding, focus, setPointerMap, setMood, loadModels, modelsReady: () => LIB.ok,
     debris, wave, spark, shake, dustRing, powerFx, volley, unitPower, renderThumbs, panOf, toScreen,
     _ground: () => groundCanvas && groundCanvas.toDataURL('image/jpeg', 0.8),
     _bench: () => { const t0 = performance.now(); paintBase(biome); const t1 = performance.now(); paintGround(lastGroundItems); return { base: Math.round(t1 - t0), ground: Math.round(performance.now() - t1) }; },
-    _fx: () => ({ flames: flames.length, burning: [...blds.values()].filter(r => r.burn).length, people: people.size, mood, biome }),
+    _fx: () => ({ flames: flames.length, burning: [...blds.values()].filter(r => r.burn).length, people: people.size, mood, biome, m2: Object.keys(LIB.m2).length, light, pr: renderer ? renderer.getPixelRatio() : 0, fps: Math.round(fpsAvg) }),
     onFrame: f => { frameHook = f; }, onTap: f => { tapHook = f; },
     dj: { enter: djEnter, exit: djExit, sync: djSync, fx: djFx, active: () => !!DJ },
     setPortals, raid: { enter: rdEnter, exit: rdExit, sync: rdSync, fx: rdFx, active: () => !!RD },

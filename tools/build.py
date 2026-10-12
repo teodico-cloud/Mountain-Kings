@@ -1,27 +1,36 @@
-"""Construit Mountain Kings : sources src/ -> site docs/ (Firebase, installable).
-Usage : python3 tools/build.py [--test]   (--test : faux Firebase pour les essais locaux)"""
+"""Construit l'ANCIEN Mountain Kings (village nain, raids contre les orques) : sources src/ -> docs/v1/ (archive, toujours jouable).
+Le jeu actuel (src2/, tools/build2.py) occupe l'adresse principale (docs/). Les deux partagent docs/lib, docs/models,
+docs/icons (fabriquées ici) et docs/thumbs. Les anciens villages restent dans Firebase, jamais effacés.
+Usage : python3 tools/build.py [--test]   (--test : faux Firebase pour les essais locaux, construit dans .test/v1/)"""
 import json, os, shutil, sys, time, hashlib
 from PIL import Image, ImageDraw, ImageFilter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/'
 D = ROOT + 'src/'
 OUT = ROOT
-SITE = ROOT + 'docs/'            # site publié (GitHub Pages, dossier /docs)
+DOCS = ROOT + 'docs/'            # site publié (GitHub Pages, dossier /docs)
 TEST = '--test' in sys.argv
+SITE = ROOT + ('.test/v1/' if TEST else 'docs/v1/')    # l'ancien jeu, dans son propre dossier
+os.makedirs(SITE, exist_ok=True)
+if TEST:
+    for d in ('lib', 'models', 'icons', 'thumbs'):
+        if not os.path.lexists(ROOT + '.test/' + d): os.symlink(DOCS + d, ROOT + '.test/' + d)
 
 rd = lambda p: open(p, encoding='utf-8').read()
 head = rd(D + 'p1_head.html')
 imp = json.load(open(D + 'import_village.json', encoding='utf-8'))
 p0 = rd(D + 'p0_fb.js').replace('/*IMPORT*/null', json.dumps(imp, ensure_ascii=False, separators=(',', ':')))
 js = "(() => {\n'use strict';\n" + p0 + "\n" + rd(D + 'p2_rules.js') + "\n" + rd(D + 'p3_render.js') + "\n" + rd(D + 'p5_audio.js') + "\n" + rd(D + 'p4_app.js') + "\n})();\n"
+# Le jeu est dans v1/ : modèles et vignettes sont un dossier plus haut (partagés avec le jeu actuel).
+for a, b, n in (("V3.loadModels('models/'", "V3.loadModels('../models/'", 2), ('<img src="thumbs/', '<img src="../thumbs/', 1)):
+    assert js.count(a) == n, a
+    js = js.replace(a, b)
 build = hashlib.sha1(js.encode()).hexdigest()[:10]
 
 # models/ et lib/ (three.js r128) sont des fichiers fixes du dépôt : on ne les régénère pas.
-os.makedirs(SITE + 'icons', exist_ok=True)
 for f in ('fakefb.js',):
     if os.path.exists(SITE + f): os.remove(SITE + f)
 open(SITE + 'game.js', 'w', encoding='utf-8').write(js)
-open(SITE + '.nojekyll', 'w').write('')
 
 # Icônes : couronne dorée au-dessus de montagnes, sur fond de nuit.
 def icon(size, maskable=False):
@@ -57,23 +66,25 @@ def icon(size, maskable=False):
         im.putalpha(mask)
     return im.resize((size, size), Image.LANCZOS)
 
-icon(192).save(SITE + 'icons/icon-192.png')
-icon(512).save(SITE + 'icons/icon-512.png')
-icon(512, True).save(SITE + 'icons/maskable-512.png')
-icon(180, True).convert('RGB').save(SITE + 'icons/apple-touch-icon.png')
-icon(64).save(SITE + 'icons/favicon.png')
+if not TEST:     # icônes communes aux deux jeux (docs/icons)
+    os.makedirs(DOCS + 'icons', exist_ok=True)
+    icon(192).save(DOCS + 'icons/icon-192.png')
+    icon(512).save(DOCS + 'icons/icon-512.png')
+    icon(512, True).save(DOCS + 'icons/maskable-512.png')
+    icon(180, True).convert('RGB').save(DOCS + 'icons/apple-touch-icon.png')
+    icon(64).save(DOCS + 'icons/favicon.png')
 
 manifest = {
-    'name': 'Mountain Kings', 'short_name': 'Mountain Kings', 'lang': 'fr',
-    'description': 'Village nain, raids contre les orques, et raids à deux en direct.',
+    'name': 'Mountain Kings (ancien jeu)', 'short_name': 'MK ancien', 'lang': 'fr',
+    'description': 'L’ancien Mountain Kings : village nain, raids contre les orques, et raids à deux en direct.',
     'id': './', 'start_url': './', 'scope': './',
     'display': 'fullscreen', 'display_override': ['fullscreen', 'standalone'],
     'orientation': 'landscape', 'background_color': '#0F1613', 'theme_color': '#16201C',
     'categories': ['games'],
     'icons': [
-        {'src': 'icons/icon-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any'},
-        {'src': 'icons/icon-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
-        {'src': 'icons/maskable-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'},
+        {'src': '../icons/icon-192.png', 'sizes': '192x192', 'type': 'image/png', 'purpose': 'any'},
+        {'src': '../icons/icon-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'any'},
+        {'src': '../icons/maskable-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'},
     ],
 }
 json.dump(manifest, open(SITE + 'manifest.json', 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
@@ -92,23 +103,23 @@ index = f'''<!doctype html>
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Mountain Kings">
+<meta name="apple-mobile-web-app-title" content="MK ancien">
 <link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/favicon.png">
-<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" href="../icons/favicon.png">
+<link rel="apple-touch-icon" href="../icons/apple-touch-icon.png">
 {head[:i]}
 <style>[hidden]{{display:none!important}}img{{max-width:100%}}</style>
 </head>
 <body>
 {head[i:].strip()}
-<script src="lib/three.min.js"></script>
-<script src="lib/GLTFLoader.js"></script>
-<script src="lib/SkeletonUtils.js"></script>
+<script src="../lib/three.min.js"></script>
+<script src="../lib/GLTFLoader.js"></script>
+<script src="../lib/SkeletonUtils.js"></script>
 <script>window.MK_SITE = true;</script>
 {fb}<script src="game.js?v={build}"></script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') {{
-  navigator.serviceWorker.register('sw.js').then(r => {{
+  navigator.serviceWorker.register('sw.js', {{ scope: './' }}).then(r => {{
     // Une nouvelle version est prête : on recharge une fois, au retour sur le jeu.
     r.addEventListener('updatefound', () => {{
       const w = r.installing;
@@ -119,7 +130,7 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {{
   }}).catch(() => {{}});
   document.addEventListener('visibilitychange', () => {{
     if (document.hidden && window.__mkUpdate) location.reload();
-    else if (!document.hidden) navigator.serviceWorker.getRegistration().then(r => r && r.update()).catch(() => {{}});
+    else if (!document.hidden) navigator.serviceWorker.getRegistration('./').then(r => r && r.update()).catch(() => {{}});
   }});
 }}
 </script>
@@ -128,14 +139,14 @@ if ('serviceWorker' in navigator && location.protocol === 'https:') {{
 '''
 open(SITE + 'index.html', 'w', encoding='utf-8').write(index)
 
-files = sorted(os.path.relpath(os.path.join(r, f), SITE).replace(os.sep, '/') for r, _, fs in os.walk(SITE) for f in fs if not f.startswith('.'))
-files = [f for f in files if not f.startswith('v2/')]   # le nouveau jeu (adresse de test) a son propre cache
-core = ['./'] + [f for f in files if f not in ('index.html', 'sw.js', 'fakefb.js') and not f.startswith('models/')]
-models = [f for f in files if f.startswith('models/')]
-mhash = hashlib.sha1(b''.join(open(SITE + f, 'rb').read() for f in models)).hexdigest()[:10]
-sw = f'''/* Mountain Kings : mise en cache pour un démarrage rapide et des mises à jour automatiques. */
-const CACHE = 'mk-{build}';
-const MCACHE = 'mk-models-{mhash}';
+shared = lambda d: sorted('../' + d + '/' + f for f in os.listdir(DOCS + d) if not f.startswith('.'))
+core = ['./', 'game.js', 'manifest.json'] + shared('lib') + shared('icons') + shared('thumbs')
+models = shared('models')
+files = ['index.html', 'game.js', 'manifest.json', 'sw.js']
+mhash = hashlib.sha1(b''.join(open(DOCS + f[3:], 'rb').read() for f in models)).hexdigest()[:10]
+sw = f'''/* Mountain Kings (ancien jeu, dans v1/) : mise en cache pour un démarrage rapide et des mises à jour automatiques. */
+const CACHE = 'mk1-{build}';
+const MCACHE = 'mk1-models-{mhash}';
 const CORE = {json.dumps(core)};
 const MODELS = {json.dumps(models)};
 self.addEventListener('install', e => {{
@@ -145,8 +156,9 @@ self.addEventListener('install', e => {{
     caches.open(MCACHE).then(c => Promise.all(MODELS.map(u => c.match(u).then(r => r || c.add(u))))),
   ]).then(() => self.skipWaiting()));
 }});
+// Seulement nos anciennes versions (mk1-…) : le jeu actuel, à l'adresse principale, a ses propres caches.
 self.addEventListener('activate', e => {{
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== MCACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('mk1-') && k !== CACHE && k !== MCACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
 }});
 const LIBS = /^https:\\/\\/(www\\.gstatic\\.com\\/firebasejs\\/|fonts\\.googleapis\\.com\\/|fonts\\.gstatic\\.com\\/)/;
 self.addEventListener('fetch', e => {{

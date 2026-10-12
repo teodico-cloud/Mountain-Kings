@@ -1,8 +1,8 @@
 {
- "name": "Mountain Kings (essai)",
- "short_name": "MK essai",
+ "name": "Mountain Kings (ancien jeu)",
+ "short_name": "MK ancien",
  "lang": "fr",
- "description": "Le nouveau Mountain Kings : un village commun, un héros chacun.",
+ "description": "L’ancien Mountain Kings : village nain, raids contre les orques, et raids à deux en direct.",
  "id": "./",
  "start_url": "./",
  "scope": "./",

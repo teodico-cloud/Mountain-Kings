@@ -147,6 +147,8 @@ function djReach(d) {
    20 pas par seconde. Le hasard vient de la graine : même départ et mêmes commandes = même combat.
    Coordonnées en cases (x vers l'est, y vers le sud) ; une entité = un cercle de rayon r. */
 const DJ_DT = 0.05;
+/* Roulade (bouton de tout héros) : un bond rapide dans la direction du joystick (ou devant soi), intouchable un instant. */
+const DJ_ROLL = { cd: 4, t: 0.3, spd: 9, inv: 0.4 };
 const DJ_POTION = 0.4;                                             // une potion rend 40 % de la vie
 const djMul = lvl => Math.pow(1.1, Math.max(0, lvl - 1));          // héros : +10 % de vie et de dégâts par niveau
 const djMobMul = lvl => Math.pow(1.12, Math.max(0, lvl - 1)) * (lvl <= 1 ? 0.85 : lvl === 2 ? 0.93 : 1);   // monstres : +12 % par niveau (les héros ont aussi leurs compétences) ; les 2 premiers niveaux plus doux
@@ -370,10 +372,10 @@ function djKill(st, m) {
   /* Butin : de l'or pour le village, et pour chaque héros ses propres objets (à deux, chacun le sien). */
   const lm = djLootMul(st.lvl);
   if (!m.boss) {
-    st.gold += Math.round((1 + djRnd(st) * 2) * lm * (m.big ? 3 : 1) * st.goldMul);
+    st.gold += Math.round((0.25 + djRnd(st) * 0.5) * lm * (m.big ? 3 : 1) * st.goldMul);
     for (const h of st.heroes) if (!h.gone && djRnd(st) < (m.big ? 0.06 : 0.02) * h.luck) djDrop(st, h, { src: 'mob' }, m);
   } else {
-    const g = Math.round(60 * lm * st.goldMul), set = st.d.floor && djRnd(st) < 0.5 ? 'abime' : SET_OF_THEME[st.d.theme] || 'troll';
+    const g = Math.round(20 * lm * st.goldMul), set = st.d.floor && djRnd(st) < 0.5 ? 'abime' : SET_OF_THEME[st.d.theme] || 'troll';
     st.gold += g;
     const got = djLootAdd(st, DJ_BOSS_LOOT, lm); got.or = g;
     st.ev.push({ k: 'loot', got, x: m.x, y: m.y });
@@ -631,6 +633,11 @@ function djHeroStep(st, h, inp) {
   if (h.dead) return;
   let mx = +inp.mx || 0, my = +inp.my || 0; const m = Math.hypot(mx, my);
   if (m > 1) { mx /= m; my /= m; }
+  /* Roulade : à deux, l'invitée fait le bond sur son téléphone (sa position arrive comme d'habitude) ; ici, on la rend intouchable. */
+  if (h.rollCd > 0) h.rollCd = Math.max(0, h.rollCd - dt);
+  if (inp.rl && !(h.rollCd > 0)) djRollStart(st, h, mx, my);
+  const rolling = h.roll > 0;
+  if (rolling) h.roll = Math.max(0, h.roll - dt);
   const spd = h.speed * (h.form === 'loup' ? 1.25 : 1) * (st.bless === 'celerite' ? 1.15 : 1);
   const reach = h.form ? 1.6 : h.range;
   if (h.remote) {
@@ -639,7 +646,8 @@ function djHeroStep(st, h, inp) {
     const p = inp.pos;
     if (p && (inp.tp | 0) === (h.tp | 0) && isFinite(p[0]) && isFinite(p[1]) && djFree(st, +p[0], +p[1], h.r)) { h.x = +p[0]; h.y = +p[1]; }
     if (p) { if (p[2] || p[3]) { h.fx = +p[2]; h.fy = +p[3]; } h.mv = !!p[4]; }
-  } else if (m > 0.2) { h.mv = djMove(st, h, mx * spd * dt, my * spd * dt); h.fx = mx / Math.max(1, m); h.fy = my / Math.max(1, m); }
+  } else if (rolling) { h.mv = djMove(st, h, h.rdx * DJ_ROLL.spd * dt, h.rdy * DJ_ROLL.spd * dt); h.fx = h.rdx; h.fy = h.rdy; }
+  else if (m > 0.2) { h.mv = djMove(st, h, mx * spd * dt, my * spd * dt); h.fx = mx / Math.max(1, m); h.fy = my / Math.max(1, m); }
   else {
     h.mv = false;
     /* Au contact, joystick lâché : le héros s'avance vers le monstre le plus proche. */
@@ -648,8 +656,8 @@ function djHeroStep(st, h, inp) {
       if (t && djDist(h, t) > reach + t.r) { const dx = t.x - h.x, dy = t.y - h.y, len = Math.hypot(dx, dy); h.mv = djMove(st, h, dx / len * spd * dt, dy / len * spd * dt); h.fx = dx / len; h.fy = dy / len; }
     }
   }
-  /* Attaque automatique (même en marchant), sur la cible la plus proche à portée. */
-  if (h.atkT <= 0) {
+  /* Attaque automatique (même en marchant), sur la cible la plus proche à portée ; pas pendant une roulade. */
+  if (h.atkT <= 0 && !rolling) {
     const t = djTargetFor(st, h, reach);
     if (t) {
       h.tgt = t.id;
@@ -662,6 +670,14 @@ function djHeroStep(st, h, inp) {
       else st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: 14, dmg: v, crit: d.crit, life: 2, splash: DJ_CLASS[h.cls].splash || 0, basic: 1 });
     }
   }
+}
+function djRollStart(st, h, mx, my) {
+  const m = Math.hypot(mx, my);
+  let dx = m > 0.2 ? mx / m : h.fx || 0, dy = m > 0.2 ? my / m : h.fy || 0; const L = Math.hypot(dx, dy);
+  if (L < 1e-6) { dx = 0; dy = 1; } else { dx /= L; dy /= L; }
+  h.roll = DJ_ROLL.t; h.rollCd = DJ_ROLL.cd; h.rdx = dx; h.rdy = dy; h.rollN = (h.rollN | 0) + 1;
+  h.b.inv = Math.max(h.b.inv || 0, DJ_ROLL.inv);
+  st.ev.push({ k: 'roll', id: h.id, x: h.x, y: h.y });
 }
 function djAllyStep(st, a) {
   const dt = DJ_DT; if (!a.inv && a.hp <= 0) return;
@@ -975,7 +991,7 @@ function djWorld(st) {
     if (h.dead) continue;
     for (const c of st.chests) if (!c.open && Math.hypot(c.x - h.x, c.y - h.y) < 1.1) {
       c.open = true;
-      const got = djLootAdd(st, DJ_CHEST, djLootMul(st.lvl) * (st.heroes.some(p => p.race === 'halfelin') ? 1.5 : 1)), g = Math.round(15 * djLootMul(st.lvl) * st.goldMul);
+      const got = djLootAdd(st, DJ_CHEST, djLootMul(st.lvl) * (st.heroes.some(p => p.race === 'halfelin') ? 1.5 : 1)), g = Math.round(5 * djLootMul(st.lvl) * st.goldMul);
       st.gold += g; got.or = g;
       st.ev.push({ k: 'chest', x: c.x, y: c.y, got });
       for (const p of st.heroes) if (!p.gone) {
@@ -1061,7 +1077,7 @@ function djProgress(st) {
 /* ===================== DONJONS À DEUX : l'hôte simule, l'invitée affiche =====================
    Le téléphone de l'hôte fait tourner le combat et envoie l'état ~7 fois par seconde ; celui de l'invitée l'affiche
    (en lissant), déplace lui-même son héros (pour qu'il réponde tout de suite) et envoie sa position et ses boutons. */
-const DJ_PV = 4;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent (4 : donjon du portail)
+const DJ_PV = 5;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent (4 : donjon du portail, 5 : roulade)
 const DJ_PETS = ['loup', 'faucon', 'sanglier', 'chouette'];
 const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette', 'diablotin', 'lanceflamme', 'gardien'];
 const DJ_ST = { idle: 'i', lock: 'l', clear: 'c', open: 'o', fight: 'f' }, DJ_STR = { i: 'idle', l: 'lock', c: 'clear', o: 'open', f: 'fight' };
@@ -1073,7 +1089,7 @@ function djSnap(st, evs, n, res) {
     h: st.heroes.map(h => [h.id, djR2(h.x), djR2(h.y), djR1(h.hp), djR1(h.hpMax),
       (h.dead ? 1 : 0) | (h.mv ? 2 : 0) | (h.b.stealth > 0 ? 4 : 0) | (h.b.inv > 0 ? 8 : 0) | (h.gone ? 16 : 0),
       djR2(h.fx), djR2(h.fy), djR1(h.cd[0]), djR1(h.cd[1]), djR1(h.cd[2]), djR1(h.cdMax[0]), djR1(h.cdMax[1]), djR1(h.cdMax[2]),
-      h.pot, djR1(h.shield), h.form === 'ours' ? 1 : h.form === 'loup' ? 2 : 0, h.tp | 0, djR1(Math.max(0, h.potT)), h.atkN, h.castN, djR1(h.rev), h.tgt | 0]),
+      h.pot, djR1(h.shield), h.form === 'ours' ? 1 : h.form === 'loup' ? 2 : 0, h.tp | 0, djR1(Math.max(0, h.potT)), h.atkN, h.castN, djR1(h.rev), h.tgt | 0, h.rollN | 0]),
     m: st.mobs.filter(m => !m.hidden && m.hp > 0).map(m => [m.id, DJ_MT.indexOf(m.type), djR2(m.x), djR2(m.y), djR1(m.hp), djR1(m.hpMax),
       (m.awake ? 1 : 0) | (m.mv ? 2 : 0) | (m.stun > 0 ? 4 : 0) | (m.frz > 0 ? 8 : 0) | (m.root > 0 ? 16 : 0) | (m.boss ? 32 : 0) | (m.sp && m.sp.enr ? 64 : 0) | (m.big ? 128 : 0),
       djR2(m.fx), djR2(m.fy), m.atkN, m.room, m.r]),
@@ -1105,6 +1121,7 @@ function djApplySnap(ms, sn, me) {
     if (!mine) { h.mv = !!(f & 2); h.fx = a[6]; h.fy = a[7]; }
     h.cd = [a[8], a[9], a[10]]; h.cdMax = [a[11] || 1, a[12] || 1, a[13] || 1]; h.pot = a[14]; h.shield = a[15];
     h.form = a[16] === 1 ? 'ours' : a[16] === 2 ? 'loup' : null; h.potT = a[18]; h.atkN = a[19]; h.castN = a[20]; h.rev = a[21]; h.tgt = a[22];
+    if (!mine) h.rollN = a[23] | 0;
   }
   const keep = (list, rows, make, upd) => { const old = new Map(list.map(e => [e.id, e])), out = []; for (const a of rows || []) { let e = old.get(a[0]); if (!e) e = make(a); else { e.px = e.x; e.py = e.y; } upd(e, a); out.push(e); } return out; };
   ms.mobs = keep(ms.mobs, sn.m, a => ({ id: a[0], kind: 'mob', type: DJ_MT[a[1]] || 'gobelin', x: a[2], y: a[3], px: a[2], py: a[3], b: {} }), (m, a) => {
@@ -1134,6 +1151,8 @@ function djApplySnap(ms, sn, me) {
 function djLocalMove(st, h, mx, my, dt) {
   h.px = h.x; h.py = h.y;
   if (h.dead) { h.mv = false; return; }
+  if (h.rollCd > 0) h.rollCd = Math.max(0, h.rollCd - dt);
+  if (h.roll > 0) { h.roll = Math.max(0, h.roll - dt); h.mv = djMove(st, h, h.rdx * DJ_ROLL.spd * dt, h.rdy * DJ_ROLL.spd * dt); h.fx = h.rdx; h.fy = h.rdy; return; }
   const m = Math.hypot(mx, my); if (m > 1) { mx /= m; my /= m; }
   const spd = h.speed * (h.form === 'loup' ? 1.25 : 1) * (st.bless === 'celerite' ? 1.15 : 1), reach = h.form ? 1.6 : h.range;
   if (m > 0.2) { h.mv = djMove(st, h, mx * spd * dt, my * spd * dt); h.fx = mx / Math.max(1, m); h.fy = my / Math.max(1, m); return; }
@@ -1142,6 +1161,16 @@ function djLocalMove(st, h, mx, my, dt) {
     const t = djNearest(st, h, 4.5);
     if (t && djDist(h, t) > reach + t.r) { const dx = t.x - h.x, dy = t.y - h.y, len = Math.hypot(dx, dy); h.mv = djMove(st, h, dx / len * spd * dt, dy / len * spd * dt); h.fx = dx / len; h.fy = dy / len; }
   }
+}
+
+/* L'invitée lance sa roulade chez elle (l'hôte, prévenu par ses commandes, la rend intouchable). Renvoie true si elle part. */
+function djLocalRoll(st, h, mx, my) {
+  if (!h || h.dead || h.rollCd > 0) return false;
+  const m = Math.hypot(mx, my);
+  let dx = m > 0.2 ? mx / m : h.fx || 0, dy = m > 0.2 ? my / m : h.fy || 0; const L = Math.hypot(dx, dy);
+  if (L < 1e-6) { dx = 0; dy = 1; } else { dx /= L; dy /= L; }
+  h.roll = DJ_ROLL.t; h.rollCd = DJ_ROLL.cd; h.rdx = dx; h.rdy = dy; h.rollN = (h.rollN | 0) + 1;
+  return true;
 }
 
 /* ===================== LES PROFONDEURS : des étages sans fin =====================

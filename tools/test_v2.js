@@ -147,10 +147,10 @@ ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
 /* 15. Retour de donjon : expérience, niveaux, points de compétence, butin, prisonnier */
 {
   const vd = R.clone(vh), hid = R.activeHero(vd, 'u1').id;          // Grosh, orque nécromancien niveau 1
-  const r1 = R.applyV(vd, { type: 'djEnd', hid, lvl: 1, win: true, xp: 450, loot: { pierre: 90, bois: 60 }, pris: false }, who);
+  const r1 = R.applyV(vd, { type: 'djEnd', hid, lvl: 1, win: true, xp: 900, loot: { pierre: 90, bois: 60 }, pris: false }, who);
   const g = vd.heroes[hid];
-  ok(r1.ok && g.lvl === 3 && g.sp === 2 && g.dj === 2, 'victoire au niveau 1 : +450 d’expérience → niveau 3, 2 points de compétence, niveau 2 du donjon ouvert');
-  ok(vd.log.slice(-1)[0].m.includes('passe au niveau 3'), 'le journal raconte le retour de donjon');
+  ok(r1.ok && g.lvl === 3 && g.sp === 2 && g.dj === 2, 'victoire au niveau 1 : +900 d’expérience → niveau 3, 2 points de compétence, niveau 2 du donjon ouvert');
+  ok(vd.log.slice(-2).some(l => l.m.includes('passe au niveau 3')), 'le journal raconte le retour de donjon');
   const p0 = vd.r.pierre; R.applyV(vd, { type: 'djEnd', hid, lvl: 1, win: false, xp: 10, loot: { pierre: 99999 } }, who);
   ok(vd.r.pierre <= Math.max(R.capOf(vd), p0) && g.dj === 2, 'le butin ne dépasse pas les réserves ; une défaite n’ouvre pas de niveau');
   ok(!R.applyV(R.clone(vd), { type: 'djEnd', hid, lvl: 1, win: true, xp: 10 }, who2).ok, 'on ne déclare pas le donjon du héros de l’autre');

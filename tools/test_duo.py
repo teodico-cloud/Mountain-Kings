@@ -6,11 +6,11 @@ R = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/'
 S = os.environ.get('MK_SHOTS', '/tmp/mk_shots') + '/'
 os.makedirs(S, exist_ok=True)
 PORT = 8790
-URL = f'http://127.0.0.1:{PORT}/'
-srv = subprocess.Popen([sys.executable, R + 'tools/fakeserver.py', R + 'docs', str(PORT)])
+URL = f'http://127.0.0.1:{PORT}/v1/'   # l'ancien jeu (build.py --test construit dans .test/v1/)
+srv = subprocess.Popen([sys.executable, R + 'tools/fakeserver.py', R + '.test', str(PORT)])
 time.sleep(1)
-def tree(): return json.load(urllib.request.urlopen(URL + 'fb/tree'))
-def writes(): return json.load(urllib.request.urlopen(URL + 'fb/writes'))
+def tree(): return json.load(urllib.request.urlopen(f'http://127.0.0.1:{PORT}/fb/tree'))
+def writes(): return json.load(urllib.request.urlopen(f'http://127.0.0.1:{PORT}/fb/writes'))
 
 async def page(b, name, logs):
     ctx = await b.new_context(viewport={'width': 844, 'height': 390}, device_scale_factor=1, color_scheme='light')
@@ -63,7 +63,7 @@ async def main():
             v['heroes'] = {hk: {'lvl': 2, 'rest': 0}}
             v['army'] = {'fantassin': 20, 'archer': 5, 'belier': 0}
             v['t'] = int(time.time() * 1000); v['lastActive'] = v['t']; v['cid'] = 'inj'
-            req = urllib.request.Request(URL + 'fb/op?cid=test', data=json.dumps({'path': 'villages/' + uid, 'v': v}).encode(), headers={'content-type': 'application/json'})
+            req = urllib.request.Request(f'http://127.0.0.1:{PORT}/fb/op?cid=test', data=json.dumps({'path': 'villages/' + uid, 'v': v}).encode(), headers={'content-type': 'application/json'})
             urllib.request.urlopen(req).read()
         await B.wait_for_timeout(10000)  # modèles 3D
         print('presence:', list(tree().get('presence', {}).keys()))

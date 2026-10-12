@@ -57,7 +57,7 @@ function raidTick(v) {
   const R = v.raid;
   if (!R.p) { if (t >= (R.next || 0)) raidOpen(v, t); return; }
   if (t < (R.at || 0) + RAID_CHARGE) return;
-  if (!R.rd) { R.rd = 1; addLog(v, t, (R.p.length > 1 ? 'Les portails sont chargés' : 'Le portail est chargé') + ' : les gobelins attaqueront dès que vous serez absents tous les deux.', 'portal'); }
+  if (!R.rd) { R.rd = 1; addLog(v, t, (R.p.length > 1 ? 'Les portails sont chargés' : 'Le portail est chargé') + ' : les gobelins attaqueront dès que personne n’aura joué depuis 2 heures.', 'portal'); }
   if (t - (v.here || 0) < RAID_AWAY) return;
   raidResolve(v, t);
 }

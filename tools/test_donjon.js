@@ -1,7 +1,7 @@
 /* Essais des donjons : fabrication, puis combats joués par un petit robot pour chaque classe. Usage : node tools/test_donjon.js [--long] */
 const fs = require('fs'), path = require('path');
 const src = ['p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
-const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove, djFloorCfg, djFloor, djCarry, djRunAdd, djRunResult, genItem, mulberry32, gearOf, djPack, djUnpack, SLOTS, djHalfItems, itemInfo, djHurt };')();
+const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove, djLocalRoll, djFloorCfg, djFloor, djCarry, djRunAdd, djRunResult, genItem, mulberry32, gearOf, djPack, djUnpack, SLOTS, djHalfItems, itemInfo, djHurt };')();
 const LONG = process.argv.includes('--long');
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
@@ -169,17 +169,19 @@ function playDuo(seed, lvl, hA, hB, opts) {
   const o = opts || {}, d = D.genDungeon(seed, lvl), st = D.djStart(d, [hA, hB], { seed, remote: hB.id });
   const ms = D.djStart(D.genDungeon(seed, lvl), [hA, hB], { seed });           // copie de l'invitée, faite de son côté
   const botA = makeBot(st), botB = makeBot(ms), toGuest = [], toHost = [];
-  let snapN = 0, evBuf = [], lastIn = null, q = [], qSeq = 0, done = 0, sizes = [], guestCasts = 0, raised = 0, desync = 0;
+  let snapN = 0, evBuf = [], lastIn = null, q = [], qSeq = 0, done = 0, sizes = [], guestCasts = 0, raised = 0, desync = 0, rolls = 0;
   const me = ms.heroes.find(h => h.id === hB.id);
   while (!st.over && st.t < (o.maxMin || 20) * 60) {
     /* l'invitée : son héros bouge chez elle, ses boutons partent vers l'hôte */
-    const ib = botB(me); D.djLocalMove(ms, me, ib.mx, ib.my, D.DJ_DT);
+    const ib = botB(me);
+    if (o.roll && st.n % 100 === 50 && D.djLocalRoll(ms, me, ib.mx, ib.my)) { q.push([++qSeq, 'r']); rolls++; }
+    D.djLocalMove(ms, me, ib.mx, ib.my, D.DJ_DT);
     if (ib.sk >= 0) q.push([++qSeq, 'k' + ib.sk]); if (ib.pot) q.push([++qSeq, 'p']);
     if (st.n % 2 === 0) { toHost.push({ at: st.n + 2, m: { p: [me.x, me.y, me.fx, me.fy, me.mv ? 1 : 0], tp: me.tp, q: q.slice(-6) } }); }
     while (toHost.length && toHost[0].at <= st.n) lastIn = toHost.shift().m;
     /* l'hôte : un pas de combat avec les commandes des deux */
     const inputs = { [st.heroes[0].id]: botA(st.heroes[0]) }, gi = { pos: lastIn && lastIn.p, tp: lastIn ? lastIn.tp : 0 };
-    if (lastIn) for (const [n, c] of lastIn.q) if (n > done) { done = n; if (c === 'p') gi.pot = true; else gi.sk = +c.slice(1); break; }
+    if (lastIn) for (const [n, c] of lastIn.q) if (n > done) { done = n; if (c === 'p') gi.pot = true; else if (c === 'r') gi.rl = true; else gi.sk = +c.slice(1); break; }
     inputs[hB.id] = gi;
     const castBefore = st.heroes[1].castN;
     D.djStep(st, inputs);
@@ -193,7 +195,7 @@ function playDuo(seed, lvl, hA, hB, opts) {
   while (toGuest.length) D.djApplySnap(ms, toGuest.shift().sn, hB.id);
   const hostB = st.heroes[1];
   desync = Math.hypot(hostB.x - me.x, hostB.y - me.y);
-  return { st, ms, guestCasts, raised, desync, kb: sizes.reduce((x, y) => x + y, 0) / sizes.length / 1024, snaps: sizes.length };
+  return { st, ms, guestCasts, raised, desync, rolls, kb: sizes.reduce((x, y) => x + y, 0) / sizes.length / 1024, snaps: sizes.length };
 }
 {
   const A = hero('guerrier', 'nain', 3, { id: 'hA', own: 'uA' }), B = hero('mage', 'elfe', 3, { id: 'hB', own: 'uB' });
@@ -383,6 +385,34 @@ function playDuo(seed, lvl, hA, hB, opts) {
     const one = lb[0] || la[0], back = D.djUnpack(JSON.parse(JSON.stringify(D.djPack(one))));
     ok(JSON.stringify(D.itemInfo(back)) === JSON.stringify(D.itemInfo(one)), 'objet envoyé en forme courte : identique à l’arrivée');
   }
+}
+/* ---------- la roulade : un bond de côté, intouchable un instant, toutes les 4 s ---------- */
+{
+  const st = D.djStart(D.genDungeon(5, 1), [hero('guerrier', 'nain', 3)], { seed: 5 }), h = st.heroes[0], m = st.mobs[0];
+  for (const o of st.mobs) o.awake = false;
+  const dir = [[1, 0], [-1, 0], [0, 1], [0, -1]].find(([dx, dy]) => [0.5, 1, 1.5, 2, 2.5, 3].every(k => D.djFree(st, h.x + dx * k, h.y + dy * k, h.r))) || [0, 1];
+  h.dodge = 0; h.b = {}; h.atkT = 99; st.ev.length = 0;
+  m.awake = true; m.x = h.x - dir[0] * 0.6; m.y = h.y - dir[1] * 0.6; m.wind = 0.01; m.act = 'melee'; m.actTgt = h.id; m.atkT = 99; m.dmg = 50; m.hp = m.hpMax = 1e6;
+  const hp0 = h.hp, x0 = h.x, y0 = h.y, n0 = h.rollN | 0;
+  D.djStep(st, { [h.id]: { rl: true, mx: dir[0], my: dir[1] } });
+  ok(st.ev.some(e => e.k === 'roll') && h.hp === hp0 && h.rollN === n0 + 1, 'roulade : le coup qui tombe pendant le bond ne fait rien');
+  for (let i = 0; i < 10; i++) D.djStep(st, {});
+  const moved = Math.hypot(h.x - x0, h.y - y0);
+  ok(moved > 2 && moved < 3.5, 'roulade : un bond de ' + moved.toFixed(1) + ' cases dans la direction du joystick');
+  D.djStep(st, { [h.id]: { rl: true } });
+  ok(h.rollN === n0 + 1, 'roulade : pas de deuxième bond avant la fin de la recharge');
+  for (let i = 0; i < 80; i++) D.djStep(st, {});
+  D.djStep(st, { [h.id]: { rl: true } });
+  ok(h.rollN === n0 + 2, 'roulade : de nouveau prête après 4 secondes');
+  /* même combat, mêmes roulades : même résultat (le jeu à deux en dépend) */
+  const run = () => { const s = D.djStart(D.genDungeon(4242, 1), [hero('guerrier', 'nain', 1)], { seed: 4242 }), bot = makeBot(s);
+    while (!s.over && s.t < 1200) { const hh = s.heroes[0], inp = bot(hh); if (s.n % 90 === 0) inp.rl = true; D.djStep(s, { [hh.id]: inp }); s.ev.length = 0; }
+    return JSON.stringify(D.djResult(s)) + s.n + ':' + s.heroes[0].rollN; };
+  const ra = run(), rb = run();
+  ok(ra === rb, 'roulades comprises, même graine et mêmes commandes : même combat');
+  /* à deux : l'invitée roule chez elle, l'hôte la rend intouchable au même moment */
+  const r = playDuo(4321, 2, hero('guerrier', 'nain', 3, { id: 'hA', own: 'uA' }), hero('mage', 'elfe', 3, { id: 'hB', own: 'uB' }), { roll: true });
+  ok(r.rolls >= 3 && r.st.heroes[1].rollN === r.rolls && r.desync < 1.5 && r.st.over === 'win', 'à deux : les roulades de l’invitée (' + r.rolls + ') arrivent chez l’hôte, les héros restent au même endroit (écart ' + r.desync.toFixed(2) + ')');
 }
 console.log(fails ? fails + ' échec(s).' : 'Tout est bon.');
 process.exit(fails ? 1 : 0);

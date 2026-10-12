@@ -54,7 +54,7 @@ const CLASSES = {
     passives: [['Foi', '+10 % de soins.'], ['Aura', 'L’allié proche encaisse mieux.']],
     specs: [['Croisé', 'Plus de dégâts sacrés.'], ['Gardien', 'Des soins et des boucliers plus forts.']] },
   rodeur: { name: 'Rôdeur', fem: 'Rôdeuse', role: 'Tire de loin', desc: 'Arc ou arbalète : il frappe de loin.',
-    skills: [['Roulade', 'Saute en arrière en tirant.'], ['Pluie de flèches', 'Blesse tout dans une zone.'], ['Tir perçant', 'Une flèche qui traverse une ligne d’ennemis.']],
+    skills: [['Saut arrière', 'Saute en arrière en tirant.'], ['Pluie de flèches', 'Blesse tout dans une zone.'], ['Tir perçant', 'Une flèche qui traverse une ligne d’ennemis.']],
     passives: [['Œil de faucon', '+10 % de portée.'], ['Pied léger', '+10 % de vitesse.']],
     specs: [['Tireur d’élite', 'Des tirs plus puissants.'], ['Dompteur', 'Un familier bien plus fort.']] },
   mage: { name: 'Mage', fem: 'Mage', role: 'Frappe en zone', desc: 'Feu et glace : il touche des groupes entiers.',
@@ -84,7 +84,7 @@ const className = (cls, sex) => sex === 'f' && CLASSES[cls].fem ? CLASSES[cls].f
 const HERO_MAX_LVL = 10;
 const SKILL_LVLS = [1, 3, 5], PASSIVE_LVLS = [4, 7], SPEC_LVL = 10;
 const LEVELS = { 1: '1re compétence', 2: '4e potion par donjon', 3: '2e compétence', 4: '1er passif de classe', 5: '3e compétence', 6: 'Le familier', 7: '2e passif de classe', 8: 'Emplacement du bijou', 9: '2 points de compétence d’un coup', 10: 'Spécialisation : 2 voies au choix' };
-const heroXpNeed = lvl => Math.round(100 * Math.pow(lvl, 1.6));       // expérience pour passer au niveau suivant
+const heroXpNeed = lvl => Math.round(200 * Math.pow(lvl, 1.8));       // expérience pour passer au niveau suivant (niveau 10 : environ 3 semaines de jeu assidu)
 /* Emplacements de héros par joueur : 1, plus 1 par niveau de taverne (4 au plus). */
 const heroSlots = v => { const t = v.b.find(b => b.type === 'taverne' && b.lvl > 0); return Math.min(4, 1 + (t ? t.lvl : 0)); };
 const heroesOf = (v, uid) => Object.values(v.heroes || {}).filter(h => h && h.own === uid).sort((a, b) => (a.n || 0) - (b.n || 0));
@@ -107,7 +107,7 @@ const NAMES = {
 
 /* ---------- bâtiments ---------- */
 const BLD = {
-  halle: { name: 'Halle du village', size: 3, max: 5, cost: { bois: 300, pierre: 200 }, mul: 2.4, work: 240, cat: 'vie', desc: 'Le cœur du village. L’agrandir débloque des bâtiments, des niveaux et plus de bâtisseurs.' },
+  halle: { name: 'Halle du village', size: 3, max: 5, cost: { bois: 300, pierre: 200 }, mul: 2, work: 240, cat: 'vie', desc: 'Le cœur du village. L’agrandir débloque des bâtiments, des niveaux et plus de bâtisseurs.' },
   maison: { name: 'Maison', size: 2, max: 3, cost: { bois: 60, pierre: 20 }, mul: 1.8, work: 40, house: 3, cat: 'hab', desc: 'Loge 3 villageois, un de plus par niveau.' },
   bucheron: { name: 'Cabane de bûcheron', size: 2, max: 3, cost: { bois: 40 }, mul: 2, work: 30, spec: 'buch', jobs: 2, out: { bois: 14 }, job: 'Bûcheron', cat: 'prod', desc: 'Les bûcherons y coupent le bois de la forêt.' },
   carriere: { name: 'Carrière', size: 2, max: 3, cost: { bois: 60 }, mul: 2, work: 40, spec: 'mine', jobs: 2, out: { pierre: 10 }, job: 'Carrier', cat: 'prod', desc: 'On y taille la pierre de la montagne.' },
@@ -116,7 +116,7 @@ const BLD = {
   boulangerie: { name: 'Boulangerie', size: 2, max: 3, cost: { bois: 80, pierre: 60 }, mul: 2, work: 90, spec: 'arti', jobs: 1, inp: { farine: 10 }, out: { pain: 14 }, job: 'Boulanger', hall: 2, cat: 'prod', desc: 'Cuit la farine en pain, la meilleure nourriture du village.' },
   brasserie: { name: 'Brasserie', size: 2, max: 3, cost: { bois: 90, pierre: 50 }, mul: 2, work: 90, spec: 'arti', jobs: 1, inp: { orge: 8 }, out: { biere: 6 }, job: 'Brasseur', hall: 2, cat: 'prod', desc: 'Brasse l’orge en bière. Servie à la taverne, elle remonte le moral.' },
   chasse: { name: 'Pavillon de chasse', size: 2, max: 3, cost: { bois: 50 }, mul: 2, work: 40, spec: 'chasse', jobs: 2, out: { viande: 7 }, seasonal: 'chasse', job: 'Chasseur', cat: 'prod', desc: 'Les chasseurs rapportent de la viande, un peu moins en hiver.' },
-  entrepot: { name: 'Entrepôt', size: 2, max: 3, cost: { bois: 100, pierre: 40 }, mul: 2, work: 60, store: 600, cat: 'stock', desc: '+600 de place par niveau, pour chaque ressource.' },
+  entrepot: { name: 'Entrepôt', size: 2, max: 3, cost: { bois: 100, pierre: 40 }, mul: 2, work: 60, store: 700, cat: 'stock', desc: '+700 de place par niveau, pour chaque ressource.' },
   mine: { name: 'Mine de fer', size: 2, max: 3, cost: { bois: 80, pierre: 60 }, mul: 2, work: 70, spec: 'mine', jobs: 2, out: { fer: 6 }, job: 'Mineur', hall: 2, cat: 'prod', desc: 'Les mineurs y extraient le fer, pour la forge. Les nains y excellent.' },
   forge: { name: 'Forge', size: 2, max: 3, cost: { bois: 120, pierre: 90 }, mul: 2, work: 100, hall: 2, cat: 'heros', desc: 'Fabrique, améliore et fond l’équipement des héros, et sertit les pierres précieuses. Chaque niveau : de meilleurs objets, des améliorations plus poussées et 10 places de plus dans chaque sac.' },
   taverne: { name: 'Taverne', size: 3, max: 3, cost: { bois: 150, pierre: 80 }, mul: 2.2, work: 120, mor: 10, hall: 2, cat: 'vie', desc: 'Remonte le moral, attire de nouveaux villageois, et c’est là qu’on fait la fête.' },
@@ -223,6 +223,9 @@ function freeSpot(v, type, nearX, nearZ) {
 function missingTxt(v, c) {
   const miss = RES.filter(k => (c[k] || 0) > (v.r[k] || 0));
   if (!miss.length) return '';
+  /* plus que ce que les réserves peuvent garder : il faut d'abord de la place (un entrepôt) */
+  const cap = capOf(v), big = miss.filter(k => !NO_CAP.has(k) && c[k] > cap);
+  if (big.length) return 'Réserves trop petites : il faut pouvoir garder ' + big.map(k => c[k] + ' de ' + RES_LABEL[k].toLowerCase()).join(' et ') + ' (construisez ou agrandissez un entrepôt).';
   return 'Il manque ' + miss.map(k => Math.ceil(c[k] - (v.r[k] || 0)) + ' de ' + RES_LABEL[k].toLowerCase()).join(' et ') + '.';
 }
 function pay(v, c) { for (const k in c) v.r[k] = Math.max(0, (v.r[k] || 0) - c[k]); }

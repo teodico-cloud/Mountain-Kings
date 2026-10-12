@@ -7,12 +7,12 @@ R = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + '/'
 S = os.environ.get('MK_SHOTS', '/tmp/mk_shots') + '/'
 os.makedirs(S, exist_ok=True)
 PORT = 8793
-URL = f'http://127.0.0.1:{PORT}/'
-srv = subprocess.Popen([sys.executable, R + 'tools/fakeserver.py', R + 'docs', str(PORT)])
+URL = f'http://127.0.0.1:{PORT}/v1/'   # l'ancien jeu (build.py --test construit dans .test/v1/)
+srv = subprocess.Popen([sys.executable, R + 'tools/fakeserver.py', R + '.test', str(PORT)])
 time.sleep(1)
-def tree(): return json.load(urllib.request.urlopen(URL + 'fb/tree'))
+def tree(): return json.load(urllib.request.urlopen(f'http://127.0.0.1:{PORT}/fb/tree'))
 def put(path, v):
-    req = urllib.request.Request(URL + 'fb/op?cid=test', data=json.dumps({'path': path, 'v': v}).encode(), headers={'content-type': 'application/json'})
+    req = urllib.request.Request(f'http://127.0.0.1:{PORT}/fb/op?cid=test', data=json.dumps({'path': path, 'v': v}).encode(), headers={'content-type': 'application/json'})
     urllib.request.urlopen(req).read()
 
 async def text(pg, sel):

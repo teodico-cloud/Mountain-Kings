@@ -17,7 +17,7 @@ async def main():
             pg = await b.new_page(viewport={'width': 600, 'height': 400})
             errs = []
             pg.on('pageerror', lambda e: errs.append(str(e)))
-            await pg.goto(f'http://127.0.0.1:{PORT}/index.html?thumbs=1')
+            await pg.goto(f'http://127.0.0.1:{PORT}/v1/index.html?thumbs=1')
             await pg.wait_for_function('window.__thumbs', timeout=120000)
             thumbs = await pg.evaluate('window.__thumbs')
             await b.close()

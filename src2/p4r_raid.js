@@ -51,7 +51,7 @@ function sheetDefense() {
     const open = info.p.filter(p => !p.cl), pk = partnerId(v), ph = pk ? activeHero(v, pk) : null, on = pk && isOnline(pk), L = raidLevel(v);
     h += `<div class="item feature"><div class="head"><b class="row">${djIco('flame')}${open.length > 1 ? open.length + ' portails démoniaques' : 'Un portail démoniaque'}</b><small>${info.st === 'charge' ? 'chargé dans ' + fmtDur(info.ready - t) : 'chargé !'}</small></div>
       <div class="bar"><i style="width:${(info.frac * 100).toFixed(0)}%"></i></div>
-      <p>${info.st === 'charge' ? 'Une fois chargé, le raid partira dès que vous serez absents tous les deux depuis 2 heures.' : 'Les gobelins attaqueront dès que vous serez absents tous les deux depuis 2 heures.'} Préparez vos défenses de ce côté, ou refermez-le avec votre héros (un petit donjon et son gardien, niveau ${L}).</p>
+      <p>${info.st === 'charge' ? 'Une fois chargé, le raid partira dès que personne n’aura joué depuis 2 heures.' : 'Les gobelins attaqueront dès que personne n’aura joué depuis 2 heures.'} Préparez vos défenses de ce côté, ou refermez-le avec votre héros (un petit donjon et son gardien, niveau ${L}).</p>
       ${info.p.map(p => `<div class="row split portrow"><b>Portail ${RAID_OF[p.side]}</b>${p.cl ? '<span class="chip plus">refermé</span>' : hh ? `<span class="row"><button class="btn small primary" data-act="djGo" data-th="portail" data-k="${L}" data-pi="${p.i}">${djIco('sword')}Le refermer</button>${pk && ph ? `<button class="btn small${on ? '' : ' off'}" data-act="djInvite" data-th="portail" data-k="${L}" data-pi="${p.i}"${on ? '' : ' disabled'}>À deux</button>` : ''}</span>` : '<span class="note">crée ton héros</span>'}</div>`).join('')}
       <div class="row"><button class="btn small" data-act="portalLook">Voir le portail</button></div></div>`;
   }
@@ -84,7 +84,7 @@ function sheetDefense() {
   h += '</div>';
   h += `<div class="sec"><h4>Comment ça marche</h4><ul class="help">
     <li>À partir du 3e jour, un portail démoniaque s’ouvre au bord de la vallée (au plus un raid par jour ; 2 portails avec la halle niveau 3, 3 au niveau 5). Il se charge pendant 3 heures.</li>
-    <li>Le raid ne part que si vous êtes absents tous les deux depuis 2 heures. Il se joue tout seul ; à votre retour, vous pouvez le revoir.</li>
+    <li>Le raid ne part que si personne n’a joué depuis 2 heures. Il se joue tout seul ; au retour, vous pouvez le revoir.</li>
     <li>Les gobelins foncent sur la halle pour la piller, les voleurs filent vers l’entrepôt, les trolls cassent ce qui bloque. Tous prennent le chemin le plus court, en comptant ce qu’il faudrait casser : une porte est souvent leur cible.</li>
     <li>Ce qu’ils emportent est perdu s’ils regagnent le portail ; abattus avant, ils lâchent tout. Jamais plus de 30 % d’une ressource par raid.</li>
     <li>Vos héros défendent la halle (et gagnent de l’expérience), les tours tirent sur ce qui passe à portée, les pièges cachés blessent ou immobilisent. Chaque ennemi abattu rapporte de l’or.</li>
