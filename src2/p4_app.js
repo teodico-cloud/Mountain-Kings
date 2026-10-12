@@ -593,7 +593,7 @@ function sheetHelp() {
     + sec('Nourriture et saisons', ['Chaque villageois mange une ration par heure : du pain ou de la viande. Des repas variés remontent le moral.', 'Une saison dure 2 jours. En hiver, les champs ne donnent rien : faites des réserves en automne.', 'Sans nourriture, le moral s’effondre, et au bout d’un jour quelqu’un quitte le village.', 'Touchez un champ pour choisir sa culture : blé ou orge. L’orge devient bière à la brasserie ; servie à la taverne, la bière remonte le moral, et il en faut pour les fêtes.'])
     + sec('Construire', ['Les bâtisseurs font avancer les chantiers, plus vite s’ils sont doués en construction. Sans bâtisseur, ça avance quand même un peu.', 'Agrandir la halle débloque des bâtiments, plus de bâtisseurs et plus de chantiers à la fois.'])
     + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence (menu Héros, bouton +1) ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10.'])
-    + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Le chef troll prévient avant ses coups : sors du cercle rouge.', 'Au retour : de l’expérience pour le héros, de la pierre et du bois pour le village, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié.']);
+    + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Le chef troll prévient avant ses coups : sors du cercle rouge.', 'Au retour : de l’expérience pour le héros, de la pierre et du bois pour le village, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
@@ -673,6 +673,8 @@ function renderModal() {
   else if (M && M.kind === 'info') h = `<h2>${esc(M.title)}</h2><p>${esc(M.text)}</p><button class="btn primary" data-act="closeModal">Compris</button>`;
   else if (M && M.kind === 'newhero' && me) h = heroHTML(true);
   else if (M && M.kind === 'djres' && dj) h = djResHTML();
+  else if (M && M.kind === 'djinv' && me) h = djInvHTML();
+  else if (M && M.kind === 'djwait' && me) h = djWaitHTML();
   else if (M && M.kind === 'nogl') h = `<h2>La 3D ne s’affiche pas</h2><p>Cet appareil ou ce navigateur ne permet pas l’affichage 3D. Les menus marchent quand même, mais la carte du village reste vide.</p><button class="btn primary" data-act="closeModal">Compris</button>`;
   else if (M && M.kind === 'cand' && me) {
     const c = me.cands.find(x => x.id === M.id);
@@ -749,7 +751,16 @@ const ACT = {
   claim: b => act({ type: 'claim', id: b.dataset.id }),
   djGo: b => djBegin(+b.dataset.k || 1),
   djBack: () => djBack(),
-  djFlee: () => { if (dj && !dj.st.over && confirm('Quitter la mine ? Tu gardes la moitié de l’expérience et du butin.')) djFlee(dj.st); },
+  djFlee: () => {
+    if (!dj || dj.st.over) return;
+    const role = dj.duo && dj.duo.role, mate = dj.duo && (dj.duo.mateName || 'ton partenaire');
+    if (!confirm(role === 'guest' ? 'Quitter la mine ? Tu gardes la moitié de l’expérience ; ' + mate + ' continue seul·e.' : role === 'host' ? 'Quitter la mine ? La partie s’arrête pour vous deux (moitié de l’expérience et du butin).' : 'Quitter la mine ? Tu gardes la moitié de l’expérience et du butin.')) return;
+    if (role === 'guest') djGuestQuit(false); else djFlee(dj.st);
+  },
+  djInvite: b => djInvite(+b.dataset.k || 1),
+  djYes: () => djAnswer(true),
+  djNo: () => djAnswer(false),
+  djCancel: () => djCancelInvite(),
   skill: b => { const hh = me.heroes[b.dataset.id], i = +b.dataset.i, r = act({ type: 'skill', hid: b.dataset.id, i }); if (r && hh) toast(CLASSES[hh.cls].skills[i][0] + ' passe au rang ' + r.rank + '.'); },
   spec: b => { const hh = me.heroes[b.dataset.id], i = +b.dataset.i; if (!hh || !confirm('Choisir la voie « ' + CLASSES[hh.cls].specs[i][0] + ' » ? C’est pour de bon.')) return; if (act({ type: 'spec', hid: hh.id, s: i })) toast(hh.name + ' devient ' + CLASSES[hh.cls].specs[i][0].toLowerCase() + '.'); },
   crop: b => { if (act({ type: 'crop', id: +b.dataset.id, c: b.dataset.c })) toast(b.dataset.c === 'orge' ? 'On sème de l’orge : pour la bière de la brasserie.' : 'On sème du blé : pour la farine et le pain.'); },
@@ -763,7 +774,7 @@ const ACT = {
   install: () => { const e = installEvt; if (!e) return; installEvt = null; e.prompt(); (e.userChoice || Promise.resolve()).finally(() => renderAll()); },
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
-const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill']);
+const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill', 'djInvite', 'djYes']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (!QUIET.has(b.dataset.act)) SND.sfx('click');
@@ -880,6 +891,7 @@ function watchVillage(id) {
   });
   presence.set(id, { name: myName() });
   unsubP = presence.watch(id, val => { online = val || {}; renderAll(); });
+  djLiveWatch(id);
   if (/[?&]join=/.test(location.search)) history.replaceState(null, '', location.pathname);
 }
 async function foundVillage(vname, col, pname) {

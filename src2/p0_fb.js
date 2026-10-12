@@ -49,6 +49,8 @@ function fbDb(rdb) {
     get: () => rdb.ref(path).once('value').then(s => ({ exists: s.exists(), data: () => fbFix(path, s.val()) }), fbThrow),
     set: data => rdb.ref(path).set(fbClean(data)).catch(fbThrow),
     delete: () => rdb.ref(path).remove().catch(fbThrow),
+    /* Effacé par le serveur si ce téléphone perd la connexion (partie à deux interrompue). */
+    onDisconnectRemove: () => { try { rdb.ref(path).onDisconnect().remove(); } catch (e) { /* rien */ } },
     onSnapshot(next, err) {
       const r = rdb.ref(path);
       const h = r.on('value', s => next({ exists: s.exists(), data: () => fbFix(path, s.val()) }), fbErr(err));

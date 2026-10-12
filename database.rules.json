@@ -72,6 +72,12 @@
             ".write": "auth != null && auth.uid === $uid"
           }
         }
+      },
+      "live": {
+        "$vid": {
+          ".read": "auth != null && root.child('v2/villages/' + $vid + '/members/' + auth.uid).exists()",
+          ".write": "auth != null && root.child('v2/villages/' + $vid + '/members/' + auth.uid).exists()"
+        }
       }
     }
   }

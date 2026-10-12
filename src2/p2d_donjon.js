@@ -193,7 +193,7 @@ function djUnstick(st, e, ri) {
       if (d >= bd || (strict && st.roomAt[(cy + dy) * W + cx + dx] !== ri) || !djFree(st, x, y, e.r)) continue;
       bd = d; best = [x, y];
     }
-    if (best) { e.x = e.px = best[0]; e.y = e.py = best[1]; return true; }
+    if (best) { e.x = e.px = best[0]; e.y = e.py = best[1]; if (e.kind === 'hero') e.tp = (e.tp || 0) + 1; return true; }
   }
   return false;
 }
@@ -258,18 +258,20 @@ function djHero(h) {
     rank: [0, 1, 2].map(i => lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, sk['s' + i] | 0)) : 0),
     cd: [0, 0, 0], cdMax: [1, 1, 1], atkT: 0, tgt: 0, pot: lvl >= 2 ? 4 : 3, potT: 0, b: {}, criA: 0, shield: 0, form: null,
     dead: false, revived: false, mv: false, atkN: 0, castN: 0, lastCast: '',
+    tp: 0, rev: 0, gone: false, remote: false,   // à deux : téléportations (le téléphone de l'autre se recale), relève, départ, héros piloté à distance
   };
 }
 function djMob(st, type, x, y, room, boss) {
-  const D = (boss ? DJ_BOSSES : DJ_MONSTERS)[type], mk = djMobMul(st.lvl);
+  const D = (boss ? DJ_BOSSES : DJ_MONSTERS)[type], mk = djMobMul(st.lvl), pk = st.pk || 1;
   return { id: st.nid++, type, kind: 'mob', room, x, y, px: x, py: y, r: boss ? 0.75 : D.big ? 0.6 : 0.38,
-    hp: D.hp * mk, hpMax: D.hp * mk, dmg: D.dmg * mk, range: D.range, rate: D.rate, speed: D.speed, xp: D.xp,
+    hp: D.hp * mk * pk, hpMax: D.hp * mk * pk, dmg: D.dmg * mk, range: D.range, rate: D.rate, speed: D.speed, xp: D.xp,
     ranged: !!D.ranged, heals: !!D.heals, big: !!D.big, boss: !!boss, awake: false, wave: 0, hidden: false,
     atkT: 0.4 + djRnd(st) * D.rate, wind: 0, act: null, actTgt: 0, tgt: 0, stun: 0, frz: 0, root: 0, poi: 0, poiD: 0, poiAcc: 0, taunt: 0, tauntBy: 0,
     fx: 0, fy: 1, mv: false, atkN: 0,
     sp: boss ? { slam: 4, charge: 8, phase: 0, enr: false, act: null, actT: 0, dx: 0, dy: 0, hit: [] } : null };
 }
-/* Début du combat. heroes : héros du village (un en solo, deux à deux). opts : { seed, dmgMul } (dmgMul : dégâts des monstres). */
+/* Début du combat. heroes : héros du village (un en solo, deux à deux). opts : { seed, dmgMul (dégâts des monstres), remote (id du héros piloté par l'autre téléphone) }.
+   À deux, les monstres ont 70 % de vie en plus. */
 function djStart(d, heroes, opts) {
   const o = opts || {}, W = d.W;
   const st = {
@@ -282,7 +284,9 @@ function djStart(d, heroes, opts) {
     pris: d.prisoner ? { x: d.prisoner[0] + 0.5, y: d.prisoner[1] + 0.5, freed: false } : null,
     traps: d.traps.map((t, i) => ({ x: t.x, y: t.y, ph: (i * 0.37) % 2.4, on: false, hit: {} })),
     exit: null, bless: null, xp: 0, loot: {}, kills: 0, flow: null, flowN: -99, boss: 0, calmT: 0,
+    pk: 1 + 0.7 * (heroes.length - 1),
   };
+  for (const h of st.heroes) if (o.remote && h.id === o.remote) h.remote = true;
   d.rooms.forEach((r, ri) => { for (const [x, y] of r.cells) st.roomAt[y * W + x] = ri; });
   /* Grilles : les cases de couloir qui touchent une salle se ferment quand le combat y commence. */
   st.doors = d.rooms.map(r => { const out = []; for (const [x, y] of r.cells) for (const [dx, dy] of DJ_D4) { const k = (y + dy) * W + x + dx; if (d.grid[k] && st.roomAt[k] < 0 && !out.includes(k)) out.push(k); } return out; });
@@ -342,6 +346,10 @@ function djDamageHero(st, h, v) {
     else { h.hp = 0; h.dead = true; h.form = null; h.mv = false; st.ev.push({ k: 'down', id: h.id }); }
   }
   return v;
+}
+function djRaise(st, h, frac, by) {
+  h.dead = false; h.hp = Math.max(1, h.hpMax * frac); h.rev = 0; h.b = { inv: 1.5 };
+  st.ev.push({ k: 'raise', id: h.id, by });
 }
 function djHit(st, t, v) {
   if (t.kind === 'hero') return djHurtHero(st, t, v);
@@ -514,6 +522,7 @@ function djCast(st, h, i) {
   if (!ok) { st.ev.push({ k: 'nocast', id: h.id, i }); return false; }
   const cd = S.cd * (1 - 0.05 * (r - 1)) * h.cdMul * (st.bless === 'celerite' ? 0.85 : 1);
   h.cd[i] = cd; h.cdMax[i] = cd; h.castN++; h.lastCast = S.id;
+  if (S.id === 'charge' || S.id === 'roulade' || S.id === 'tp' || S.id === 'ombre') h.tp = (h.tp || 0) + 1;
   st.ev.push({ k: 'cast', id: h.id, i, s: S.id });
   return true;
 }
@@ -535,7 +544,13 @@ function djHeroStep(st, h, inp) {
   if (m > 1) { mx /= m; my /= m; }
   const spd = h.speed * (h.form === 'loup' ? 1.25 : 1) * (st.bless === 'celerite' ? 1.15 : 1);
   const reach = h.form ? 1.6 : h.range;
-  if (m > 0.2) { h.mv = djMove(st, h, mx * spd * dt, my * spd * dt); h.fx = mx / Math.max(1, m); h.fy = my / Math.max(1, m); }
+  if (h.remote) {
+    /* À deux : l'invitée déplace son héros sur son téléphone et envoie sa position (acceptée si la case est libre
+       et si son téléphone a bien vu la dernière téléportation). */
+    const p = inp.pos;
+    if (p && (inp.tp | 0) === (h.tp | 0) && isFinite(p[0]) && isFinite(p[1]) && djFree(st, +p[0], +p[1], h.r)) { h.x = +p[0]; h.y = +p[1]; }
+    if (p) { if (p[2] || p[3]) { h.fx = +p[2]; h.fy = +p[3]; } h.mv = !!p[4]; }
+  } else if (m > 0.2) { h.mv = djMove(st, h, mx * spd * dt, my * spd * dt); h.fx = mx / Math.max(1, m); h.fy = my / Math.max(1, m); }
   else {
     h.mv = false;
     /* Au contact, joystick lâché : le héros s'avance vers le monstre le plus proche. */
@@ -706,7 +721,7 @@ function djBossStep(st, m) {
   if (S.act === 'charge') {
     S.actT -= dt; const step = 11 * dt, x0 = m.x, y0 = m.y;
     djMove(st, m, S.dx * step, S.dy * step); m.mv = true; m.fx = S.dx; m.fy = S.dy;
-    for (const t of djFoes(st)) if (!S.hit.includes(t.id) && djDist(m, t) <= m.r + t.r + 0.25) { S.hit.push(t.id); djHit(st, t, m.dmg * 1.5); if (t.kind === 'hero' && !t.dead) djMove(st, t, -S.dy * 1.4, S.dx * 1.4); }
+    for (const t of djFoes(st)) if (!S.hit.includes(t.id) && djDist(m, t) <= m.r + t.r + 0.25) { S.hit.push(t.id); djHit(st, t, m.dmg * 1.5); if (t.kind === 'hero' && !t.dead) { djMove(st, t, -S.dy * 1.4, S.dx * 1.4); t.tp = (t.tp || 0) + 1; } }
     const moved = Math.hypot(m.x - x0, m.y - y0);
     if (S.actT <= 0 || moved < step * 0.3) {
       S.act = null; S.charge = 11; m.mv = false;
@@ -775,7 +790,7 @@ function djLock(st, ri, h) {
   for (const m of st.mobs) if (m.room === ri && !m.hidden) m.awake = true;
   for (const o of st.heroes.concat(st.allies)) {
     if (o === h || o.dead || (o.kind !== 'hero' && !o.inv && o.hp <= 0)) continue;
-    if (st.roomAt[Math.floor(o.y) * d.W + Math.floor(o.x)] !== ri) { st.ev.push({ k: 'blink', id: o.id, x0: o.x, y0: o.y, x1: h.x, y1: h.y }); o.x = o.px = h.x; o.y = o.py = h.y; }
+    if (st.roomAt[Math.floor(o.y) * d.W + Math.floor(o.x)] !== ri) { st.ev.push({ k: 'blink', id: o.id, x0: o.x, y0: o.y, x1: h.x, y1: h.y }); o.x = o.px = h.x; o.y = o.py = h.y; if (o.kind === 'hero') o.tp = (o.tp || 0) + 1; }
   }
   for (const e of st.heroes.concat(st.allies)) if (!djFree(st, e.x, e.y, e.r)) djUnstick(st, e, ri);
   for (const m of st.mobs) if (m.room === ri && !m.hidden && !djFree(st, m.x, m.y, m.r)) { const p = djRoomSpot(st, ri, m.r); if (p) { m.x = m.px = p[0]; m.y = m.py = p[1]; } }
@@ -791,6 +806,7 @@ function djWorld(st) {
       const boss = d.rooms[ri].kind === 'boss';
       if (boss) { const c = djCenter(d.rooms[ri]); st.exit = { x: c[0] + 0.5, y: c[1] + 0.5 }; }
       st.ev.push({ k: 'clear', room: ri, boss });
+      for (const h of st.heroes) if (h.dead && !h.gone) djRaise(st, h, 0.3, 0);      // salle nettoyée : l'allié tombé se relève
       return;
     }
     /* Vague suivante : quand tous les monstres visibles sont vaincus, d'autres sortent des galeries (1,2 s plus tard). */
@@ -827,6 +843,13 @@ function djWorld(st) {
     }
     if (st.pris && !st.pris.freed && Math.hypot(st.pris.x - h.x, st.pris.y - h.y) < 1.3) { st.pris.freed = true; st.ev.push({ k: 'free', x: st.pris.x, y: st.pris.y }); }
     if (st.exit && !st.over && Math.hypot(st.exit.x - h.x, st.exit.y - h.y) < 1.0) { st.over = 'win'; st.ev.push({ k: 'win' }); }
+  }
+  /* À deux : rester 3 s près d'un allié tombé le relève (40 % de vie). */
+  for (const h of st.heroes) {
+    if (!h.dead || h.gone) { h.rev = 0; continue; }
+    const helper = st.heroes.find(o => o !== h && !o.dead && djDist(o, h) < 1.6);
+    if (helper) { h.rev += DJ_DT; if (h.rev >= 3) djRaise(st, h, 0.4, helper.id); }
+    else h.rev = Math.max(0, h.rev - DJ_DT * 2);
   }
   /* Pièges à pointes : sortis 0,6 s toutes les 2,4 s ; 12 % de la vie à chaque fois. */
   for (const tr of st.traps) {
@@ -873,4 +896,89 @@ function djProgress(st) {
   const cur = st.rooms.findIndex(R => R.st === 'lock');
   return { done: fights.filter(([, i]) => st.rooms[i].st === 'clear').length, total: fights.length, boss: boss && st.rooms[bi].st === 'lock' ? boss : null,
     bossDead: !st.mobs.some(m => m.boss), fighting: cur >= 0, wave: cur >= 0 ? st.rooms[cur].wave + 1 : 0, waves: cur >= 0 ? st.rooms[cur].waves : 0 };
+}
+
+/* ===================== DONJONS À DEUX : l'hôte simule, l'invitée affiche =====================
+   Le téléphone de l'hôte fait tourner le combat et envoie l'état ~7 fois par seconde ; celui de l'invitée l'affiche
+   (en lissant), déplace lui-même son héros (pour qu'il réponde tout de suite) et envoie sa position et ses boutons. */
+const DJ_PV = 1;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent
+const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll'];
+const DJ_ST = { idle: 'i', lock: 'l', clear: 'c', open: 'o', fight: 'f' }, DJ_STR = { i: 'idle', l: 'lock', c: 'clear', o: 'open', f: 'fight' };
+const djR1 = x => Math.round(x * 10) / 10, djR2 = x => Math.round(x * 100) / 100;
+/* Instantané envoyé par l'hôte (nombres arrondis, listes courtes). evs : événements depuis le précédent (pour les effets). */
+function djSnap(st, evs, n) {
+  return {
+    n, t: djR2(st.t), sn: st.n, pv: DJ_PV, sd: st.d.seed,
+    h: st.heroes.map(h => [h.id, djR2(h.x), djR2(h.y), djR1(h.hp), djR1(h.hpMax),
+      (h.dead ? 1 : 0) | (h.mv ? 2 : 0) | (h.b.stealth > 0 ? 4 : 0) | (h.b.inv > 0 ? 8 : 0) | (h.gone ? 16 : 0),
+      djR2(h.fx), djR2(h.fy), djR1(h.cd[0]), djR1(h.cd[1]), djR1(h.cd[2]), djR1(h.cdMax[0]), djR1(h.cdMax[1]), djR1(h.cdMax[2]),
+      h.pot, djR1(h.shield), h.form === 'ours' ? 1 : h.form === 'loup' ? 2 : 0, h.tp | 0, djR1(Math.max(0, h.potT)), h.atkN, h.castN, djR1(h.rev), h.tgt | 0]),
+    m: st.mobs.filter(m => !m.hidden && m.hp > 0).map(m => [m.id, DJ_MT.indexOf(m.type), djR2(m.x), djR2(m.y), djR1(m.hp), djR1(m.hpMax),
+      (m.awake ? 1 : 0) | (m.mv ? 2 : 0) | (m.stun > 0 ? 4 : 0) | (m.frz > 0 ? 8 : 0) | (m.root > 0 ? 16 : 0) | (m.boss ? 32 : 0) | (m.sp && m.sp.enr ? 64 : 0) | (m.big ? 128 : 0),
+      djR2(m.fx), djR2(m.fy), m.atkN, m.room, m.r]),
+    a: st.allies.filter(a => a.inv || a.hp > 0).map(a => [a.id, a.kind === 'pet' ? 1 : 0, a.own, djR2(a.x), djR2(a.y), djR1(a.hp), djR1(a.hpMax), a.mv ? 1 : 0, a.atkN, djR2(a.fx || 0), djR2(a.fy || 0)]),
+    s: st.shots.map(s => [s.id, s.kind, djR2(s.x), djR2(s.y)]),
+    z: st.zones.map(z => [z.id, z.k, djR2(z.x), djR2(z.y), z.r]),
+    r: st.rooms.map(R => [DJ_ST[R.st] || 'o', R.wave, R.waves]),
+    ch: st.chests.map(c => (c.open ? '1' : '0')).join('') || '0',
+    al: st.altar && st.altar.used ? 1 : 0, bl: st.bless || 0, pr: st.pris && st.pris.freed ? 1 : 0,
+    ex: st.exit ? [djR2(st.exit.x), djR2(st.exit.y)] : 0,
+    ov: st.over || 0, res: st.over ? djResult(st) : 0, xp: Math.round(st.xp), k: st.kills,
+    ev: evs && evs.length ? evs : 0,
+  };
+}
+/* L'invitée applique un instantané à sa copie de l'état (créée au départ par djStart avec la même graine). me : id de son héros.
+   Renvoie les événements à jouer, ou null si l'instantané est ancien. */
+function djApplySnap(ms, sn, me) {
+  if (!sn || sn.sd !== ms.d.seed || (ms.snapN != null && sn.n <= ms.snapN)) return null;   // un ancien message (autre partie) est ignoré
+  ms.snapN = sn.n; ms.t = sn.t; ms.n = sn.sn;
+  const H = new Map(ms.heroes.map(h => [h.id, h]));
+  for (const a of sn.h || []) {
+    const h = H.get(a[0]); if (!h) continue;
+    const mine = h.id === me, tp = a[17] | 0;
+    if (!mine) { h.px = h.x; h.py = h.y; h.x = a[1]; h.y = a[2]; }
+    else if (tp !== (h.tp | 0) || Math.hypot(h.x - a[1], h.y - a[2]) > 4) { h.x = h.px = a[1]; h.y = h.py = a[2]; }   // téléporté par l'hôte (ou trop loin) : on se recale
+    h.tp = tp; h.hp = a[3]; h.hpMax = a[4];
+    const f = a[5]; h.dead = !!(f & 1); h.gone = !!(f & 16);
+    h.b.stealth = f & 4 ? 1 : 0; h.b.inv = f & 8 ? 1 : 0;
+    if (!mine) { h.mv = !!(f & 2); h.fx = a[6]; h.fy = a[7]; }
+    h.cd = [a[8], a[9], a[10]]; h.cdMax = [a[11] || 1, a[12] || 1, a[13] || 1]; h.pot = a[14]; h.shield = a[15];
+    h.form = a[16] === 1 ? 'ours' : a[16] === 2 ? 'loup' : null; h.potT = a[18]; h.atkN = a[19]; h.castN = a[20]; h.rev = a[21]; h.tgt = a[22];
+  }
+  const keep = (list, rows, make, upd) => { const old = new Map(list.map(e => [e.id, e])), out = []; for (const a of rows || []) { let e = old.get(a[0]); if (!e) e = make(a); else { e.px = e.x; e.py = e.y; } upd(e, a); out.push(e); } return out; };
+  ms.mobs = keep(ms.mobs, sn.m, a => ({ id: a[0], kind: 'mob', type: DJ_MT[a[1]] || 'gobelin', x: a[2], y: a[3], px: a[2], py: a[3], b: {} }), (m, a) => {
+    m.x = a[2]; m.y = a[3]; m.hp = a[4]; m.hpMax = a[5];
+    const f = a[6]; m.awake = !!(f & 1); m.mv = !!(f & 2); m.stun = f & 4 ? 1 : 0; m.frz = f & 8 ? 1 : 0; m.root = f & 16 ? 1 : 0;
+    m.boss = !!(f & 32); m.big = !!(f & 128); m.sp = m.boss ? { enr: !!(f & 64) } : null;
+    m.fx = a[7]; m.fy = a[8]; m.atkN = a[9]; m.room = a[10]; m.r = a[11] || 0.38; m.hidden = false;
+  });
+  ms.allies = keep(ms.allies, sn.a, a => ({ id: a[0], kind: a[1] ? 'pet' : 'skel', own: a[2], x: a[3], y: a[4], px: a[3], py: a[4], r: a[1] ? 0.25 : 0.32, inv: !!a[1] }), (e, a) => {
+    e.x = a[3]; e.y = a[4]; e.hp = a[5]; e.hpMax = a[6]; e.mv = !!a[7]; e.atkN = a[8]; e.fx = a[9]; e.fy = a[10];
+  });
+  ms.shots = keep(ms.shots, sn.s, a => ({ id: a[0], kind: a[1], x: a[2], y: a[3], px: a[2], py: a[3] }), (e, a) => { e.x = a[2]; e.y = a[3]; });
+  ms.zones = keep(ms.zones, sn.z, a => ({ id: a[0], k: a[1], x: a[2], y: a[3], r: a[4] }), () => {});
+  (sn.r || []).forEach((a, i) => { const R = ms.rooms[i]; if (!R) return; R.st = DJ_STR[a[0]] || 'open'; R.wave = a[1]; R.waves = a[2]; });
+  ms.door.fill(0); ms.rooms.forEach((R, i) => { if (R.st === 'lock') for (const k of ms.doors[i]) ms.door[k] = 1; });
+  const ch = String(sn.ch || ''); ms.chests.forEach((c, i) => { c.open = ch[i] === '1'; });
+  if (ms.altar) ms.altar.used = !!sn.al;
+  ms.bless = sn.bl || null;
+  if (ms.pris) ms.pris.freed = !!sn.pr;
+  ms.exit = sn.ex ? { x: sn.ex[0], y: sn.ex[1] } : null;
+  for (const tr of ms.traps) { const u = ms.t + tr.ph, cyc = Math.floor(u / 2.4); tr.on = u - cyc * 2.4 < 0.6; }
+  ms.xp = sn.xp; ms.kills = sn.k;
+  if (sn.ov && !ms.over) { ms.over = sn.ov; ms.res = sn.res || null; }
+  return sn.ev || [];
+}
+/* Sur le téléphone de l'invitée : son héros bouge tout de suite (mêmes murs, même vitesse, même pas en avant au contact). */
+function djLocalMove(st, h, mx, my, dt) {
+  h.px = h.x; h.py = h.y;
+  if (h.dead) { h.mv = false; return; }
+  const m = Math.hypot(mx, my); if (m > 1) { mx /= m; my /= m; }
+  const spd = h.speed * (h.form === 'loup' ? 1.25 : 1) * (st.bless === 'celerite' ? 1.15 : 1), reach = h.form ? 1.6 : h.range;
+  if (m > 0.2) { h.mv = djMove(st, h, mx * spd * dt, my * spd * dt); h.fx = mx / Math.max(1, m); h.fy = my / Math.max(1, m); return; }
+  h.mv = false;
+  if (reach < 2) {
+    const t = djNearest(st, h, 4.5);
+    if (t && djDist(h, t) > reach + t.r) { const dx = t.x - h.x, dy = t.y - h.y, len = Math.hypot(dx, dy); h.mv = djMove(st, h, dx / len * spd * dt, dy / len * spd * dt); h.fx = dx / len; h.fy = dy / len; }
+  }
 }

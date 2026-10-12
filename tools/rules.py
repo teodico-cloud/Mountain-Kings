@@ -24,6 +24,9 @@ def rules():
             }},
             'presence': {'$vid': {'.read': "auth != null && root.child('v2/villages/' + $vid + '/members/' + auth.uid).exists()",
                                   '$uid': {'.write': 'auth != null && auth.uid === $uid'}}},
+            # donjons à deux en direct : invitation, état du combat (hôte → invitée), commandes (invitée → hôte)
+            'live': {'$vid': {'.read': "auth != null && root.child('v2/villages/' + $vid + '/members/' + auth.uid).exists()",
+                              '.write': "auth != null && root.child('v2/villages/' + $vid + '/members/' + auth.uid).exists()"}},
         },
     }}
 

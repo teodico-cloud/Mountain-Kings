@@ -28,42 +28,147 @@ function sheetDonjon() {
   if (!hh) return '<p class="note">Crée d’abord ton héros.</p><button class="btn primary" data-act="heroForm">Créer mon héros</button>';
   const top = Math.max(1, hh.dj || 1), pick = Math.min(top, Math.max(1, +sheetArg || top));
   const lvls = []; for (let l = Math.max(1, top - 5); l <= top; l++) lvls.push(l);
+  const pk = partnerId(v), pname = pk ? v.members[pk].name : '', ph = pk ? activeHero(v, pk) : null;
   let h = `<div class="item feature"><div class="head"><b class="row">${ico('crown', 'c-tro')}${esc(hh.name)}</b><small>${esc(heroLine(hh))}</small></div>
-    <p>${heroesOf(v, uid).length > 1 ? 'C’est ton héros actif. Pour en envoyer un autre, choisis-le dans le menu Héros.' : 'C’est lui qui part. Les donjons à deux arrivent bientôt.'}${hh.sp ? ` <b>${hh.sp} point${hh.sp > 1 ? 's' : ''} de compétence à dépenser</b> (menu Héros).` : ''}</p></div>`;
+    <p>${heroesOf(v, uid).length > 1 ? 'C’est ton héros actif. Pour en envoyer un autre, choisis-le dans le menu Héros.' : 'C’est lui qui part à l’aventure.'}${hh.sp ? ` <b>${hh.sp} point${hh.sp > 1 ? 's' : ''} de compétence à dépenser</b> (menu Héros).` : ''}</p></div>`;
   h += `<div class="sec"><h4>La mine des gobelins</h4><div class="item">
     <p>Des galeries pleines de gobelins, d’archers, de chamans et de trolls, avec leur chef au fond. Chaque victoire ouvre le niveau suivant.</p>
     <div class="row djlv">${lvls.map(l => `<button class="btn small${l === pick ? ' primary' : ''}" data-act="sheet" data-s="donjon" data-k="${l}" aria-pressed="${l === pick}">Niveau ${l}</button>`).join('')}</div>
     <p class="note">Niveau ${pick} : conseillé pour un héros de niveau ${pick}${hh.lvl < pick ? ' (le tien est plus faible : prudence)' : ''}. Récompenses : de l’expérience pour ${esc(hh.name)}, de la pierre et du bois pour le village.</p>
-    <button class="btn primary" data-act="djGo" data-k="${pick}">${djIco('sword')}Entrer dans la mine (niveau ${pick})</button></div></div>`;
+    <div class="row"><button class="btn primary grow" data-act="djGo" data-k="${pick}">${djIco('sword')}Seul (niveau ${pick})</button>
+    ${pk && ph ? `<button class="btn grow${isOnline(pk) ? ' primary' : ' off'}" data-act="djInvite" data-k="${pick}"${isOnline(pk) ? '' : ' disabled'}>${djIco('shield')}À deux avec ${esc(pname)}</button>` : ''}</div>
+    ${pk && ph ? `<p class="note">${isOnline(pk) ? esc(pname) + ' est connecté·e : invite-la, vous serez tous les deux dans la même mine (' + esc(ph.name) + ' avec ' + esc(hh.name) + '). Les monstres sont plus solides à deux.' : 'Pour partir à deux, ' + esc(pname) + ' doit avoir le jeu ouvert en même temps que toi.'}</p>` : ''}</div></div>`;
   h += `<div class="sec"><h4>Comment ça marche</h4><ul class="help">
     <li>Pose le pouce sur la gauche de l’écran pour te déplacer. Ton héros attaque tout seul le monstre le plus proche (les chamans d’abord, sinon ils soignent les autres).</li>
     <li>À droite : tes compétences et ta potion. Une compétence se recharge après usage.</li>
     <li>En entrant dans une salle, les grilles se ferment jusqu’à la fin des vagues de monstres. Entre deux salles, ton héros reprend son souffle.</li>
     <li>Le chef troll prévient avant de frapper : sors du cercle rouge et écarte-toi de sa charge (s’il percute un mur, il est sonné).</li>
+    <li>À deux : si l’un tombe, l’autre le relève en restant 3 secondes à côté de lui (et tout le monde se relève quand la salle est nettoyée).</li>
     <li>En chemin : des coffres, l’autel des anciens rois, et parfois un prisonnier à délivrer, qui rejoindra le village.</li>
     <li>Défaite ou fuite : on garde la moitié de l’expérience et du butin.</li></ul></div>`;
   return h;
+}
+
+/* ---------- invitation à deux : v2/live/{village}/room ---------- */
+let djLive = null, djLobby = null, liveUnsub = null;
+const liveRef = k => db.doc(ROOT + 'live/' + vid + (k ? '/' + k : ''));
+function djLiveWatch(id) {
+  if (liveUnsub) { liveUnsub(); liveUnsub = null; }
+  djLive = null;
+  liveUnsub = db.doc(ROOT + 'live/' + id + '/room').onSnapshot(s => onLiveRoom(s.exists ? s.data() : null), () => {});
+}
+function onLiveRoom(r) {
+  djLive = r;
+  const fresh = r && now() - (r.t || 0) < 120000;
+  /* On m'invite */
+  if (r && r.st === 'wait' && r.host !== uid && fresh && !dj && !djLobby) {
+    if (!(modal && modal.kind === 'djinv')) { modal = { kind: 'djinv' }; SND.sfx('invite'); }
+  } else if (modal && modal.kind === 'djinv') { modal = null; if (!dj && !(r && r.st === 'go' && r.guest === uid)) toast('L’invitation au donjon n’est plus valable.'); }
+  /* J'ai invité */
+  if (djLobby && !dj) {
+    if (!r) { djLobby = null; if (modal && modal.kind === 'djwait') modal = null; }
+    else if (r.host === uid && r.st === 'go' && r.guest) { djLobby = null; modal = null; djBeginDuo('host', r); }
+    else if (r.host === uid && r.st === 'no') { const pk = partnerId(me); djLobby = null; modal = null; liveRef().delete().catch(() => {}); toast(((pk && me.members[pk].name) || 'Ta partenaire') + ' ne peut pas venir pour l’instant.'); }
+  }
+  /* En pleine partie à deux, en invitée : l'hôte a arrêté */
+  if (dj && dj.duo && dj.duo.role === 'guest' && !r && !dj.st.over) djLost();
+  renderAll();
+}
+async function djInvite(lvl) {
+  if (!me || dj || djLobby) return;
+  const hh = activeHero(me, uid), pk = partnerId(me); if (!hh || !pk) return;
+  if (!isOnline(pk)) { toast(me.members[pk].name + ' n’est pas connecté·e en ce moment.'); return; }
+  if (!activeHero(me, pk)) { toast(me.members[pk].name + ' n’a pas encore de héros.'); return; }
+  lvl = Math.max(1, Math.min(hh.dj || 1, lvl | 0 || 1));
+  const seed = hash((Math.floor(now()) ^ hashStr(hh.id + 'duo')) >>> 0) || 1;
+  djLobby = { lvl, seed };
+  try {
+    await Promise.all([liveRef('h2g').delete(), liveRef('g2h').delete()]).catch(() => {});   // rien d'une ancienne partie
+    const r = await liveRef('room').transact(cur => {
+      if (cur && cur.st === 'wait' && cur.host !== uid && now() - (cur.t || 0) < 120000) return undefined;   // elle m'invite déjà
+      return { host: uid, hname: myName(), hhid: hh.id, lvl, seed, t: now(), st: 'wait', pv: DJ_PV };
+    });
+    if (!r.committed) { djLobby = null; onLiveRoom(djLive); return; }
+    liveRef().onDisconnectRemove();
+    closeSheet(true); modal = { kind: 'djwait' }; renderAll();
+  } catch (e) { djLobby = null; toast(e && e.code === 'not_granted' ? 'Le serveur refuse : les règles de la base ne sont pas encore à jour.' : 'L’invitation n’est pas partie. Réessaie.'); }
+}
+function djCancelInvite() { djLobby = null; modal = null; liveRef().delete().catch(() => {}); renderAll(); }
+async function djAnswer(yes) {
+  const hh = activeHero(me, uid);
+  if (yes && !hh) { toast('Crée d’abord ton héros.'); return; }
+  let bad = false;
+  try {
+    const r = await liveRef('room').transact(cur => {
+      if (!cur || cur.st !== 'wait' || cur.host === uid) return undefined;
+      if (cur.pv !== DJ_PV) { bad = true; return Object.assign({}, cur, { st: 'no' }); }
+      return yes ? Object.assign({}, cur, { st: 'go', guest: uid, ghid: hh.id, gt: now() }) : Object.assign({}, cur, { st: 'no' });
+    });
+    modal = null;
+    if (bad) toast('Vos deux jeux n’ont pas la même version : fermez et rouvrez l’appli tous les deux.');
+    else if (yes && r.committed && r.data && r.data.guest === uid) djBeginDuo('guest', r.data);
+    else if (yes) toast('L’invitation n’est plus valable.');
+    renderAll();
+  } catch (e) { modal = null; toast('Ça n’a pas marché. Réessaie.'); renderAll(); }
+}
+function djInvHTML() {
+  const r = djLive; if (!r) return '';
+  const hh = activeHero(me, uid), host = me.heroes[r.hhid];
+  return `<p class="eyebrow">Donjon à deux</p><h2>${esc(r.hname || 'Ton partenaire')} t’appelle !</h2>
+    <p>${esc(host ? host.name : 'Son héros')} part dans la mine des gobelins (niveau ${r.lvl}) et voudrait que ${esc(hh ? hh.name : 'ton héros')} l’accompagne.</p>
+    <div class="row"><button class="btn grow" data-act="djNo">Pas maintenant</button><button class="btn primary grow" data-act="djYes">${djIco('sword')}J’arrive !</button></div>`;
+}
+function djWaitHTML() {
+  const pk = partnerId(me);
+  return `<p class="eyebrow">Donjon à deux</p><h2>En attente…</h2><p>${esc(pk ? me.members[pk].name : 'Ta partenaire')} reçoit ton invitation sur son téléphone.</p>
+    <button class="btn" data-act="djCancel">Annuler</button>`;
 }
 
 /* ---------- entrée et sortie ---------- */
 function djBegin(lvl) {
   if (!me || dj) return;
   const hh = activeHero(me, uid); if (!hh) { toast('Crée d’abord ton héros.'); return; }
-  if (!gl) { toast('Les donjons ont besoin de la 3D, indisponible sur cet appareil.'); return; }
   lvl = Math.max(1, Math.min(hh.dj || 1, lvl | 0 || 1));
   const seed = hash((Math.floor(now()) ^ hashStr(hh.id)) >>> 0) || 1;
-  const d = genDungeon(seed, lvl, 'mine'), st = djStart(d, [hh], { seed });
-  dj = { st, d, lvl, seed, hid: hh.id, acc: 0, inp: { mx: 0, my: 0, sk: -1, pot: false }, joy: null, keys: {}, els: {}, ended: false, res: null, nocastT: 0 };
+  const d = genDungeon(seed, lvl, 'mine');
+  djRun(djStart(d, [hh], { seed }), lvl, seed, hh.id, null);
+  toast('La mine des gobelins, niveau ' + lvl + '. Pose le pouce à gauche pour bouger : ' + hh.name + ' attaque tout seul.');
+}
+/* À deux : chacun fabrique la même mine (même graine) ; l'hôte fait le combat, l'invitée affiche et envoie ses commandes. */
+function djBeginDuo(role, r) {
+  if (!me || dj) return;
+  const hH = me.heroes[r.hhid], gH = me.heroes[r.ghid];
+  if (!hH || !gH) { toast('Héros introuvable : réessayez.'); if (role === 'host') liveRef().delete().catch(() => {}); return; }
+  const d = genDungeon(r.seed, r.lvl, 'mine'), mine = role === 'host' ? r.hhid : r.ghid;
+  const st = djStart(d, [hH, gH], { seed: r.seed, remote: role === 'host' ? r.ghid : null });
+  const duo = { role, mateHid: role === 'host' ? r.ghid : r.hhid, mateName: role === 'host' ? (me.members[r.guest] || {}).name : r.hname, unsub: [],
+    snapN: 0, evBuf: [], inLast: null, inAt: performance.now(), done: 0, q: [], qSeq: 0, sendAt: 0, lastSnapAt: performance.now(), snapDt: 150, waitShown: false, gone: false, since: now() - 5000 };
+  if (role === 'host') {
+    duo.unsub.push(liveRef('g2h').onSnapshot(s => {
+      const m = s.exists ? s.data() : null; if (!m || !dj || !dj.duo || (m.t || 0) < dj.duo.since) return;   // pas un message d'une ancienne partie
+      dj.duo.inLast = m; dj.duo.inAt = performance.now();
+      if (m.bye && !dj.duo.gone) djMateGone(' a quitté la mine.');
+    }, () => {}));
+  } else {
+    duo.unsub.push(liveRef('h2g').onSnapshot(s => { const sn = s.exists ? s.data() : null; if (sn && dj && dj.duo) djGuestSnap(sn); }, () => {}));
+    liveRef('g2h').onDisconnectRemove();
+  }
+  djRun(st, r.lvl, r.seed, mine, duo);
+  toast('À deux dans la mine (niveau ' + r.lvl + ') avec ' + (duo.mateName || 'ton partenaire') + ' ! Restez groupés.');
+}
+function djRun(st, lvl, seed, hid, duo) {
+  if (!gl) { toast('Les donjons ont besoin de la 3D, indisponible sur cet appareil.'); return; }
+  dj = { st, d: st.d, lvl, seed, hid, duo, acc: 0, inp: { mx: 0, my: 0, sk: -1, pot: false }, joy: null, keys: {}, els: {}, ended: false, res: null, nocastT: 0 };
   closeSheet(true); sel = null; selP = null; place = null; modal = null;
   mode = 'donjon';
-  V3.dj.enter(st, hh.id);
+  V3.dj.enter(st, hid);
   djHudBuild();
   SND.music('battle', 1); SND.sfx('hero');
   renderAll();
-  toast('La mine des gobelins, niveau ' + lvl + '. Pose le pouce à gauche pour bouger : ' + hh.name + ' attaque tout seul.');
 }
 function djLeave() {
   if (!dj) return;
+  if (dj.duo) { for (const u of dj.duo.unsub) u(); if (dj.duo.role === 'host') liveRef().delete().catch(() => {}); }
   V3.dj.exit();
   const el = $('#djHud'); if (el) el.hidden = true;
   dj = null; modal = null; mode = 'home';
@@ -73,29 +178,51 @@ function djLeave() {
 function djBack() {
   if (!dj) return;
   const r = dj.res || djResult(dj.st), hid = dj.hid, name = (me && me.heroes[hid] || {}).name || 'Ton héros';
-  const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: r.loot, pris: r.pris }, { quiet: true });
+  const guest = dj.duo && dj.duo.role === 'guest';     // le butin et le prisonnier ne comptent qu'une fois : c'est l'hôte qui les rapporte
+  const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris }, { quiet: true });
   djLeave();
   if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
   else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
   else if (!res) toast('Le retour n’a pas pu être enregistré.');
 }
 function djEnded() {
-  dj.ended = true; dj.res = djResult(dj.st);
+  dj.ended = true;
+  if (!dj.res) dj.res = (dj.duo && dj.duo.role === 'guest' && dj.st.res) || djResult(dj.st);
   const r = dj.res;
   setTimeout(() => { if (!dj) return; SND.sfx(r.win ? 'victory' : 'defeat'); modal = { kind: 'djres' }; renderAll(); }, r.win ? 900 : 1700);
 }
+/* L'invitée part seule (fuite), ou perd l'hôte : la moitié de ce qui était gagné jusque-là. */
+function djGuestQuit(lost) {
+  const st = dj.st;
+  dj.res = { win: false, fled: true, lost: !!lost, lvl: st.lvl, xp: Math.round((st.xp || 0) * 0.5), loot: {}, pris: false, kills: st.kills || 0, secs: Math.round(st.t || 0) };
+  st.over = 'lose';
+  if (!lost) liveRef('g2h').set({ bye: 1, t: now() }).catch(() => {});
+  for (const u of dj.duo.unsub) u(); dj.duo.unsub = [];
+  djEnded();
+}
+function djLost() { if (dj && !dj.ended) { toast('La connexion avec ' + (dj.duo.mateName || 'ton partenaire') + ' est perdue.'); djGuestQuit(true); } }
+function djMateGone(why) {
+  const st = dj.st, m = st.heroes.find(h => h.id === dj.duo.mateHid);
+  dj.duo.gone = true;
+  if (m) { m.gone = true; m.dead = true; m.hp = 0; }
+  toast((dj.duo.mateName || 'Ta partenaire') + why + ' Tu continues seul·e.');
+}
 function djResHTML() {
-  const r = dj.res || djResult(dj.st), hh = me && me.heroes[dj.hid];
+  const r = dj.res || djResult(dj.st), hh = me && me.heroes[dj.hid], duo = dj.duo, mate = duo ? duo.mateName || 'ton partenaire' : '';
   const title = r.win ? 'Victoire !' : r.fled ? 'Repli' : 'Défaite…';
-  const lead = r.win ? 'Le chef troll est vaincu et la mine est nettoyée.' : r.fled ? 'Tu as quitté la mine avant la fin : la moitié de l’expérience et du butin.' : 'Ton héros est tombé : il rentre au village avec la moitié de l’expérience et du butin.';
+  const lead = r.win ? (duo ? 'Ensemble, vous avez vaincu le chef troll !' : 'Le chef troll est vaincu et la mine est nettoyée.')
+    : r.lost ? 'La connexion est perdue : tu rentres avec la moitié de l’expérience gagnée.'
+    : r.fled ? (duo && duo.role === 'guest' && !dj.res.lost && dj.st.res === r ? mate + ' a quitté la mine : vous rentrez avec la moitié de l’expérience.' : 'Tu as quitté la mine avant la fin : la moitié de l’expérience et du butin.')
+    : (duo ? 'Vous êtes tombés tous les deux' : 'Ton héros est tombé') + ' : retour au village avec la moitié de l’expérience et du butin.';
   const xpH = hh && hh.race === 'humain' ? Math.round(r.xp * 1.1) : r.xp;
   let up = 0, lv = hh ? hh.lvl : 1, xp = hh ? (hh.xp || 0) + xpH : 0;
   while (hh && lv < HERO_MAX_LVL && xp >= heroXpNeed(lv)) { xp -= heroXpNeed(lv); lv++; up++; }
-  const mm = Math.floor(r.secs / 60), ss = String(r.secs % 60).padStart(2, '0');
-  return `<p class="eyebrow">La mine des gobelins · niveau ${r.lvl}</p><h2>${title}</h2><p>${lead}</p>
+  const mm = Math.floor(r.secs / 60), ss = String(r.secs % 60).padStart(2, '0'), loot = r.loot || {};
+  return `<p class="eyebrow">La mine des gobelins · niveau ${r.lvl}${duo ? ' · à deux' : ''}</p><h2>${title}</h2><p>${esc(lead)}</p>
     <div class="item"><div class="row split"><b>Expérience</b><span class="chip plus">+${fmtN(xpH)}</span></div>
       ${up ? `<p><b>${esc(hh.name)} passe au niveau ${lv} !</b> ${up > 1 ? up + ' niveaux d’un coup.' : ''} De nouveaux points de compétence l’attendent.</p>` : hh ? `<div class="bar"><i style="width:${Math.min(100, xp / heroXpNeed(lv) * 100).toFixed(0)}%"></i></div>` : ''}
-      <div class="row split"><b>Butin pour le village</b><span class="chips2">${Object.keys(r.loot).length ? rewChips(r.loot) : '<span class="note">rien</span>'}</span></div>
+      <div class="row split"><b>Butin pour le village</b><span class="chips2">${Object.keys(loot).length ? rewChips(loot) : '<span class="note">rien</span>'}</span></div>
+      ${duo && duo.role === 'guest' && Object.keys(loot).length ? '<p class="note">' + esc(mate) + ' le rapporte au village pour vous deux.</p>' : ''}
       ${r.pris ? '<p><b>Un prisonnier délivré</b> : il vous attendra au village, prêt à s’installer.</p>' : ''}
       <p class="note">${r.kills} monstres vaincus · ${mm} min ${ss}${r.win ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
     <button class="btn primary" data-act="djBack">Retour au village</button>`;
@@ -111,6 +238,7 @@ function djHudBuild() {
         <div class="djmet"><b>${esc(h.name)} <small>niv. ${h.lvl}</small></b><div class="djhp"><i id="djHp"></i><em id="djHpT"></em></div></div></div>
       <div class="glass djinfo" id="djInfo"></div>
       <button class="glass chipb djflee" data-act="djFlee">Fuir</button></div>
+    ${dj.duo ? '<div class="glass djmate"><b id="djMateN"></b><div class="djhp mate"><i id="djMateHp"></i></div></div>' : ''}
     <div class="glass djboss" id="djBoss" hidden><b>Chef troll</b><div class="djhp boss"><i id="djBossHp"></i></div></div>
     <div class="djjoy" id="djJoy"><p class="djhint" id="djHint">Pose le pouce ici pour te déplacer</p></div>
     <div class="djbase" id="djBase" hidden><div class="djknob" id="djKnob"></div></div>
@@ -172,7 +300,14 @@ function djHudUpdate() {
   const E = id => dj.els[id] || (dj.els[id] = document.getElementById(id));
   const set = (id, kind, val) => { const el = E(id); if (!el || el['_' + kind] === val) return; el['_' + kind] = val; if (kind === 'w') el.style.width = val; else if (kind === 'cd') el.style.setProperty('--cd', val); else el.textContent = val; };
   set('djHp', 'w', Math.max(0, h.hp / h.hpMax * 100).toFixed(1) + '%');
-  set('djHpT', 't', h.dead ? 'à terre' : Math.ceil(h.hp) + ' / ' + Math.round(h.hpMax) + (h.shield > 0 ? ' (+' + Math.round(h.shield) + ')' : ''));
+  set('djHpT', 't', h.dead ? (dj.duo && !st.over ? (h.rev > 0 ? 'on te relève… ' + Math.round(h.rev / 3 * 100) + ' %' : 'à terre : attends ton allié') : 'à terre') : Math.ceil(h.hp) + ' / ' + Math.round(h.hpMax) + (h.shield > 0 ? ' (+' + Math.round(h.shield) + ')' : ''));
+  if (dj.duo) {
+    const m = st.heroes.find(x => x.id === dj.duo.mateHid);
+    if (m) {
+      set('djMateN', 't', (dj.duo.mateName || m.name) + ' · ' + m.name + (m.gone ? ' · partie' : m.dead ? (m.rev > 0 ? ' · relève ' + Math.round(m.rev / 3 * 100) + ' %' : ' · à terre : va la relever !') : ''));
+      set('djMateHp', 'w', Math.max(0, m.hp / m.hpMax * 100).toFixed(1) + '%');
+    }
+  }
   for (let i = 0; i < 3; i++) set('djCd' + i, 'cd', h.rank[i] && h.cd[i] > 0 ? (h.cd[i] / h.cdMax[i] * 360).toFixed(0) + 'deg' : '0deg');
   set('djPot', 't', String(h.pot));
   set('djCdP', 'cd', h.pot <= 0 ? '360deg' : h.potT > 0 ? (h.potT * 360).toFixed(0) + 'deg' : '0deg');
@@ -183,6 +318,7 @@ function djHudUpdate() {
 }
 const DJ_SFX_ATK = { rodeur: 'shoot', mage: 'bolt', pretre: 'bolt', druide: 'shoot', necro: 'bolt' };
 function djEvents(st) {
+  if (dj.duo && dj.duo.role === 'host') { for (const e of st.ev) dj.duo.evBuf.push(e); if (dj.duo.evBuf.length > 120) dj.duo.evBuf.splice(0, dj.duo.evBuf.length - 120); }
   for (const e of st.ev) {
     if (gl) V3.dj.fx(e, st);
     const mine = e.id === dj.hid;
@@ -204,26 +340,70 @@ function djEvents(st) {
       case 'trap': if (mine) SND.sfx('wallhit'); break;
       case 'revive': toast('Increvable : ton héros se relève !'); SND.sfx('power'); break;
       case 'enrage': SND.sfx('alarm'); break;
+      case 'raise': { const h = st.heroes.find(x => x.id === e.id); SND.sfx('power'); if (h) toast(h.name + (e.by ? ' est relevé·e par son allié !' : ' se relève : la salle est nettoyée.')); break; }
+      case 'down': { const h = st.heroes.find(x => x.id === e.id); if (h && dj.duo && !st.heroes.every(x => x.dead)) toast(h.id === dj.hid ? 'Tu es à terre : ton allié peut te relever en restant 3 s à côté de toi.' : h.name + ' est à terre : reste 3 s à côté pour la relever !'); break; }
     }
   }
   st.ev.length = 0;
 }
-/* À chaque image : la simulation avance par pas de 1/20 s, puis l'affichage suit. */
+/* À chaque image : la simulation avance par pas de 1/20 s, puis l'affichage suit.
+   À deux, l'hôte envoie l'état toutes les 3 pas (≈ 7 fois par seconde) ; l'invitée a sa propre boucle. */
 function djFrame(dt, tNow) {
   if (!dj) return;
-  const st = dj.st;
+  const st = dj.st, duo = dj.duo;
+  if (duo && duo.role === 'guest') return djGuestFrame(dt, tNow);
   if (!st.over) {
     const kv = djKeyVec(), mx = kv ? kv[0] : dj.inp.mx, my = kv ? kv[1] : dj.inp.my;
     dj.acc = Math.min(dj.acc + dt, 0.25);
     let n = 0;
     while (dj.acc >= DJ_DT && n < 5 && !st.over) {
-      djStep(st, { [dj.hid]: { mx, my, sk: dj.inp.sk, pot: dj.inp.pot } });
+      const inputs = { [dj.hid]: { mx, my, sk: dj.inp.sk, pot: dj.inp.pot } };
+      if (duo && !duo.gone) inputs[duo.mateHid] = djRemoteInput(duo);
+      djStep(st, inputs);
       dj.inp.sk = -1; dj.inp.pot = false; dj.acc -= DJ_DT; n++;
       djEvents(st);
+      if (duo && (st.n % 3 === 0 || st.over)) djSendSnap();
     }
-  }
+    if (duo && !duo.gone && performance.now() - duo.inAt > 20000) djMateGone(' ne répond plus.');
+  } else if (duo && !duo.sentFinal) djSendSnap();
   V3.dj.sync(st, st.over ? 1 : dj.acc / DJ_DT, dt, tNow);
   djHudUpdate();
   if (st.over && !dj.ended) djEnded();
+}
+/* Commandes de l'invitée (dernier message reçu) : sa position, et ses boutons, un par pas. */
+function djRemoteInput(duo) {
+  const m = duo.inLast, gi = { pos: m && m.p, tp: m ? m.tp | 0 : 0 };
+  if (m && m.q) for (const it of m.q) { const n = it && it[0], c = it && String(it[1]); if (n > duo.done) { duo.done = n; if (c === 'p') gi.pot = true; else gi.sk = +c.slice(1); break; } }
+  return gi;
+}
+function djSendSnap() {
+  const duo = dj.duo, st = dj.st;
+  if (st.over) duo.sentFinal = true;
+  const sn = djSnap(st, duo.evBuf.slice(-80), ++duo.snapN); duo.evBuf = [];
+  liveRef('h2g').set(sn).catch(() => {});
+}
+function djGuestFrame(dt, tNow) {
+  const st = dj.st, duo = dj.duo, me2 = st.heroes.find(h => h.id === dj.hid), t = performance.now();
+  if (!st.over && me2) {
+    const kv = djKeyVec(), mx = kv ? kv[0] : dj.inp.mx, my = kv ? kv[1] : dj.inp.my;
+    djLocalMove(st, me2, mx, my, Math.min(dt, 0.1));
+    me2.px = me2.x; me2.py = me2.y;
+    if (dj.inp.sk >= 0) { duo.q.push([++duo.qSeq, 'k' + dj.inp.sk]); dj.inp.sk = -1; duo.sendAt = 0; }
+    if (dj.inp.pot) { duo.q.push([++duo.qSeq, 'p']); dj.inp.pot = false; duo.sendAt = 0; }
+    if (duo.q.length > 6) duo.q.splice(0, duo.q.length - 6);
+    if (t - duo.sendAt > 100) { duo.sendAt = t; liveRef('g2h').set({ p: [djR2(me2.x), djR2(me2.y), djR2(me2.fx), djR2(me2.fy), me2.mv ? 1 : 0], tp: me2.tp | 0, q: duo.q, t: now() }).catch(() => {}); }
+    const quiet = t - duo.lastSnapAt;
+    if (quiet > 4000 && !duo.waitShown) { duo.waitShown = true; toast('En attente de ' + (duo.mateName || 'ton partenaire') + '…'); }
+    if (quiet > 25000) djLost();
+  }
+  V3.dj.sync(st, Math.min(1, (t - duo.lastSnapAt) / duo.snapDt), dt, tNow);
+  djHudUpdate();
+  if (st.over && !dj.ended) djEnded();
+}
+function djGuestSnap(sn) {
+  const duo = dj.duo, t = performance.now(), evs = djApplySnap(dj.st, sn, dj.hid);
+  if (evs === null) return;
+  duo.snapDt = Math.max(80, Math.min(400, duo.snapDt * 0.8 + (t - duo.lastSnapAt) * 0.2)); duo.lastSnapAt = t; duo.waitShown = false;
+  dj.st.ev = evs; djEvents(dj.st);
 }
 V3.onFrame(djFrame);

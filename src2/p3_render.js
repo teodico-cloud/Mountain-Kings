@@ -1774,7 +1774,10 @@ const V3 = (() => {
   }
   /* Position (entre deux pas de simulation), orientation, animation. */
   function djPose(r, e, alpha, tNow) {
-    const x = e.px + (e.x - e.px) * alpha, y = e.py + (e.y - e.py) * alpha, dx = x - r.lx, dy = y - r.ly;
+    let x = e.px + (e.x - e.px) * alpha, y = e.py + (e.y - e.py) * alpha;
+    /* héros de l'invitée, vu par l'hôte : sa position arrive par à-coups (10 fois par seconde), on la lisse */
+    if (e.remote) { const k = Math.min(1, (DJ.dt || 0.016) * 12); r.sx = r.sx == null ? e.x : r.sx + (e.x - r.sx) * k; r.sy = r.sy == null ? e.y : r.sy + (e.y - r.sy) * k; x = r.sx; y = r.sy; }
+    const dx = x - r.lx, dy = y - r.ly;
     r.g.position.set(x - half, 0, y - half);
     if (dx * dx + dy * dy > 1e-6 && e.mv) r.g.rotation.y = Math.atan2(dx, dy);
     else if (e.fx || e.fy) { const want = Math.atan2(e.fx, e.fy); let d = want - r.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); r.g.rotation.y += d * 0.35; }
@@ -1948,13 +1951,14 @@ const V3 = (() => {
       case 'clear': { const c = djCenter(st.d.rooms[e.room]); wave(c[0] + 0.5, c[1] + 0.5, 0xffd27a, 4, 0.9); break; }
       case 'trap': spark(e.x, 0.4, e.y, 0xff5a3c); break;
       case 'revive': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xb8ffcf, 2, 0.8); djNum(p[0], p[1], 'se relève !', '#b8ffcf', true); } break; }
+      case 'raise': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xffe08a, 1.8, 0.8); for (let i = 0; i < 8; i++) spark(p[0] + (Math.random() - 0.5) * 0.8, 0.4 + i * 0.25, p[1] + (Math.random() - 0.5) * 0.8, 0xffe08a); djNum(p[0], p[1], 'relevé !', '#ffe08a', true); } break; }
       case 'cast': { const r = DJ.ents.get(e.id); if (r) { r.castT = performance.now() / 1000; const an = DJ_CAST_ANIM[e.s] || 'atk'; if (r.g.userData.A && r.g.userData.A[an]) djPlay(r, an, an === 'spin' ? 1.4 : 1.2, true); } break; }
     }
   }
   /* Mise à jour de l'affichage d'après l'état du combat (appelée à chaque image ; alpha = entre deux pas). */
   function djSync(st, alpha, dt, tNow) {
     if (!DJ) return;
-    DJ.frame++; DJ.t += dt;
+    DJ.frame++; DJ.t += dt; DJ.dt = dt;
     const fr = DJ.frame, Q = camera.quaternion;
     const upd = (map, e, make) => { let r = map.get(e.id); if (!r) { r = make(e); map.set(e.id, r); djGroup.add(r.g); } r.seen = fr; return r; };
     for (const h of st.heroes) {
@@ -1964,6 +1968,8 @@ const V3 = (() => {
       const sc = h.form === 'ours' ? 1.3 : h.form === 'loup' ? 0.85 : 1; r.scale += (sc - r.scale) * Math.min(1, dt * 8); r.g.userData.body.scale.setScalar(r.scale);
       const ghost = h.b.stealth > 0, inv = h.b.inv > 0 && !h.dead;
       for (const m of r.mats) { const op = ghost ? 0.35 : inv ? 0.6 + 0.4 * Math.sin(tNow * 30) : 1; if (m.opacity !== op) { m.transparent = op < 1; m.opacity = op; m.needsUpdate = true; } }
+      if (h.dead && !h.gone && st.heroes.length > 1 && !r.revRing) { const rg = new THREE.RingGeometry(0.62, 0.78, 32, 1, 0, Math.PI * 2); rg.rotateX(-Math.PI / 2); r.revRing = new THREE.Mesh(rg, basic(0xffe08a, { transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide })); r.revRing.position.y = 0.06; r.revRing.renderOrder = 4; r.g.add(r.revRing); }
+      if (r.revRing) { r.revRing.visible = h.dead && !h.gone; if (r.revRing.visible) { const k = Math.max(0.05, Math.min(1, (h.rev || 0) / 3)); r.revRing.scale.setScalar(0.6 + 0.6 * k); r.revRing.material.opacity = 0.35 + 0.5 * k + 0.1 * Math.sin(tNow * 6); } }
       if (h.shield > 0 && !r.bubble) { r.bubble = new THREE.Mesh(geo('sph'), basic(0x8ec8ff, { transparent: true, opacity: 0.22, depthWrite: false })); r.bubble.scale.set(1.3, 1.9, 1.3); r.bubble.position.y = -0.1; r.g.add(r.bubble); }
       if (r.bubble) r.bubble.visible = h.shield > 0 && !h.dead;
     }
