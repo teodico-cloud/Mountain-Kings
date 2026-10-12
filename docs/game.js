@@ -8600,6 +8600,7 @@ function renderModal() {
       ${M.err ? `<p class="err">${esc(M.err)}</p>` : ''}
       <p class="note" style="font-size:12.5px">La fenêtre Google ne s’ouvre pas ? Ouvre le lien du jeu directement dans Chrome ou Safari.</p>`;
   } else if (M && M.kind === 'dberr') h = `<h2>La vallée ne répond pas</h2><p>Impossible de joindre le serveur du jeu. Vérifie ta connexion internet, puis réessaie.</p><button class="btn primary" data-act="reload">Réessayer</button>`;
+  else if (M && M.kind === 'rules') h = `<h2>La base refuse l’accès</h2><p>Le serveur répond, mais il refuse d’ouvrir les données du jeu : les <b>règles de la base de données</b> (Firebase, Realtime Database, onglet Règles) ne sont pas encore celles du nouveau jeu. Une fois les nouvelles règles publiées, touche « Réessayer ».</p><button class="btn primary" data-act="reload">Réessayer</button>`;
   else if (M && M.kind === 'denied') h = `<h2>Accès refusé</h2><p>Le serveur a refusé l’accès au village. Les règles de la base de données ne sont peut-être pas encore à jour, ou ce village a déjà ses deux habitants.</p><button class="btn primary" data-act="reload">Réessayer</button>`;
   else if (M && M.kind === 'info') h = `<h2>${esc(M.title)}</h2><p>${esc(M.text)}</p><button class="btn primary" data-act="closeModal">Compris</button>`;
   else if (M && M.kind === 'newhero' && me) h = heroHTML(true);
@@ -8647,7 +8648,7 @@ function candCheck() {
   modal = { kind: 'cand', id: c.id }; SND.sfx('invite');
 }
 function renderAll() {
-  els.loading.hidden = mode !== 'loading' || !!(modal && (modal.kind === 'login' || modal.kind === 'dberr'));
+  els.loading.hidden = mode !== 'loading' || !!(modal && (modal.kind === 'login' || modal.kind === 'dberr' || modal.kind === 'rules'));
   renderTop(); renderBottom(); renderSheet(); renderModal();
 }
 
@@ -8825,7 +8826,7 @@ async function start(user) {
       toast('Ce lien d’invitation ne marche pas : demande-en un nouveau.');
     }
     setMode('gate');
-  } catch (e) { clearTimeout(guard); modal = { kind: 'dberr' }; renderAll(); }
+  } catch (e) { clearTimeout(guard); console.error('démarrage', e); modal = { kind: e && e.code === 'not_granted' ? 'rules' : 'dberr' }; renderAll(); }
 }
 function watchVillage(id) {
   vid = id; vref = db.doc(ROOT + 'villages/' + id);
