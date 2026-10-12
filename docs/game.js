@@ -8858,6 +8858,7 @@ async function joinVillage(pname) {
   if (busy || !joinVid) return;
   busy = true; renderAll();
   try {
+    await db.doc(ROOT + 'seats/' + joinVid).set(uid);          // d'abord la place libre (une seule par village), puis l'inscription
     await db.doc(ROOT + 'villages/' + joinVid + '/members/' + uid).set({ name: pname, t: now() });
     await db.doc(ROOT + 'users/' + uid).set({ vid: joinVid });
     LS.set('mk2.log.' + joinVid, now());
