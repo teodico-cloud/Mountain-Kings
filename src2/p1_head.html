@@ -396,6 +396,20 @@ ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:v
 .item.off{opacity:.6}
 .bagf .btn.small{padding:6px 8px}
 .bagf .ic.sl{width:15px;height:15px;color:inherit}
+/* ---------- défense et raids ---------- */
+.nav{grid-template-columns:repeat(7,minmax(0,1fr))}
+.land .nav{width:570px}
+.nav button{white-space:nowrap;overflow:hidden}
+@media (max-width:420px){ .nav{gap:2px;padding:4px} .nav button{font-size:10px;letter-spacing:-.02em} .nav button .ic{width:22px;height:22px} }
+.bar.hp i{background:var(--ok)}
+.sum{display:grid;gap:6px}
+.sum .row.split{flex-wrap:nowrap;gap:10px}
+.sum .row.split > span:first-child{font-size:13.5px;color:var(--muted)}
+.sum .chips2{justify-content:flex-end}
+.portrow{border-top:1px solid var(--line);padding-top:7px}
+.rpend{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,92%);max-height:80%;overflow:auto;padding:16px;display:grid;gap:10px}
+.rpend h3{font-family:var(--font-display);font-size:28px;line-height:1.05}
+.rphud .djinfo{max-width:520px}
 </style>
 
 <div id="app">

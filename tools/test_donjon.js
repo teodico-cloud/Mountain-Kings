@@ -1,6 +1,6 @@
 /* Essais des donjons : fabrication, puis combats joués par un petit robot pour chaque classe. Usage : node tools/test_donjon.js [--long] */
 const fs = require('fs'), path = require('path');
-const src = ['p2_rules.js', 'p2e_equip.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
+const src = ['p2_rules.js', 'p2e_equip.js', 'p2r_raid.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
 const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove, djFloorCfg, djFloor, djCarry, djRunAdd, djRunResult, genItem, mulberry32, gearOf, djPack, djUnpack, SLOTS, djHalfItems, itemInfo, djHurt };')();
 const LONG = process.argv.includes('--long');
 let fails = 0;
@@ -227,6 +227,20 @@ function playDuo(seed, lvl, hA, hB, opts) {
   }
   ok(wins >= n - 2, 'crypte : le robot gagne ' + wins + ' fois sur ' + n + ' (niveaux 3 et 6), ' + Math.round(secs.reduce((a, b) => a + b, 0) / secs.length) + ' s en moyenne');
   ok(raised > 0 && storms > 0 && misses > 0, 'nécromants qui relèvent les morts (' + raised + '), tempêtes d’os du roi (' + storms + '), spectres qui esquivent (' + misses + ')');
+}
+/* ---------- le portail démoniaque (étape 4 : le refermer avec son héros) ---------- */
+{
+  const d = D.genDungeon(77, 4, 'portail');
+  ok(d.theme === 'portail' && d.rooms.filter(r => r.kind === 'fight').length === 3 && d.monsters.some(m => m.type === 'diablotin') && d.monsters.some(m => m.boss && m.type === 'gardien'), 'portail : 3 salles de diablotins (et de gobelins), puis le gardien du portail');
+  let wins = 0, n = 0, fire = 0, adds = 0, secs = [];
+  for (const [cls, race] of [['guerrier', 'nain'], ['mage', 'humain'], ['rodeur', 'elfe'], ['pretre', 'elfe']]) for (const lvl of [2, 5]) {
+    const sk = lvl >= 5 ? { s0: 2, s1: 1, s2: 1 } : { s0: 1 };
+    const dd = D.genDungeon(900 + lvl * 7 + n, lvl, 'portail'), st = D.djStart(dd, [hero(cls, race, lvl, { sk })], { seed: 900 + lvl * 7 + n }), bot = makeBot(st);
+    while (!st.over && st.t < 900) { D.djStep(st, { [st.heroes[0].id]: bot(st.heroes[0]) }); for (const e of st.ev) { if (e.k === 'storm' && e.c === 'fire') fire++; if (e.k === 'spawn' && st.mobs.some(m => m.id === e.id && (m.type === 'diablotin' || m.type === 'lanceflamme') && m.room === dd.rooms.findIndex(r => r.kind === 'boss'))) adds++; } st.ev.length = 0; }
+    n++; if (st.over === 'win') wins++; secs.push(Math.round(st.t));
+  }
+  ok(wins >= n - 2, 'portail : le robot gagne ' + wins + ' fois sur ' + n + ' (niveaux 2 et 5), ' + Math.round(secs.reduce((a, b) => a + b, 0) / secs.length) + ' s en moyenne (plus court qu’un donjon)');
+  ok(fire > 0 && adds > 0, 'le gardien : pluies de feu (' + fire + ') et renforts de diablotins (' + adds + ')');
 }
 /* ---------- les Profondeurs : des étages sans fin ---------- */
 {

@@ -93,7 +93,7 @@ const SETS = {
   abime: { name: 'Panoplie de l’abîme', sfx: 'de l’Abîme', b2: { dmg: 8, hp: 8 }, b2t: '+8 % de dégâts et de vie', b4t: 'Une potion de plus, et les potions soignent 30 % de plus.' },
 };
 const SET_SLOTS = ['arme', 'casque', 'armure', 'bottes'];
-const SET_OF_THEME = { mine: 'troll', crypte: 'roi' };
+const SET_OF_THEME = { mine: 'troll', crypte: 'roi', portail: 'abime' };   // le gardien du portail laisse parfois une pièce de l'abîme
 /* Pierres précieuses : 3 tailles (éclat, pierre, parfaite) ; trois pareilles se fusionnent en une plus belle. */
 const GEMS = {
   rubis: { name: 'Rubis', fem: false, stat: 'hp', v: [2, 4, 7], col: '#e0464e' },

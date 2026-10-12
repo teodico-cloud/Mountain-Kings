@@ -79,20 +79,22 @@ function onLiveRoom(r) {
   if (dj && dj.duo && dj.duo.role === 'guest' && !r && (!dj.st.over || dj.st.over === 'floor')) djLost();
   renderAll();
 }
-async function djInvite(lvl, th) {
+const djTheme = th => th === 'crypte' || th === 'prof' || th === 'portail' ? th : 'mine';
+async function djInvite(lvl, th, pi) {
   if (!me || dj || djLobby) return;
-  th = th === 'crypte' || th === 'prof' ? th : 'mine';
+  th = djTheme(th); pi = pi | 0;
+  if (th === 'portail' && !djPortalOpen(pi)) { toast('Ce portail est déjà refermé.'); return; }
   const hh = activeHero(me, uid), pk = partnerId(me); if (!hh || !pk) return;
   if (!isOnline(pk)) { toast(me.members[pk].name + ' n’est pas connecté·e en ce moment.'); return; }
   if (!activeHero(me, pk)) { toast(me.members[pk].name + ' n’a pas encore de héros.'); return; }
-  lvl = th === 'prof' ? hh.lvl : Math.max(1, Math.min(hh.dj || 1, lvl | 0 || 1));
+  lvl = th === 'prof' ? hh.lvl : th === 'portail' ? raidLevel(me) : Math.max(1, Math.min(hh.dj || 1, lvl | 0 || 1));
   const seed = hash((Math.floor(now()) ^ hashStr(hh.id + 'duo')) >>> 0) || 1;
-  djLobby = { lvl, seed, th };
+  djLobby = { lvl, seed, th, pi };
   try {
     await Promise.all([liveRef('h2g').delete(), liveRef('g2h').delete()]).catch(() => {});   // rien d'une ancienne partie
     const r = await liveRef('room').transact(cur => {
       if (cur && cur.st === 'wait' && cur.host !== uid && now() - (cur.t || 0) < 120000) return undefined;   // elle m'invite déjà
-      return { host: uid, hname: myName(), hhid: hh.id, lvl, seed, th, t: now(), st: 'wait', pv: DJ_PV };
+      return { host: uid, hname: myName(), hhid: hh.id, lvl, seed, th, pi, t: now(), st: 'wait', pv: DJ_PV };
     });
     if (!r.committed) { djLobby = null; onLiveRoom(djLive); return; }
     liveRef().onDisconnectRemove();
@@ -131,11 +133,21 @@ function djWaitHTML() {
 }
 
 /* ---------- entrée et sortie ---------- */
-function djBegin(lvl, th) {
+/* Un portail démoniaque encore ouvert ? (on ne referme pas deux fois le même) */
+const djPortalOpen = pi => { const R = me && me.raid; return !!(R && R.p && R.p[pi] && R.cl && !R.cl[pi]); };
+function djBegin(lvl, th, pi) {
   if (!me || dj) return;
   const hh = activeHero(me, uid); if (!hh) { toast('Crée d’abord ton héros.'); return; }
-  th = th === 'crypte' || th === 'prof' ? th : 'mine';
-  if ((hh.dj || 1) < DJ_OPEN[th]) { toast('Pas encore ouvert.'); return; }
+  th = djTheme(th); pi = pi | 0;
+  if ((hh.dj || 1) < (DJ_OPEN[th] || 1)) { toast('Pas encore ouvert.'); return; }
+  if (th === 'portail') {
+    if (!djPortalOpen(pi)) { toast('Ce portail est déjà refermé.'); return; }
+    const L = raidLevel(me), seed = hash((Math.floor(now()) ^ hashStr(hh.id + 'portail')) >>> 0) || 1, d = genDungeon(seed, L, 'portail');
+    djRun(djStart(d, [hh], { seed }), L, seed, hh.id, null);
+    dj.pi = pi;
+    toast('Le portail démoniaque, niveau ' + L + '. Au fond, son gardien : bats-le et le portail se refermera.');
+    return;
+  }
   const seed = hash((Math.floor(now()) ^ hashStr(hh.id)) >>> 0) || 1;
   if (th === 'prof') {
     const start = hh.lvl, d = djFloor(seed, 1, start);
@@ -154,7 +166,7 @@ function djBeginDuo(role, r) {
   if (!me || dj) return;
   const hH = me.heroes[r.hhid], gH = me.heroes[r.ghid];
   if (!hH || !gH) { toast('Héros introuvable : réessayez.'); if (role === 'host') liveRef().delete().catch(() => {}); return; }
-  const th = r.th === 'crypte' || r.th === 'prof' ? r.th : 'mine', mine = role === 'host' ? r.hhid : r.ghid;
+  const th = djTheme(r.th), mine = role === 'host' ? r.hhid : r.ghid;
   const d = th === 'prof' ? djFloor(r.seed, 1, r.lvl) : genDungeon(r.seed, r.lvl, th);
   const st = djStart(d, [hH, gH], { seed: d.seed, remote: role === 'host' ? r.ghid : null });
   const duo = { role, mateHid: role === 'host' ? r.ghid : r.hhid, mateName: role === 'host' ? (me.members[r.guest] || {}).name : r.hname, unsub: [],
@@ -171,6 +183,7 @@ function djBeginDuo(role, r) {
     liveRef('g2h').onDisconnectRemove();
   }
   djRun(st, r.lvl, r.seed, mine, duo, th === 'prof' ? djNewRun(r.lvl) : null);
+  if (dj && th === 'portail') dj.pi = r.pi | 0;
   toast('À deux dans ' + djThemeThe(th) + ' avec ' + (duo.mateName || 'ton partenaire') + ' ! Restez groupés.');
 }
 function djRun(st, lvl, seed, hid, duo, run) {
@@ -198,9 +211,10 @@ function djBack() {
   const guest = dj.duo && dj.duo.role === 'guest';     // le butin et le prisonnier ne comptent qu'une fois : c'est l'hôte qui les rapporte
   const items = (r.items && r.items[hid]) || [], gems = (r.gems && r.gems[hid]) || {};
   const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris, theme: r.theme || dj.st.d.theme, deep: r.deep || 0,
-    or: guest ? 0 : r.gold || 0, items, gems }, { quiet: true });
+    or: guest ? 0 : r.gold || 0, items, gems, pi: dj.pi | 0 }, { quiet: true });
   djLeave();
   if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
+  else if (res && res.closed) toast(res.closed.all ? 'Le portail est refermé : pas de raid cette fois !' : 'Le portail est refermé. Il en reste d’autres ouverts (menu Défense).');
   else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
   else if (res && res.autoSold) toast('Sac plein : ' + res.autoSold + ' objet' + (res.autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + res.autoGold + ' or. Fais de la place dans ton sac (menu Héros).');
   else if (res && res.items) toast(res.items + ' objet' + (res.items > 1 ? 's rangés' : ' rangé') + ' dans ton sac (menu Héros).');
@@ -250,7 +264,7 @@ function djResHTML() {
   let lead;
   if (r.lost) lead = 'La connexion avec ' + mate + ' est perdue : ' + (r.win ? 'l’étage était fini, tu gardes tout ce qui a été gagné.' : 'tu rentres avec la moitié de l’expérience gagnée.');
   else if (r.win && r.prof) lead = r.own ? 'Tu remontes des Profondeurs : toute l’expérience gagnée est à toi.' : (duo ? 'Vous remontez' : 'Tu remontes') + ' des Profondeurs avec tout le butin.';
-  else if (r.win) lead = duo ? 'Ensemble, vous avez vaincu ' + djBossThe(r.theme) + ' !' : cap1(djBossThe(r.theme)) + ' est vaincu.';
+  else if (r.win) lead = (duo ? 'Ensemble, vous avez vaincu ' + djBossThe(r.theme) + ' !' : cap1(djBossThe(r.theme)) + ' est vaincu.') + (r.theme === 'portail' ? ' Le portail démoniaque se referme.' : '');
   else if (r.fled) lead = fromHost ? mate + ' a quitté ' + the + ' : vous rentrez avec la moitié de l’expérience.' : 'Tu as quitté ' + the + ' avant la fin : la moitié de l’expérience' + (r.own ? '.' : ' et du butin.');
   else lead = (duo ? 'Vous êtes tombés tous les deux' : 'Ton héros est tombé') + ' : retour au village avec la moitié de l’expérience et du butin.';
   if (r.prof) lead += ' Étages terminés : ' + (r.deep || 0) + '.' + (hh && r.deep > (hh.deep || 0) ? ' Nouveau record !' : '');
@@ -268,7 +282,7 @@ function djResHTML() {
       ${myItems.length ? `<div class="row split"><b>Objets pour ton sac</b><small class="note">${myItems.length}${!r.win ? ' (les meilleurs)' : ''}</small></div>${itemListHTML(myItems, hh)}` : ''}
       ${Object.keys(myGems).length ? `<div class="row split"><b>Pierres précieuses</b><span class="chips2">${Object.keys(myGems).map(k => gemChip(k, myGems[k])).join('')}</span></div>` : ''}
       ${r.pris && !r.own ? '<p><b>Un prisonnier délivré</b> : il vous attendra au village, prêt à s’installer.</p>' : ''}
-      <p class="note">${r.kills} monstres vaincus${duo && r.combos ? ' · ' + r.combos + ' combo' + (r.combos > 1 ? 's' : '') : ''} · ${mm} min ${ss}${r.win && !r.prof ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
+      <p class="note">${r.kills} monstres vaincus${duo && r.combos ? ' · ' + r.combos + ' combo' + (r.combos > 1 ? 's' : '') : ''} · ${mm} min ${ss}${r.win && (r.theme === 'mine' || r.theme === 'crypte') ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
     <button class="btn primary" data-act="djBack">Retour au village</button>`;
 }
 /* ---------- les Profondeurs : fin d'étage, descendre ou remonter ---------- */
@@ -437,7 +451,7 @@ function djHudUpdate() {
 const DJ_SFX_ATK = { rodeur: 'shoot', mage: 'bolt', pretre: 'bolt', druide: 'shoot', necro: 'bolt' };
 function djEvents(st) {
   if (dj.duo && dj.duo.role === 'host') { for (const e of st.ev) dj.duo.evBuf.push(e); if (dj.duo.evBuf.length > 120) dj.duo.evBuf.splice(0, dj.duo.evBuf.length - 120); }
-  const crypt = st.d.theme === 'crypte';
+  const crypt = st.d.theme === 'crypte', portal = st.d.theme === 'portail';
   for (const e of st.ev) {
     if (gl) V3.dj.fx(e, st);
     const mine = e.id === dj.hid;
@@ -448,11 +462,11 @@ function djEvents(st) {
       case 'nocast': if (mine && performance.now() - dj.nocastT > 1200) { dj.nocastT = performance.now(); toast('Pas de cible à portée pour cette compétence.'); } break;
       case 'potion': if (mine) SND.sfx('built'); break;
       case 'chest': SND.sfx('coin'); toast('Coffre : ' + rewTxt(e.got) + '.'); break;
-      case 'loot': toast((crypt ? 'Trésor du roi : ' : 'Butin du chef : ') + rewTxt(e.got) + '.'); break;
+      case 'loot': toast((crypt ? 'Trésor du roi : ' : portal ? 'Trésor du gardien : ' : 'Butin du chef : ') + rewTxt(e.got) + '.'); break;
       case 'altar': SND.sfx('star'); toast('Autel des anciens rois · ' + DJ_BLESS[e.b] + ', jusqu’à la sortie.'); break;
       case 'free': SND.sfx('invite'); toast('Prisonnier délivré ! Il vous attendra au village.'); break;
-      case 'lock': SND.sfx(e.boss ? 'alarm' : 'wallhit'); if (e.boss) toast(crypt ? 'Le roi squelette ! Quand des cercles rouges s’allument sous vos pieds, sortez-en vite.' : 'Le chef troll ! Sors du cercle rouge et écarte-toi de sa charge.'); break;
-      case 'wavecome': toast((crypt ? 'D’autres morts sortent de leurs tombeaux…' : 'D’autres monstres sortent des galeries…') + ' (vague ' + e.n + ' sur ' + e.of + ')'); break;
+      case 'lock': SND.sfx(e.boss ? 'alarm' : 'wallhit'); if (e.boss) toast(crypt ? 'Le roi squelette ! Quand des cercles rouges s’allument sous vos pieds, sortez-en vite.' : portal ? 'Le gardien du portail ! Une pluie de feu s’annonce par des cercles rouges : sortez-en vite.' : 'Le chef troll ! Sors du cercle rouge et écarte-toi de sa charge.'); break;
+      case 'wavecome': toast((crypt ? 'D’autres morts sortent de leurs tombeaux…' : portal ? 'D’autres diablotins jaillissent des flammes…' : 'D’autres monstres sortent des galeries…') + ' (vague ' + e.n + ' sur ' + e.of + ')'); break;
       case 'clear': SND.sfx('star'); if (e.boss) toast(cap1('le ' + (dj.bossN || 'boss').toLowerCase()) + ' est vaincu ! ' + (st.d.floor ? 'Le passage est ouvert.' : 'La sortie est ouverte.')); break;
       case 'slam': case 'boom': SND.sfx('boom'); break;
       case 'storm': SND.sfx('storm'); break;

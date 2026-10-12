@@ -401,7 +401,8 @@ const V3 = (() => {
     x.drawImage(baseCanvas, 0, 0);
     mask = new Uint8Array(MASK_N * MASK_N); fieldTiles = [];
     if (biome === 'green') for (let j = 0; j < MASK_N; j++) for (let i = 0; i < MASK_N; i++) { if (inLake(i / MASK_K - W_HALF, j / MASK_K - W_HALF, 1.15)) mask[j * MASK_N + i] = 3; }
-    const blds = items.filter(it => it.type !== 'rempart' && it.key !== 'ghost'), walls = items.filter(it => it.type === 'rempart');
+    const wallish = it => it.type === 'rempart' || it.type === 'porte', hidden = it => it.type === 'piege' || it.type === 'filet';
+    const blds = items.filter(it => !wallish(it) && !hidden(it) && it.key !== 'ghost'), walls = items.filter(wallish);
     const cen = b => { const s = BLD[b.type].size; return [b.gx + s / 2 - half, b.gz + s / 2 - half, s]; };
     const R = mulberry32(blds.length * 131 + 7);
     // sol tassé autour des bâtiments
@@ -723,7 +724,7 @@ const V3 = (() => {
     glowTex = radialTexture();
     emberMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xff8a3a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
     try { buildWorld(); } catch (e) { console.error('décor', e); }
-    scene.add(bldGroup); scene.add(unitGroup); scene.add(fxGroup); scene.add(rangeGroup); scene.add(wallGroup);
+    scene.add(bldGroup); scene.add(unitGroup); scene.add(fxGroup); scene.add(rangeGroup); scene.add(wallGroup); scene.add(portalGroup);
     selMesh = new THREE.Mesh(geo('plane'), selMat); selMesh.visible = false; selMesh.renderOrder = 2; scene.add(selMesh);
     ghostMesh = new THREE.Mesh(geo('plane'), ghostOk); ghostMesh.visible = false; ghostMesh.renderOrder = 3; scene.add(ghostMesh);
     const zc = document.createElement('canvas'); zc.width = zc.height = GRID * 4;
@@ -817,6 +818,7 @@ const V3 = (() => {
     setRay(cx, cy);
     const hits = ray.intersectObjects(bldGroup.children, true);
     for (const h of hits) { let o = h.object; while (o && o.parent !== bldGroup) o = o.parent; if (o && o.userData.key != null) return o.userData.key; }
+    if (portalGroup.visible) { const ph = ray.intersectObjects(portalGroup.children, true); for (const h of ph) { let o = h.object; while (o && o.parent !== portalGroup) o = o.parent; if (o && o.userData.key != null) return o.userData.key; } }
     const g = pickGround(cx, cy);
     if (g) { const w = wallAt.get(Math.floor(g[0]) + ',' + Math.floor(g[1])); if (w) return w.key; }
     return null;
@@ -824,8 +826,9 @@ const V3 = (() => {
 
   /* ---------- bâtiments affichés ---------- */
   /* Modèles provisoires (en attendant ceux générés avec Meshy) et équivalents dessinés par le code. */
-  const B_MODEL = { halle: 'castle', taverne: 'tavern', bucheron: 'lumbermill', carriere: 'mine', moulin: 'windmill', boulangerie: 'market', entrepot: 'barracks' };
-  const V1_PROC = { halle: 'mairie', taverne: 'camp', bucheron: 'scierie', carriere: 'carriere', moulin: 'ferme', entrepot: 'entrepot', boulangerie: 'caserne' };
+  const B_MODEL = { halle: 'castle', taverne: 'tavern', bucheron: 'lumbermill', carriere: 'mine', moulin: 'windmill', boulangerie: 'market', entrepot: 'barracks', tour: 'tower_A' };
+  const V1_PROC = { halle: 'mairie', taverne: 'camp', bucheron: 'scierie', carriere: 'carriere', moulin: 'ferme', entrepot: 'entrepot', boulangerie: 'caserne', tour: 'tour' };
+  const bModelOf = it => it.type === 'tour' && it.lvl >= 3 ? 'tower_B' : B_MODEL[it.type];
   const SMOKE = ['halle', 'taverne', 'bucheron', 'boulangerie'];
   const TEAM = { '#D27A22': 2, '#2F8A63': 3, '#4A78C2': 0, '#B24F78': 2, '#8A67C6': 0 };
   const MODEL_RY = Math.PI / 4;
@@ -1014,7 +1017,23 @@ const V3 = (() => {
     g.add(P('box', 0x5f4127, 0.5, 0.03, 0.03, 0.62, 0.24, 0, 0, true));
     return { g, info: { top: 1.0, muzzle: 0.5, emit: [] } };
   }
-  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG };
+  /* Pièges : une plaque à pointes, un filet roulé, posés au ras du sol (les ennemis ne les voient pas venir). */
+  let netGeo = null;
+  function piegeG(it) {
+    const g = new THREE.Group(), L = Math.max(1, it.lvl | 0), c = L >= 3 ? 0xd0d4d8 : L >= 2 ? 0xb8bcc0 : 0x9a8f80;
+    g.add(P('box', 0x4a4038, 0.78, 0.04, 0.78, 0, 0, 0, 0, true));
+    for (const [x, z] of [[-0.22, -0.22], [0.22, -0.22], [-0.22, 0.22], [0.22, 0.22], [0, 0]]) g.add(P('cone6', c, 0.1, 0.14 + 0.03 * L, 0.1, x, 0.04, z, 0, true));
+    return { g, info: { top: 0.5, muzzle: 0.2, emit: [] } };
+  }
+  function filetG(it) {
+    const g = new THREE.Group();
+    if (!netGeo) { netGeo = new THREE.TorusGeometry(0.26, 0.05, 5, 14); netGeo.rotateX(Math.PI / 2); }
+    g.add(P('cyl8', 0x7a6a4e, 0.7, 0.04, 0.7, 0, 0, 0, 0, true));
+    const ring = new THREE.Mesh(netGeo, mat(it.lvl >= 2 ? 0x8f8a80 : 0x9a8660)); ring.position.y = 0.07; g.add(ring);
+    for (let i = 0; i < 4; i++) g.add(P('box', 0x8a7856, 0.62, 0.02, 0.025, 0, 0.05, 0, i * Math.PI / 4, true));
+    return { g, info: { top: 0.5, muzzle: 0.2, emit: [] } };
+  }
+  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG };
   function build(it) {
     const s = BLD[it.type].size, g = new THREE.Group();
     let info = { top: 1.2, muzzle: 1, emit: [] };
@@ -1029,7 +1048,7 @@ const V3 = (() => {
       const b = PROC2[it.type](it); g.add(b.g); info = b.info;
       if (it.up) g.add(makeScaffold(s, Math.min(2.4, info.top * 0.7)));
     } else if (LIB.ok && (LIB.m2[it.type] || B_MODEL[it.type])) {
-      const m = modelInst(LIB.m2[it.type] ? 'm2:' + it.type : B_MODEL[it.type], team, false, foot * (1 + 0.035 * (Math.min(5, it.lvl) - 1)), MODEL_RY);
+      const m = modelInst(LIB.m2[it.type] ? 'm2:' + it.type : bModelOf(it), team, false, foot * (it.type === 'tour' ? 0.8 : 1 + 0.035 * (Math.min(5, it.lvl) - 1)), MODEL_RY);
       if (m) { g.add(m); info.top = m.userData.h; info.muzzle = Math.max(0.8, info.top * 0.8); }
       if (SMOKE.includes(it.type) && !LIB.m2[it.type]) info.emit.push([0.15, info.top * 0.9, -0.15]);   // les modèles Meshy ont leur propre fumée (ou pas de cheminée)
       if (it.up) g.add(makeScaffold(s, Math.min(2.4, info.top * 0.6)));
@@ -1048,7 +1067,7 @@ const V3 = (() => {
     const seen = new Set(), walls = [];
     const fresh = blds.size === 0 && wallAt.size === 0;
     for (const it of items) {
-      if (it.type === 'rempart') { walls.push(it); continue; }
+      if (it.type === 'rempart' || it.type === 'porte') { walls.push(it); continue; }
       seen.add(it.key);
       const old = blds.get(it.key), sig = sigOf(it);
       if (old && old.sig === sig) { old.item = it; continue; }
@@ -1076,9 +1095,15 @@ const V3 = (() => {
     d5: { post: ['box', 0x4d5966, 0.66, 1.25], cap: ['box', 0x3c4552, 0.74, 0.13], band: [0x7fe0ff, 0.68, 0.07, 0.86, true], link: [0x56626f, 0.48, 1.02] },
   };
   for (let l = 1; l <= 5; l++) WS['o' + l] = { post: ['cyl6', 0x4a3424, 0.3, 0.95 + 0.07 * l], cap: ['cone6', l >= 4 ? 0xe6dcc0 : 0x6b4a2b, 0.32, 0.34], band: l >= 3 ? [0x6e5a48, 0.33, 0.07, 0.6] : null, link: [0x34241a, 0.16, 0.72 + 0.06 * l] };
+  /* Portes (dans une palissade) : deux poteaux, une traverse, un vantail ; renforcées de fer aux niveaux 2 et 3. */
+  const GS = {
+    1: { post: 0x6b4a2b, beam: 0x5a3d22, panel: 0x8b5e34, band: null },
+    2: { post: 0x8e8a80, beam: 0x6f767c, panel: 0x7a5230, band: 0x3c3c40 },
+    3: { post: 0x6f767c, beam: 0x4d5966, panel: 0x5c636b, band: 0xc9922e },
+  };
   function setWalls(items, fresh) {
     const live = items.filter(w => !w.dead), dead = items.filter(w => w.dead);
-    const sig = items.map(w => w.gx + ',' + w.gz + ',' + w.lvl + (w.orc ? 'o' : '') + (w.dead ? 'x' : '')).join(';');
+    const sig = items.map(w => w.gx + ',' + w.gz + ',' + w.lvl + (w.type === 'porte' ? 'g' : '') + (w.orc ? 'o' : '') + (w.dead ? 'x' : '')).join(';');
     const prev = new Set(wallAt.keys());
     wallAt.clear();
     for (const w of items) if (!w.dead) wallAt.set(w.gx + ',' + w.gz, w);
@@ -1094,21 +1119,42 @@ const V3 = (() => {
       q.setFromAxisAngle(up, ry || 0); ps.set(x, y, z); sc.set(sx, sy, sz);
       sets.get(id).mats.push(m4.clone().compose(ps, q, sc));
     };
-    const styleOf = w => WS[(w.orc ? 'o' : 'd') + Math.max(1, Math.min(5, w.lvl | 0))];
+    /* niveau d'aspect : palissade de bois (1), mur de pierre (3), mur renforcé (4) */
+    const vl = w => w.type === 'rempart' && !w.orc ? [1, 1, 3, 4][Math.max(1, Math.min(3, w.lvl | 0))] : Math.max(1, Math.min(5, w.lvl | 0));
+    const styleOf = w => WS[(w.orc ? 'o' : 'd') + vl(w)];
+    const keyOf = w => (w.orc ? 'o' : 'd') + vl(w);
     const isW = (x, z) => wallAt.has(x + ',' + z);
+    const gate = w => w.type === 'porte';
     for (const w of live) {
-      const st = styleOf(w), X = w.gx + 0.5 - half, Z = w.gz + 0.5 - half, key = (w.orc ? 'o' : 'd') + w.lvl;
-      const [pk, pc, pw, ph] = st.post;
-      push(key, pk, pc, false, X, 0, Z, pw, ph, pw);
-      const [ck, cc, cw, chh] = st.cap; push(key, ck, cc, false, X, ph, Z, cw, chh, cw);
-      if (st.band) { const [bc, bw, bh, by, glow] = st.band; push(key, 'box', bc, !!glow, X, by, Z, bw, bh, bw); }
-      const link = (o, cx, cz, len, ry) => { const lw = o.lvl < w.lvl ? o : w, ls = styleOf(lw), [lc, lwid, lh] = ls.link; push((lw.orc ? 'o' : 'd') + lw.lvl, 'box', lc, false, cx, 0, cz, len, lh, lwid, ry); };
+      const X = w.gx + 0.5 - half, Z = w.gz + 0.5 - half;
+      if (gate(w)) {
+        /* la porte s'aligne sur la palissade qui la porte */
+        const G = GS[Math.max(1, Math.min(3, w.lvl | 0))], horiz = isW(w.gx - 1, w.gz) || isW(w.gx + 1, w.gz) || !(isW(w.gx, w.gz - 1) || isW(w.gx, w.gz + 1));
+        const ry = horiz ? 0 : Math.PI / 2, ax = horiz ? 1 : 0, az = horiz ? 0 : 1, key = 'g' + w.lvl;
+        for (const s of [-1, 1]) push(key, 'box', G.post, false, X + s * 0.4 * ax, 0, Z + s * 0.4 * az, 0.2, 1.15, 0.2);
+        push(key, 'box', G.beam, false, X, 1.0, Z, 1.0, 0.16, 0.2, ry);
+        push(key, 'box', G.panel, false, X, 0, Z, 0.62, 0.86, 0.1, ry);
+        if (G.band) for (const y of [0.18, 0.6]) push(key, 'box', G.band, false, X, y, Z, 0.64, 0.06, 0.12, ry);
+      } else {
+        const st = styleOf(w), key = keyOf(w);
+        const [pk, pc, pw, ph] = st.post;
+        push(key, pk, pc, false, X, 0, Z, pw, ph, pw);
+        const [ck, cc, cw, chh] = st.cap; push(key, ck, cc, false, X, ph, Z, cw, chh, cw);
+        if (st.band) { const [bc, bw, bh, by, glow] = st.band; push(key, 'box', bc, !!glow, X, by, Z, bw, bh, bw); }
+      }
+      /* liaisons avec les voisins (raccourcies contre une porte : ses poteaux vont jusqu'au bord de la case) */
+      const link = (o, dir) => {
+        const a = gate(w) ? 0.5 : 0, b = gate(o) ? 0.5 : 0, L = 1 - a - b; if (L <= 0.01) return;
+        const lw = gate(w) ? o : gate(o) ? w : vl(o) < vl(w) ? o : w, [lc, lwid, lh] = styleOf(lw).link, c = a + L / 2;
+        push(keyOf(lw), 'box', lc, false, dir ? X : X + c, 0, dir ? Z + c : Z, L, lh, lwid, dir ? Math.PI / 2 : 0);
+      };
       const E = wallAt.get((w.gx + 1) + ',' + w.gz), S = wallAt.get(w.gx + ',' + (w.gz + 1));
-      if (E) link(E, X + 0.5, Z, 1, 0);
-      if (S) link(S, X, Z + 0.5, 1, Math.PI / 2);
+      if (E) link(E, 0);
+      if (S) link(S, 1);
+      const diag = (o, cx, cz, ry) => { if (gate(w) || gate(o)) return; const lw = vl(o) < vl(w) ? o : w, [lc, lwid, lh] = styleOf(lw).link; push(keyOf(lw), 'box', lc, false, cx, 0, cz, Math.SQRT2, lh, lwid, ry); };
       const SE = wallAt.get((w.gx + 1) + ',' + (w.gz + 1)), SW = wallAt.get((w.gx - 1) + ',' + (w.gz + 1));
-      if (SE && !isW(w.gx + 1, w.gz) && !isW(w.gx, w.gz + 1)) link(SE, X + 0.5, Z + 0.5, Math.SQRT2, -Math.PI / 4);
-      if (SW && !isW(w.gx - 1, w.gz) && !isW(w.gx, w.gz + 1)) link(SW, X - 0.5, Z + 0.5, Math.SQRT2, Math.PI / 4);
+      if (SE && !isW(w.gx + 1, w.gz) && !isW(w.gx, w.gz + 1)) diag(SE, X + 0.5, Z + 0.5, -Math.PI / 4);
+      if (SW && !isW(w.gx - 1, w.gz) && !isW(w.gx, w.gz + 1)) diag(SW, X - 0.5, Z + 0.5, Math.PI / 4);
     }
     for (const w of dead) {
       const X = w.gx + 0.5 - half, Z = w.gz + 0.5 - half, c = w.orc ? 0x3a2a1e : 0x6b6258, r = ((w.gx * 7 + w.gz * 13) % 10) / 10;
@@ -1132,9 +1178,9 @@ const V3 = (() => {
   }
   function pruneAnims(g) { anims = anims.filter(a => { let o = a.o; while (o) { if (o === g) return false; o = o.parent; } return true; }); }
   function clearBuildings() { setBuildings([]); }
-  function setBldHp(key, frac) {
+  function setBldHp(key, frac, noBurn) {
     const rec = blds.get(key); if (!rec) { wallBar(key, frac); return; }
-    rec.burn = frac > 0 && frac < 0.55;
+    rec.burn = !noBurn && frac > 0 && frac < 0.55;
     if (frac >= 0.999 || frac <= 0) { if (rec.hp) rec.hp.visible = false; return; }
     if (!rec.hp) { rec.hp = makeBar(1.1, 0x5fd17a); rec.hp.position.set(0, rec.info.top + 0.3, 0); rec.g.add(rec.hp); }
     rec.hp.visible = true; setBar(rec.hp, frac);
@@ -1248,9 +1294,10 @@ const V3 = (() => {
   const people = new Map(), lifeGroup = new THREE.Group();
   let vilBlocked = null, vilSpots = [], bldSpots = new Map(), bldCenters = new Map();
   function planVillage(items) {
-    const blds = items.filter(it => it.type !== 'rempart' && it.key !== 'ghost' && !it.dead);
+    const PASS = new Set(['porte', 'piege', 'filet']);           // on passe les portes, on marche sur les pièges
+    const blds = items.filter(it => it.type !== 'rempart' && !PASS.has(it.type) && it.key !== 'ghost' && !it.dead);
     vilBlocked = new Uint8Array(GRID * GRID); vilSpots = []; bldSpots = new Map(); bldCenters = new Map();
-    for (const b of items) { if (b.key === 'ghost') continue; const sz = BLD[b.type].size; for (let i = 0; i < sz; i++) for (let j = 0; j < sz; j++) { const x = b.gx + i, z = b.gz + j; if (x >= 0 && z >= 0 && x < GRID && z < GRID) vilBlocked[z * GRID + x] = 1; } }
+    for (const b of items) { if (b.key === 'ghost' || PASS.has(b.type) || (b.dead && BLD[b.type].hps)) continue; const sz = BLD[b.type].size; for (let i = 0; i < sz; i++) for (let j = 0; j < sz; j++) { const x = b.gx + i, z = b.gz + j; if (x >= 0 && z >= 0 && x < GRID && z < GRID) vilBlocked[z * GRID + x] = 1; } }
     for (const b of blds) {
       const sz = BLD[b.type].size, seen = new Set(), cands = [];
       for (let i = -1; i <= sz; i++) for (const [x, z] of [[b.gx + i, b.gz + sz], [b.gx + sz, b.gz + i], [b.gx + i, b.gz - 1], [b.gx - 1, b.gz + i]]) {
@@ -1626,6 +1673,8 @@ const V3 = (() => {
     warm: { exp: 0.88, bg: 0xb7d0de, fog: 0xc8dae3, near: 75, far: 175, sun: 0xffeccc, sunI: 2.0, sunPos: [-26, 30, 18], hemiS: 0xcfe0f2, hemiG: 0x5e5032, hemiI: 0.55, ground: 0xffffff, win: 0xffd28a, glow: 0.18, embers: false, env: [0xbfd9ef, 0xf3e7cf, 0x6f6a4a], envI: 0.6, bio: 'green' },
     donjon: { exp: 1.0, bg: 0x0a0b0f, fog: 0x0a0b0f, near: 64, far: 104, sun: 0xa9b8ff, sunI: 0.6, sunPos: [-14, 30, 10], hemiS: 0x5a6680, hemiG: 0x1c1814, hemiI: 0.62, ground: 0xffffff, win: 0xffa040, glow: 0.4, embers: false, env: [0x2a3040, 0x2a2826, 0x101010], envI: 0.35, bio: null },
     dark: { exp: 0.8, bg: 0x1a2032, fog: 0x1d2437, near: 58, far: 125, sun: 0xa9b8ff, sunI: 1.3, sunPos: [26, 32, -8], hemiS: 0x7d8cc6, hemiG: 0x2b2a36, hemiI: 0.8, ground: 0xe4e9f4, win: 0xffa040, glow: 0.55, embers: true, env: [0x2a3558, 0x3a4566, 0x1c1d26], envI: 0.5, bio: 'snow' },
+    /* rediffusion d'un raid : le village au crépuscule (sans changer la saison du sol) */
+    raid: { exp: 0.84, bg: 0x5e4a5c, fog: 0x6c5566, near: 70, far: 165, sun: 0xffb07a, sunI: 1.55, sunPos: [-26, 22, 18], hemiS: 0xc9a2b4, hemiG: 0x4a3a32, hemiI: 0.62, ground: 0xf2e4dc, win: 0xffb060, glow: 0.38, embers: true, env: [0x8a6a80, 0xd8a890, 0x4a3a32], envI: 0.55, bio: null },
   };
   let P_MOOD = MOODS.warm;
   const envCache = {};
@@ -1737,7 +1786,7 @@ const V3 = (() => {
      Visuels provisoires, en attendant les modèles Meshy (murs et sols peints, portes, coffres, torches). */
   const djGroup = new THREE.Group();
   let DJ = null;
-  const djHidden = () => [terrainGroup, decoGroup, forestGroup, decoProc, lifeGroup, bldGroup, unitGroup, wallGroup, rangeGroup];
+  const djHidden = () => [terrainGroup, decoGroup, forestGroup, decoProc, lifeGroup, bldGroup, unitGroup, wallGroup, rangeGroup, portalGroup];
   const DJ_U = {
     gobelin: { m: 'barbarian', tex: 'orc_barbarian', show: ['1H_Axe'], atk: '1H_Melee_Attack_Chop', h: 0.95, w: 1.05 },
     archer: { m: 'rogue', tex: 'orc_rogue', show: ['2H_Crossbow'], atk: '2H_Ranged_Shoot', h: 0.95, w: 0.95 },
@@ -1753,11 +1802,16 @@ const V3 = (() => {
     necromant: { m: 'rogue', tint: 0x7a6a9a, show: ['Throwable', 'Rogue_Cape'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 1.0, w: 0.95 },
     golem: { m: 'barbarian', tint: 0xe6dcc6, show: [], atk: '2H_Melee_Attack_Chop', h: 1.9, w: 1.35 },
     roiSquelette: { m: 'knight', tint: 0xe0d6bf, show: ['2H_Sword', 'Knight_Helmet', 'Knight_Cape'], atk: '2H_Melee_Attack_Chop', h: 2.4, w: 1.3 },
+    /* le portail démoniaque (modèles provisoires teintés de rouge) */
+    diablotin: { m: 'rogue', tex: 'orc_rogue', tint: 0xff8a6a, show: ['Knife'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.72, w: 0.95 },
+    lanceflamme: { m: 'rogue', tex: 'orc_rogue', tint: 0xffb07a, show: ['Throwable'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.8, w: 0.95 },
+    gardien: { m: 'barbarian', tex: 'troll', tint: 0xff7a5a, show: ['2H_Axe', 'Barbarian_Hat'], atk: '2H_Melee_Attack_Chop', h: 2.5, w: 1.45 },
   };
   /* Couleurs du décor selon le donjon. */
   const DJ_LOOK = {
     mine: { room: [0x6b645a, 0x625b52, 0x736b5f], hall: [0x4f4a44, 0x57514a], wall: [0x5d564d, 0x534d45], torch: 0xffa040, light: 0xffb066 },
     crypte: { room: [0x5e626b, 0x565a63, 0x666a73], hall: [0x44474e, 0x4b4e55], wall: [0x4d5159, 0x454951], torch: 0x5fe0c8, light: 0xa8d8ff },
+    portail: { room: [0x5a4442, 0x52403e, 0x63494a], hall: [0x40302f, 0x473534], wall: [0x4a3634, 0x412f2e], torch: 0xff5a2a, light: 0xff8a5a },
   };
   const DJ_HERO_ATK = { guerrier: '1H_Melee_Attack_Chop', paladin: '1H_Melee_Attack_Chop', rodeur: '2H_Ranged_Shoot', voleur: '1H_Melee_Attack_Slice_Diagonal' };
   const DJ_CAST_ANIM = { tourbillon: 'spin', cri: 'cheer', bouclier: 'cheer', consecration: 'cheer', poison: 'cheer', fumee: 'cheer', lumiere: 'cheer', priere: 'cheer', ours: 'cheer', loup: 'cheer', racines: 'cheer', squelettes: 'cheer', nova: 'cheer' };
@@ -2013,7 +2067,7 @@ const V3 = (() => {
       case 'form': { const p = P2(e.id); if (p) { burst(p[0], p[1], 0.6, e.f === 'ours' ? 0x8a6a4a : e.f === 'loup' ? 0x9a9a9a : 0x7bd36a, 6); } break; }
       case 'tele': djTele(e); break;
       case 'teleCancel': for (const t of DJ.teles) if (t.id === e.id && !t.fly && !t.fade) { t.t = t.T; } break;
-      case 'storm': for (const p of e.pts || []) { burst(p[0], p[1], 0.3, 0xe8e0c8, 5); wave(p[0], p[1], 0xd8d0b8, e.r, 0.4); } shake(0.3); break;
+      case 'storm': { const fire = e.c === 'fire'; for (const p of e.pts || []) { burst(p[0], p[1], 0.3, fire ? 0xff7a2a : 0xe8e0c8, 5); wave(p[0], p[1], fire ? 0xff5a2a : 0xd8d0b8, e.r, 0.4); } shake(0.3); break; }
       case 'raised': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xa070ff, 1.2, 0.6); djNum(p[0], p[1], 'relevé…', '#c9a0ff', false); } break; }
       case 'combo': { const p = P2(e.id); if (p) { djNum(p[0], p[1], 'COMBO !', '#ffd23f', true); wave(p[0], p[1], 0xffd23f, 1.3, 0.35); for (let i = 0; i < 4; i++) spark(p[0], 0.7 + i * 0.25, p[1], 0xffe07a); } break; }
       case 'item': {
@@ -2181,6 +2235,170 @@ const V3 = (() => {
     sun.position.set(cam.tx + sp[0], sp[1], cam.tz + sp[2]); sun.target.position.set(cam.tx, 0, cam.tz); sun.target.updateMatrixWorld();
   }
 
+  /* ---------- portails démoniaques, au bord de la vallée ----------
+     Deux menhirs sombres et un anneau de feu ; la lueur grandit pendant la charge, et bat quand le portail est prêt. */
+  const portalGroup = new THREE.Group();
+  const portals = new Map();
+  function makePortalRec(p) {
+    const g = new THREE.Group(), disp = [];
+    g.add(P('cyl8', 0x3a3236, 2.1, 0.16, 1.1, 0, 0, 0));
+    for (const s of [-1, 1]) g.add(P('box', 0x2e2629, 0.34, 2.15, 0.42, s * 0.98, 0.1, 0, s * 0.08));
+    const rg = new THREE.TorusGeometry(0.82, 0.11, 6, 26); disp.push(rg);
+    const ringM = basic(0xff4a2a); disp.push(ringM);
+    const ring = new THREE.Mesh(rg, ringM); ring.position.y = 1.18; g.add(ring);
+    const dg = new THREE.CircleGeometry(0.76, 26); disp.push(dg);
+    const discM = basic(0xa0203f, { transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }); disp.push(discM);
+    const disc = new THREE.Mesh(dg, discM); disc.position.y = 1.18; g.add(disc);
+    const glow = makeGlow(0xff3a2a, 4, 1.2); g.add(glow);
+    const side = p.side | 0, out = 0.35;
+    g.position.set(p.x + 0.5 - half + (side === 1 ? out : side === 3 ? -out : 0), 0, p.y + 0.5 - half + (side === 0 ? -out : side === 2 ? out : 0));
+    g.rotation.y = side === 1 || side === 3 ? Math.PI / 2 : 0;
+    g.userData.key = 'portal' + (p.i | 0);
+    return { g, ring, disc, glow, discM, ringM, disp, x: p.x, y: p.y, frac: 0, ready: false, ph: Math.random() * 6 };
+  }
+  function disposePortal(r) { if (r.g.parent) r.g.parent.remove(r.g); for (const d of r.disp) d.dispose(); r.glow.material.dispose(); }
+  function setPortals(list) {
+    const seen = new Set();
+    for (const p of list || []) {
+      if (p.cl) continue;
+      const k = p.i | 0; seen.add(k);
+      let r = portals.get(k);
+      if (!r || r.x !== p.x || r.y !== p.y) { if (r) disposePortal(r); r = makePortalRec(p); portals.set(k, r); portalGroup.add(r.g); }
+      r.frac = p.frac == null ? 1 : p.frac; r.ready = !!p.ready;
+    }
+    for (const [k, r] of portals) if (!seen.has(k)) { disposePortal(r); portals.delete(k); }
+  }
+  function animPortal(r, dt, tNow) {
+    const k = r.ready ? 0.75 + 0.25 * Math.sin(tNow * 5 + r.ph) : 0.25 + 0.55 * r.frac;
+    r.disc.rotation.z += dt * (r.ready ? 2.2 : 0.8);
+    r.discM.opacity = 0.25 + 0.45 * k; r.glow.material.opacity = 0.12 + 0.5 * k;
+    r.ring.scale.setScalar(0.92 + 0.08 * Math.sin(tNow * 3 + r.ph));
+    if (Math.random() < dt * (1 + 5 * k)) spark(r.g.position.x + half + (Math.random() - 0.5) * 1.4, 0.5 + Math.random() * 1.6, r.g.position.z + half + (Math.random() - 0.5) * 1.4, 0xff6a3a);
+  }
+
+  /* ---------- raids : la rediffusion, dans le village ----------
+     Le village tel qu'il était ce jour-là (l'appli passe ses bâtiments), les assaillants, les héros, les tirs des tours.
+     Les villageois sont à l'abri dans la halle. Une case du village (x, y) est dessinée en (x − half, y − half). */
+  const rdGroup = new THREE.Group();
+  let RD = null;
+  const RD_U = { gobelin: DJ_U.gobelin, voleur: { m: 'rogue', tex: 'orc_rogue', show: ['Knife', 'Rogue_Cape'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.85, w: 0.9 }, troll: DJ_U.troll };
+  const RD_SHOT = { mage: 0xff7a2a, pretre: 0xffe08a, druide: 0x7bd36a, necro: 0xa070ff };
+  function rdFoeRec(u) {
+    const def = RD_U[u.type] || RD_U.gobelin, g = djModel(def);
+    djPrepAnims(g);
+    g.add(djRing(0xb8402e, u.r * 2.4, 0.5));
+    const bar = makeBar(u.big ? 1.0 : 0.6, 0xd9483b); bar.position.y = def.h + 0.35; bar.visible = false; g.add(bar);
+    const sack = new THREE.Group(); sack.add(P('sph', 0xc9a26a, 0.34, 0.3, 0.34, 0, 0, 0, 0, true)); sack.add(P('cyl6', 0x7a5a3a, 0.09, 0.1, 0.09, 0, 0.28, 0, 0, true));
+    sack.position.set(0, def.h * 0.72, -0.24); sack.visible = false; g.add(sack);
+    return { g, kind: 'mob', bar, atkN: u.atkN, atkT: -9, lx: u.x, ly: u.y, h: def.h, sack };
+  }
+  function rdNum(x, y, text, color, big) {
+    if (!RD) return;
+    let n = RD.nums.find(q => !q.on);
+    if (!n) {
+      if (RD.nums.length >= 24) n = RD.nums.reduce((a, b) => (a.t > b.t ? a : b));
+      else {
+        const c = document.createElement('canvas'); c.width = 256; c.height = 48;
+        const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+        sp.renderOrder = 12; rdGroup.add(sp); n = { sp, c, tex }; RD.nums.push(n);
+      }
+    }
+    const g2 = n.c.getContext('2d'); g2.clearRect(0, 0, 256, 48);
+    g2.font = (big ? '800 30px' : '800 27px') + ' system-ui, sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle';
+    g2.lineWidth = 6; g2.strokeStyle = 'rgba(0,0,0,0.7)'; g2.strokeText(text, 128, 25); g2.fillStyle = color; g2.fillText(text, 128, 25);
+    n.tex.needsUpdate = true; n.on = true; n.t = 0;
+    const k = big ? 2.6 : 2.0; n.sp.scale.set(k, k * 0.1875, 1); n.sp.visible = true; n.sp.material.opacity = 1;
+    n.sp.position.set(x - half + (Math.random() - 0.5) * 0.4, 1.8 + (big ? 0.4 : 0), y - half + (Math.random() - 0.5) * 0.4);
+  }
+  function rdEnter(st) {
+    if (!ok) return;
+    if (RD) rdExit();
+    RD = { st, ents: new Map(), dying: [], nums: [], portals: [], frame: 0 };
+    lifeGroup.visible = false; portalGroup.visible = false; selMesh.visible = false; ghostMesh.visible = false; gridMesh.visible = false;
+    if (!rdGroup.parent) scene.add(rdGroup);
+    rdGroup.visible = true;
+    for (const p of st.inp.P) if (!p[3]) { const r = makePortalRec({ x: p[0], y: p[1], side: p[2] }); r.frac = 1; r.ready = true; rdGroup.add(r.g); RD.portals.push(r); }
+    setMood('raid');
+    /* caméra : sur la halle, un peu tournée vers le portail */
+    const H = st.S[st.hall], P0 = st.inp.P.find(p => !p[3]) || st.inp.P[0], k = 0.35;
+    cam.tx = clampT(H.x + (P0[0] + 0.5 - H.x) * k - half); cam.tz = clampT(H.y + (P0[1] + 0.5 - H.y) * k - half); cam.view = aspect < 0.8 ? 24 : 15; frustum();
+  }
+  function rdExit() {
+    if (!RD) return;
+    for (const r of RD.portals) disposePortal(r);
+    clearGroup(rdGroup); RD = null; rdGroup.visible = false;
+    lifeGroup.visible = true; portalGroup.visible = true;
+    for (const s of shots) fxGroup.remove(s.m); shots.length = 0;
+    mood = ''; setMood('warm');
+  }
+  function rdSync(st, alpha, dt, tNow) {
+    if (!RD) return;
+    RD.frame++; const fr = RD.frame;
+    const upd = (e, make) => { let r = RD.ents.get(e.id); if (!r) { r = make(e); RD.ents.set(e.id, r); rdGroup.add(r.g); } r.seen = fr; return r; };
+    for (const h of st.heroes) { const r = upd(h, djHeroRec); djPose(r, h, alpha, tNow); djBar(r, h.hp / h.hpMax, !h.ko); }
+    for (const u of st.foes) {
+      if (!u.on || u.out || u.dead) continue;
+      const r = upd(u, rdFoeRec);
+      djPose(r, u, alpha, tNow); djBar(r, u.hp / u.hpMax, u.hp < u.hpMax);
+      r.sack.visible = !!u.loot;
+      if (u.root > 0 && !r.net) { r.net = djRing(0xd8c08a, 1.1, 0.85); r.g.add(r.net); }
+      if (r.net) r.net.visible = u.root > 0;
+      r.frozen = u.root > 0 && !u.mv;
+    }
+    for (const [id, r] of RD.ents) if (r.seen !== fr) {
+      RD.ents.delete(id);
+      const u = st.foes.find(q => q.id === id);
+      if (u && u.out) { rdGroup.remove(r.g); smokeAt(r.lx - half, 0.4, r.ly - half, true); burst(r.lx, r.ly, 0.5, 0xff5a3a, 4); }
+      else if (r.g.userData.A && r.g.userData.A.death) { r.bar.visible = false; if (r.sack) r.sack.visible = false; djPlay(r, 'death', 1.3, true); RD.dying.push({ r, t: 0 }); }
+      else { rdGroup.remove(r.g); burst(r.lx, r.ly, 0.3, 0xd8d0c0, 4); }
+    }
+    for (const [, r] of RD.ents) { const U = r.g.userData; if (U.mixer) U.mixer.update(r.frozen ? 0 : dt); }
+    /* solidité des palissades, portes et tours */
+    for (const S of st.S) if (S.kind === 'wall' || S.kind === 'gate' || S.kind === 'tower') { const f = S.dead ? 0 : S.hp / S.max; if (S._f !== f) { S._f = f; setBldHp('r' + S.id, f); } }
+  }
+  function rdFx(e, st) {
+    if (!RD) return;
+    const pos = id => { const h = st.heroes.find(q => q.id === id); if (h) return [h.x, h.y]; const u = st.foes.find(q => q.id === id); return u ? [u.x, u.y] : null; };
+    const aimAtId = (id, b) => () => { const q = pos(id) || b; return [q[0], 0.8, q[1]]; };
+    switch (e.k) {
+      case 'hit': { const p = pos(e.id); if (p) { rdNum(p[0], p[1], String(e.v), '#ffffff'); spark(p[0], 0.8, p[1], 0xfff0d0); } break; }
+      case 'hurt': { const p = pos(e.id); if (p) rdNum(p[0], p[1], String(e.v), '#ff6b5b'); break; }
+      case 'heal': { const p = pos(e.id); if (p && e.v >= 2) rdNum(p[0], p[1], '+' + e.v, '#7dff8a'); break; }
+      case 'hhit': {
+        if (!e.sh) break;
+        const a = pos(e.id), b = pos(e.tgt); if (!a || !b) break;
+        if (e.sh === 'rodeur') spawnShot('arrow', a[0], 1.0, a[1], aimAtId(e.tgt, b), 0.25, 0.4);
+        else { const c = RD_SHOT[e.sh] || 0xffffff, s = makeGlow(c, 0.9, 1); s.position.set(a[0] - half, 1, a[1] - half); rdGroup.add(s); RD.dying.push({ fly: s, t: 0, T: 0.22, a, b }); }
+        break;
+      }
+      case 'tshot': { const b = pos(e.tgt); if (b) spawnShot('arrow', e.x, 2.4, e.y, aimAtId(e.tgt, b), 0.32, 0.7); break; }
+      case 'die': burst(e.x, e.y, 0.4, e.big ? 0xff7a3a : 0xbfb8a8, e.big ? 10 : 5); if (e.big) shake(0.25); break;
+      case 'loot': { const p = pos(e.id); if (p) rdNum(p[0], p[1], '−' + e.n + ' ' + RES_LABEL[e.r].toLowerCase(), '#ffb347', true); break; }
+      case 'drop': rdNum(e.x, e.y, e.n + ' ' + RES_LABEL[e.r].toLowerCase() + ' repris', '#7dff8a', true); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5) * 0.6, 0.4 + Math.random(), e.y + (Math.random() - 0.5) * 0.6, 0xffd27a); break;
+      case 'escape': if (e.n) rdNum(e.x, e.y, 'enfui avec ' + e.n + ' ' + RES_LABEL[e.r].toLowerCase(), '#ff8a5a', true); break;
+      case 'break': debris(e.x, e.y, e.kind === 'tower' ? 2 : 1, false, e.kind === 'tower' ? 18 : 9); dustRing(e.x, e.y, 0.6); shake(0.2); break;
+      case 'trap':
+        if (e.t === 'piege') { burst(e.x, e.y, 0.2, 0x9a9488, 6); for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - 0.5) * 0.6, 0.3, e.y + (Math.random() - 0.5) * 0.6, 0xff5a3c); rdNum(e.x, e.y, 'piège !', '#ffd23f', true); }
+        else { wave(e.x, e.y, 0xd8c08a, 1.1, 0.6); rdNum(e.x, e.y, 'filet !', '#ffd23f', true); }
+        break;
+      case 'ko': wave(e.x, e.y, 0xffe08a, 1.2, 0.6); rdNum(e.x, e.y, 'à terre', '#ffd27a', true); break;
+      case 'heart': { const H = st.S[st.hall]; wave(H.x, H.y, 0xff3a2a, 3.5, 0.9); shake(0.3); rdNum(H.x, H.y, 'La halle est pillée !', '#ff6b5b', true); break; }
+      case 'spawn': smokeAt(e.x - half, 0.3, e.y - half, true); dustRing(e.x, e.y, 0.3); break;
+    }
+  }
+  function rdTick(dt, tNow) {
+    for (const n of RD.nums) if (n.on) { n.t += dt; n.sp.position.y += dt * 1.0; n.sp.material.opacity = Math.max(0, 1 - Math.pow(n.t / 1.1, 2)); if (n.t > 1.1) { n.on = false; n.sp.visible = false; } }
+    for (const d of RD.dying) {
+      d.t += dt;
+      if (d.fly) { const k = Math.min(1, d.t / d.T); d.fly.position.set(d.a[0] + (d.b[0] - d.a[0]) * k - half, 1, d.a[1] + (d.b[1] - d.a[1]) * k - half); if (k >= 1) { d.done = true; rdGroup.remove(d.fly); d.fly.material.dispose(); burst(d.b[0], d.b[1], 0.8, 0xffd0a0, 3); } continue; }
+      const U = d.r.g.userData; if (U.mixer) U.mixer.update(dt);
+      if (d.t > 1.5) { const k = Math.max(0, 1 - (d.t - 1.5) / 0.5); d.r.g.scale.setScalar(k); if (k <= 0) { d.done = true; rdGroup.remove(d.r.g); } }
+    }
+    RD.dying = RD.dying.filter(d => !d.done);
+    for (const r of RD.portals) animPortal(r, dt, tNow);
+  }
+
   /* ---------- boucle ---------- */
   let lastFrame = 0, emitClock = 0, emberClock = 0;
   const camQ = new THREE.Quaternion();
@@ -2291,6 +2509,8 @@ const V3 = (() => {
     }
     for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].done) sparks.splice(i, 1);
     if (DJ) djTick(dt, tNow);
+    if (RD) rdTick(dt, tNow);
+    if (portalGroup.visible) for (const r of portals.values()) animPortal(r, dt, tNow);
     renderer.render(scene, camera);
   }
 
@@ -2304,5 +2524,6 @@ const V3 = (() => {
     _fx: () => ({ flames: flames.length, burning: [...blds.values()].filter(r => r.burn).length, people: people.size, mood, biome }),
     onFrame: f => { frameHook = f; }, onTap: f => { tapHook = f; },
     dj: { enter: djEnter, exit: djExit, sync: djSync, fx: djFx, active: () => !!DJ },
+    setPortals, raid: { enter: rdEnter, exit: rdExit, sync: rdSync, fx: rdFx, active: () => !!RD },
   };
 })();

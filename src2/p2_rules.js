@@ -124,15 +124,23 @@ const BLD = {
   fleurs: { name: 'Parterre de fleurs', size: 1, max: 1, cost: { bois: 10, pierre: 5 }, work: 5, deco: 1, cat: 'deco', desc: 'Égaie le village : +1 de moral.' },
   fontaine: { name: 'Fontaine', size: 2, max: 1, cost: { pierre: 120 }, work: 60, deco: 4, hall: 2, cat: 'deco', desc: 'La fierté du village : +4 de moral.' },
   statue: { name: 'Statue', size: 1, max: 1, cost: { pierre: 80, bois: 20 }, work: 40, deco: 3, hall: 3, cat: 'deco', desc: 'Statue d’un héros de légende : +3 de moral.' },
-  marchand: { name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
+  /* Défense (étape 4) : palissades, portes et pièges se posent et s'améliorent tout de suite (inst) ; la tour se construit.
+     hps : solidité par niveau (les dégâts des raids restent jusqu'à la réparation ; 0 = détruit, en ruine). */
+  rempart: { name: 'Palissade', size: 1, max: 3, costs: [{ bois: 8 }, { pierre: 14 }, { pierre: 20, fer: 5 }], hps: [200, 500, 1000], inst: 1, def: 'wall', lvlNames: ['Palissade de bois', 'Mur de pierre', 'Mur renforcé'], cat: 'def', desc: 'Bloque les ennemis : ils doivent la contourner ou la casser. Se pose en ligne, tout de suite.' },
+  porte: { name: 'Porte', size: 1, max: 3, costs: [{ bois: 25 }, { bois: 20, pierre: 25 }, { pierre: 30, fer: 10 }], hps: [150, 380, 760], inst: 1, def: 'gate', lvlNames: ['Porte de bois', 'Porte cloutée', 'Porte de fer'], cat: 'def', desc: 'Dans une palissade : vos héros et vos villageois passent, les ennemis non. Moins solide qu’un mur, alors les ennemis s’y attaquent souvent.' },
+  tour: { name: 'Tour d’archers', size: 2, max: 3, cost: { bois: 120, pierre: 90 }, mul: 2, work: 90, hps: [700, 1200, 1900], def: 'tower', tw: { range: [5.5, 6, 6.5], dmg: [14, 22, 34], rate: 1.2 }, cat: 'def', desc: 'Ses archers tirent sur les ennemis à portée pendant les raids.' },
+  piege: { name: 'Piège à pointes', size: 1, max: 3, costs: [{ bois: 25, pierre: 10 }, { pierre: 20, fer: 10 }, { pierre: 30, fer: 20 }], inst: 1, def: 'trap', trap: { dmg: [45, 75, 120], uses: [3, 3, 3] }, cat: 'def', desc: 'Caché dans le sol : blesse les ennemis qui marchent dessus (3 fois par raid). On marche dessus sans risque.' },
+  filet: { name: 'Filet', size: 1, max: 2, costs: [{ bois: 30 }, { bois: 30, fer: 8 }], inst: 1, def: 'trap', trap: { root: [3, 4.5], uses: [1, 2] }, cat: 'def', desc: 'Caché dans le sol : immobilise quelques secondes l’ennemi qui marche dessus (les trolls s’en défont deux fois plus vite).' },
+  marchand:{ name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
 };
-const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'banc', 'fleurs', 'fontaine', 'statue'];
-const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['heros', 'Pour les héros'], ['deco', 'Décorations']];
+const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'rempart', 'porte', 'tour', 'piege', 'filet', 'banc', 'fleurs', 'fontaine', 'statue'];
+const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['heros', 'Pour les héros'], ['def', 'Défense'], ['deco', 'Décorations']];
 const LIMITS = {
   halle: [1, 1, 1, 1, 1],
   maison: [3, 5, 7, 9, 12], bucheron: [1, 2, 2, 3, 3], carriere: [1, 1, 2, 2, 3], champ: [2, 3, 4, 5, 6],
   moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], brasserie: [0, 1, 1, 1, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
   taverne: [0, 1, 1, 1, 1], mine: [0, 1, 1, 2, 2], forge: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
+  rempart: [24, 40, 56, 72, 90], porte: [2, 3, 4, 5, 6], tour: [1, 2, 3, 4, 5], piege: [2, 4, 6, 8, 10], filet: [1, 2, 3, 4, 5],
 };
 const DECO_MAX = 15;             // le moral apporté par les décorations est plafonné
 const FEAST = { cost: { pain: 30, viande: 30, biere: 20 }, mor: 15, len: DAY, cd: 3 * DAY };
@@ -145,7 +153,23 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const r2 = x => Math.round(x * 100) / 100;
 
 /* ---------- bâtiments : coûts, places, emplois ---------- */
-function costOf(type, toLvl) { const d = BLD[type], c = {}; let m = 1; for (let i = 1; i < toLvl; i++) m *= d.mul || 2; for (const k in d.cost) c[k] = Math.round(d.cost[k] * m / 5) * 5; return c; }
+function costOf(type, toLvl) {
+  const d = BLD[type], c = {};
+  if (d.costs) return Object.assign(c, d.costs[Math.max(1, Math.min(d.costs.length, toLvl | 0)) - 1]);   // défenses : un prix par niveau
+  let m = 1; for (let i = 1; i < toLvl; i++) m *= d.mul || 2; for (const k in d.cost) c[k] = Math.round(d.cost[k] * m / 5) * 5; return c;
+}
+/* Solidité des défenses (palissade, porte, tour) : b.hp absent = intacte, 0 = détruite (en ruine, ne bloque plus rien). */
+const hpMaxOf = b => { const d = BLD[b.type]; return d && d.hps ? d.hps[Math.max(1, Math.min(d.hps.length, b.lvl | 0)) - 1] : 0; };
+const hpOf = b => b.hp == null ? hpMaxOf(b) : b.hp;
+const isBroken = b => !!(BLD[b.type] && BLD[b.type].hps) && b.hp === 0;
+/* Réparer coûte une part du prix, selon les dégâts (palissades, portes : 60 % du prix du niveau pour une ruine ; tour : 30 %). */
+function repairCostOf(b) {
+  const d = BLD[b.type], mx = hpMaxOf(b); if (!mx || b.hp == null || b.hp >= mx || b.lvl < 1) return null;
+  const f = (1 - b.hp / mx) * (d.inst ? 0.6 : 0.3), c = costOf(b.type, b.lvl), out = {};
+  for (const k in c) { const n = Math.ceil(c[k] * f); if (n > 0) out[k] = n; }
+  return out;
+}
+const lvlName = b => { const d = BLD[b.type]; return d.lvlNames ? d.lvlNames[Math.max(1, Math.min(d.lvlNames.length, b.lvl | 0)) - 1] : d.name; };
 function workOf(type, toLvl) { let m = 1; for (let i = 1; i < toLvl; i++) m *= 2; return Math.round(BLD[type].work * m); }
 const hallLvl = v => { const h = v.b.find(b => b.type === 'halle'); return h ? Math.max(1, h.lvl) : 1; };
 const maxLvlOf = (type, hl) => type === 'halle' ? BLD.halle.max : Math.min(BLD[type].max, hl + 1);
@@ -211,6 +235,7 @@ function moraleParts(v, t) {
   let tr = 0; for (const p of v.vil) tr += TRAITS[p.tr] && TRAITS[p.tr].mor || 0;
   if (tr) out.push(['Caractères', tr]);
   if (v.feast > t) out.push(['Fête à la taverne', FEAST.mor]);
+  if (v.raidMor > t) out.push(['Halle pillée par les gobelins', -10]);
   return out;
 }
 const moraleOf = (v, t) => Math.max(0, Math.min(100, 50 + moraleParts(v, t).reduce((a, p) => a + p[1], 0)));
@@ -272,6 +297,15 @@ const heroesAt = (v, target) => Object.values(v.heroes || {}).filter(h => h && h
 /* Rang d'une compétence (0 = pas encore ouverte, puis 1 à 5) ; points dépensés dans hero.sk = { s0, s1, s2 }. */
 const skillRank = (h, i) => h.lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, (h.sk && h.sk['s' + i]) | 0)) : 0;
 const DJ_XP_CAP = lvl => Math.round(1500 * (1 + 0.25 * (lvl - 1)));      // garde-fou : expérience maximale d'un donjon
+const DJ_END_THEMES = ['mine', 'crypte', 'prof', 'portail'];               // donjons reconnus au retour (portail : fermer un portail démoniaque)
+/* Expérience gagnée (donjon ou défense du village) : niveaux et points de compétence. Renvoie le nombre de niveaux gagnés. */
+function heroAddXp(hh, xp) {
+  const lv0 = hh.lvl;
+  hh.xp = (hh.xp || 0) + Math.max(0, Math.round(xp));
+  while (hh.lvl < HERO_MAX_LVL && hh.xp >= heroXpNeed(hh.lvl)) { hh.xp -= heroXpNeed(hh.lvl); hh.lvl++; hh.sp = (hh.sp || 0) + (hh.lvl === 9 ? 2 : 1); }
+  if (hh.lvl >= HERO_MAX_LVL) hh.xp = Math.min(hh.xp, heroXpNeed(hh.lvl));
+  return hh.lvl - lv0;
+}
 /* Prisonnier délivré : un villageois expérimenté (9 dans sa spécialité, au moins 5 ailleurs) qui voudrait s'installer. */
 function prisonerOf(v, t) {
   const taken = new Set(v.vil.map(x => x.name).concat(v.cands.map(x => x.name)));
@@ -317,6 +351,7 @@ function newVillage(vid, name, col, t, uid, pname) {
     r: { bois: 160, pierre: 80, ble: 0, farine: 0, pain: 60, viande: 40, orge: 0, biere: 0, fer: 0, or: 0 },
     b: [], vil: [], cands: [], log: [], hunger: 0, feast: 0, feastCd: 0, ws: seasonIdx({ born: t }, t),
     goals: [], cnt: { acc: 0, fete: 0, win: 0 }, wok: 0,
+    here: t, raid: { n: 0, next: t + RAID_FIRST },        // premier portail au début du 3e jour
   };
   const add = (type, gx, gz) => { const b = { id: v.nid++, type, lvl: 1, gx, gz, up: null }; v.b.push(b); return b; };
   add('halle', 10, 10);
@@ -338,6 +373,8 @@ function stepVillage(v) {
   const t = v.t, h = 1 / 60, cap = capOf(v), si = seasonIdx(v, t), S = SEASONS[si];
   const mor = moraleOf(v, t), mf = moraleF(mor);
   const add = (k, n) => { v.r[k] = NO_CAP.has(k) ? (v.r[k] || 0) + n : Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
+  /* Portails démoniaques et raids (p2r_raid.js) : le portail s'ouvre, se charge, puis le raid vient quand les deux joueurs sont absents. */
+  raidTick(v);
   /* Le marchand ambulant : un jour sur deux, il s'installe sur la place avec quelques objets */
   const md = merchDay(v, t);
   if (md % 2 === 1 && (!v.merch || v.merch.d !== md)) { v.merch = genMerch(v, md); addLog(v, t, 'Un marchand ambulant s’installe sur la place du village, jusqu’à demain.', 'merch'); }
@@ -389,7 +426,7 @@ function stepVillage(v) {
     for (const b of open) {
       b.up.done = r2(b.up.done + work);
       if (b.up.done >= b.up.need) {
-        b.lvl = b.up.to; b.up = null;
+        b.lvl = b.up.to; b.up = null; if (BLD[b.type].hps) delete b.hp;   // une tour agrandie est aussi remise à neuf
         addLog(v, t, (b.lvl > 1 ? BLD[b.type].name + ' agrandi(e) au niveau ' + b.lvl : BLD[b.type].name + ' terminé(e)') + '.', 'built');
       }
     }
@@ -476,6 +513,8 @@ function bldRate(v, b, t) {
 function applyV(v, a, who) {
   const fail = err => ({ ok: false, err });
   const t = v.t, hl = hallLvl(v), nm = (v.members[who.uid] && v.members[who.uid].name) || who.name || 'Quelqu’un';
+  /* Dernière présence d'un joueur (toute action, même la simple mise à jour de l'heure) : les raids attendent 2 h d'absence des deux. */
+  if (v.members[who.uid]) v.here = t;
   switch (a.type) {
     case 'sync': return { ok: true };            // simple mise à jour de l'heure du village
     case 'join': {
@@ -512,11 +551,59 @@ function applyV(v, a, who) {
       if (!fits(v, a.b, a.gx, a.gz)) return fail('Emplacement occupé ou trop près du bord.');
       const c = costOf(a.b, 1), m = missingTxt(v, c); if (m) return fail(m);
       pay(v, c);
+      /* Palissade, porte, piège : posés tout de suite. Le reste : un chantier pour les bâtisseurs. */
+      if (d.inst) { const b = { id: v.nid++, type: a.b, lvl: 1, gx: a.gx, gz: a.gz, up: null }; v.b.push(b); return { ok: true, id: b.id, inst: true }; }
       const b = { id: v.nid++, type: a.b, lvl: 0, gx: a.gx, gz: a.gz, up: { to: 1, need: workOf(a.b, 1), done: 0, q: ++v.q } };
       if (a.b === 'champ') b.crop = a.crop === 'orge' ? 'orge' : 'ble';
       v.b.push(b);
       addLog(v, t, nm + ' lance un chantier : ' + d.name.toLowerCase() + '.', 'site');
       return { ok: true, id: b.id };
+    }
+    case 'walls': {
+      /* Une ou plusieurs cases de palissade d'un coup (toute une ligne), posées tout de suite, tant qu'il y a de quoi payer. */
+      const tiles = Array.isArray(a.tiles) ? a.tiles.slice(0, 40) : [];
+      let n = 0, why = '';
+      for (const tl of tiles) {
+        const gx = tl && tl[0], gz = tl && tl[1];
+        if (countOf(v, 'rempart') >= limitOf('rempart', hl)) { why = why || 'Plus de palissade possible : agrandissez la halle.'; break; }
+        if (!fits(v, 'rempart', gx, gz)) { why = why || 'Case occupée ou trop près du bord.'; continue; }
+        const c = costOf('rempart', 1), m = missingTxt(v, c); if (m) { why = why || m; break; }
+        pay(v, c); v.b.push({ id: v.nid++, type: 'rempart', lvl: 1, gx, gz, up: null }); n++;
+      }
+      if (!n) return fail(why || 'Aucune palissade posée.');
+      return { ok: true, n, why };
+    }
+    case 'gate': {
+      /* Une palissade devient une porte (niveau 1) : les héros et les villageois passent, pas les ennemis. */
+      const b = v.b.find(x => x.id === a.id); if (!b || b.type !== 'rempart') return fail('Choisis une palissade.');
+      if (countOf(v, 'porte') >= limitOf('porte', hl)) return fail('Plus de porte possible : agrandissez la halle.');
+      const c = costOf('porte', 1), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); b.type = 'porte'; b.lvl = 1; delete b.hp;
+      return { ok: true };
+    }
+    case 'upwalls': {
+      /* Améliorer d'un coup toutes les défenses d'un type et d'un niveau (palissades, portes, pièges), tant qu'il y a de quoi payer. */
+      const type = BLD[a.t] && BLD[a.t].inst ? a.t : 'rempart', L = a.lvl | 0, to = L + 1;
+      if (to > maxLvlOf(type, hl)) return fail(to > BLD[type].max ? 'Niveau maximum atteint.' : 'Agrandissez d’abord la halle du village.');
+      const c = costOf(type, to); let n = 0;
+      for (const b of v.b) {
+        if (b.type !== type || b.lvl !== L) continue;
+        if (missingTxt(v, c)) break;
+        pay(v, c); b.lvl = to; delete b.hp; n++;
+      }
+      if (!n) return fail(missingTxt(v, c) || 'Rien à améliorer à ce niveau.');
+      addLog(v, t, nm + ' renforce les défenses : ' + n + ' × ' + lvlName({ type, lvl: to }).toLowerCase() + '.', 'def');
+      return { ok: true, n };
+    }
+    case 'repair': {
+      /* Réparer les défenses abîmées (les ruines d'abord), tant qu'il y a de quoi payer. */
+      const list = v.b.filter(b => repairCostOf(b)).sort((x, y) => (x.hp === 0 ? 0 : 1) - (y.hp === 0 ? 0 : 1) || hpOf(x) / hpMaxOf(x) - hpOf(y) / hpMaxOf(y));
+      if (!list.length) return fail('Rien à réparer.');
+      let n = 0, why = '';
+      for (const b of list) { const c = repairCostOf(b), m = missingTxt(v, c); if (m) { why = m; break; } pay(v, c); delete b.hp; n++; }
+      if (!n) return fail(why);
+      addLog(v, t, nm + ' fait réparer ' + n + ' défense' + (n > 1 ? 's' : '') + '.', 'def');
+      return { ok: true, n, left: list.length - n, why };
     }
     case 'upgrade': {
       const b = v.b.find(x => x.id === a.id); if (!b) return fail('Bâtiment introuvable.');
@@ -524,7 +611,9 @@ function applyV(v, a, who) {
       const to = b.lvl + 1, mx = maxLvlOf(b.type, hl);
       if (to > mx) return fail(to > BLD[b.type].max ? 'Niveau maximum atteint.' : 'Agrandissez d’abord la halle du village.');
       const c = costOf(b.type, to), m = missingTxt(v, c); if (m) return fail(m);
-      pay(v, c); b.up = { to, need: workOf(b.type, to), done: 0, q: ++v.q };
+      pay(v, c);
+      if (BLD[b.type].inst) { b.lvl = to; delete b.hp; return { ok: true, inst: true }; }   // défenses : tout de suite (et réparées)
+      b.up = { to, need: workOf(b.type, to), done: 0, q: ++v.q };
       addLog(v, t, nm + ' lance l’agrandissement : ' + BLD[b.type].name.toLowerCase() + ' niveau ' + to + '.', 'site');
       return { ok: true };
     }
@@ -541,7 +630,7 @@ function applyV(v, a, who) {
       v.b = v.b.filter(x => x !== b);
       for (const p of v.vil) if (p.job === b.id) p.job = null;
       for (const hh of Object.values(v.heroes)) if (hh && hh.at === b.id) hh.at = null;
-      addLog(v, t, nm + ' démolit : ' + BLD[b.type].name.toLowerCase() + '.', 'demolish');
+      if (!BLD[b.type].inst) addLog(v, t, nm + ' démolit : ' + BLD[b.type].name.toLowerCase() + '.', 'demolish');   // une palissade retirée : pas de quoi le noter
       return { ok: true };
     }
     case 'job': {
@@ -609,14 +698,11 @@ function applyV(v, a, who) {
     case 'djEnd': {
       /* Retour de donjon : expérience (et niveaux) pour le héros, butin pour le village, niveau suivant ouvert, prisonnier délivré. */
       const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
-      const L = Math.max(1, Math.min(99, a.lvl | 0)), win = !!a.win, th = a.theme === 'crypte' || a.theme === 'prof' ? a.theme : 'mine', deep = Math.max(0, Math.min(200, a.deep | 0));
+      const L = Math.max(1, Math.min(99, a.lvl | 0)), win = !!a.win, th = DJ_END_THEMES.includes(a.theme) ? a.theme : 'mine', deep = Math.max(0, Math.min(200, a.deep | 0));
       let xp = Math.max(0, Math.min(DJ_XP_CAP(L) * (th === 'prof' ? 1 + deep : 1), Math.round(+a.xp || 0)));
       if (hh.race === 'humain') xp = Math.round(xp * 1.1);                 // Apprend vite
-      const lv0 = hh.lvl;
-      hh.xp = (hh.xp || 0) + xp;
-      while (hh.lvl < HERO_MAX_LVL && hh.xp >= heroXpNeed(hh.lvl)) { hh.xp -= heroXpNeed(hh.lvl); hh.lvl++; hh.sp = (hh.sp || 0) + (hh.lvl === 9 ? 2 : 1); }
-      if (hh.lvl >= HERO_MAX_LVL) hh.xp = Math.min(hh.xp, heroXpNeed(hh.lvl));
-      if (win && th !== 'prof') hh.dj = Math.max(hh.dj || 1, Math.min(99, L + 1));
+      const up = heroAddXp(hh, xp);
+      if (win && (th === 'mine' || th === 'crypte')) hh.dj = Math.max(hh.dj || 1, Math.min(99, L + 1));
       if (th === 'prof') hh.deep = Math.max(hh.deep || 0, deep);
       hh.runs = (hh.runs || 0) + 1; if (win) hh.wins = (hh.wins || 0) + 1;
       const cap = capOf(v), got = {};
@@ -639,13 +725,15 @@ function applyV(v, a, who) {
       for (const g in (a.gems && typeof a.gems === 'object' ? a.gems : {})) { const G = gemOf(g), n = Math.max(0, Math.min(10, a.gems[g] | 0)); if (G && n) bag.gm[G.key] = (bag.gm[G.key] || 0) + n; }
       if (gold + autoGold) v.r.or = (v.r.or || 0) + gold + autoGold;
       if (gold) got.or = gold;
-      const up = hh.lvl - lv0;
       const fl = deep ? deep + ' étage' + (deep > 1 ? 's terminés' : ' terminé') : 'aucun étage terminé';
       const what = th === 'prof' ? (win ? ' remonte des Profondeurs (' : ' a dû fuir les Profondeurs (') + fl + ')'
+        : th === 'portail' ? (win ? ' a vaincu le gardien du portail démoniaque' : ' a dû fuir le portail démoniaque') + ' (niveau ' + L + ')'
         : win ? ' revient vainqueur ' + (th === 'crypte' ? 'de la crypte des rois' : 'de la mine des gobelins') + ' (niveau ' + L + ')' : ' a dû fuir ' + (th === 'crypte' ? 'la crypte des rois' : 'la mine des gobelins') + ' (niveau ' + L + ')';
       addLog(v, t, hh.name + what + ' : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + (nItems ? ', ' + nItems + ' objet' + (nItems > 1 ? 's' : '') : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : '') + (autoSold ? ' Sac plein : ' + autoSold + ' objet' + (autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + autoGold + ' or.' : ''), 'dj');
-      if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + (th === 'crypte' ? ' d’un tombeau de la crypte' : ' d’un cachot souterrain') + ', voudrait s’installer au village.', 'cand');
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold };
+      if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + (th === 'crypte' ? ' d’un tombeau de la crypte' : th === 'portail' ? ' d’une cage du gardien du portail' : ' d’un cachot souterrain') + ', voudrait s’installer au village.', 'cand');
+      /* Portail démoniaque vaincu : il se referme (s'il est encore ouvert) ; tous refermés = pas de raid cette fois. */
+      const closed = th === 'portail' && win ? raidClosePortal(v, t, a.pi | 0, hh.name) : null;
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed };
     }
     /* ---------- équipement (étape 3) ---------- */
     case 'equip': {

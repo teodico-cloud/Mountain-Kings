@@ -70,6 +70,8 @@ Object.assign(IC, {
   s_anvil: '<svg viewBox="0 0 24 24"><path d="M3 7h13c0 3 2 4.5 5 5v1h-6l-1 3h3v3H7v-3h3l-1-3H8C5 13 3 11 3 7z" fill="currentColor"/></svg>',
   s_paw: '<svg viewBox="0 0 24 24"><g fill="currentColor"><ellipse cx="12" cy="16" rx="5" ry="4.2"/><ellipse cx="6" cy="10" rx="2" ry="2.6"/><ellipse cx="18" cy="10" rx="2" ry="2.6"/><ellipse cx="9.3" cy="6.3" rx="2" ry="2.6"/><ellipse cx="14.7" cy="6.3" rx="2" ry="2.6"/></g></svg>',
 });
+/* Raids : bouclier, flamme (les mêmes que dans les donjons) */
+Object.assign(IC, { shield: DJ_IC.shield, flame: DJ_IC.flame, sword: DJ_IC.sword });
 const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k] || ''}</span>`;
 const RES_SHOW = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere', 'fer', 'or'];
 function chipsRes(c, have, cls) { return RES.filter(k => c[k]).map(k => `<span class="chip${have && (have[k] || 0) < c[k] ? ' short' : ''}${cls ? ' ' + cls : ''}">${ico(k)}${fmtN(c[k])}</span>`).join(''); }
@@ -114,7 +116,8 @@ function act(a, opts) {
   pending.push(a); recompute(); renderAll(); refreshScene();
   scheduleCommit(150);
   const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click', skill: 'star', spec: 'hero',
-    equip: 'upgrade', unequip: 'click', sell: 'coin', melt: 'wallhit', craft: 'upgrade', improve: 'upgrade', socket: 'built', unsocket: 'click', fuse: 'star', buy: 'coin', pet: 'click' }[a.type];
+    equip: 'upgrade', unequip: 'click', sell: 'coin', melt: 'wallhit', craft: 'upgrade', improve: 'upgrade', socket: 'built', unsocket: 'click', fuse: 'star', buy: 'coin', pet: 'click',
+    walls: 'place', gate: 'place', upwalls: 'upgrade', repair: 'built' }[a.type];
   if (fx && !(opts && opts.quiet)) SND.sfx(fx);
   return test;
 }
@@ -164,8 +167,8 @@ function onVillage(snap) {
   if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
-const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge']);
-const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch']);
+const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def']);
+const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch', 'portal']);
 /* Nouvelles du journal pendant qu'on joue : une bulle pour la plus récente. */
 function newsCheck() {
   if (!me || !me.log.length) return;
@@ -176,7 +179,7 @@ function newsCheck() {
   if (!show.length) return;
   const l = show[show.length - 1];
   toast(l.m);
-  if (l.k === 'built') SND.sfx('built'); else if (l.k === 'cand') SND.sfx('invite'); else if (l.k === 'leave') SND.sfx('error'); else if (l.k === 'season') SND.sfx('star');
+  if (l.k === 'built') SND.sfx('built'); else if (l.k === 'cand') SND.sfx('invite'); else if (l.k === 'leave') SND.sfx('error'); else if (l.k === 'season') SND.sfx('star'); else if (l.k === 'portal') SND.sfx('alarm');
 }
 
 /* ---------- scène 3D ---------- */
@@ -184,7 +187,7 @@ function items(v, editable) {
   const out = v.b.map(b => {
     let gx = b.gx, gz = b.gz;
     if (editable && place && place.kind === 'move' && place.id === b.id) { gx = place.gx; gz = place.gz; }
-    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined };
+    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined, dead: isBroken(b) };
   });
   if (editable && place && place.kind === 'new') out.push({ key: 'ghost', id: 0, type: place.type, lvl: 1, gx: place.gx, gz: place.gz, up: null, col: safeColor(v.c) });
   /* Le marchand ambulant : sa charrette, près de la halle, les jours où il est là */
@@ -209,15 +212,21 @@ function peopleOf(v) {
 }
 const placeValid = () => place && fits(me, place.type, place.gx, place.gz, place.kind === 'move' ? place.id : undefined);
 function refreshScene() {
-  if (!gl || mode === 'donjon') return;
+  if (!gl || mode === 'donjon' || mode === 'raid') return;
   V3.setMood('warm');
-  const v = me || demoVillage, editable = !!me && mode === 'home';
-  V3.setSeason(seasonIdx(v, me ? now() : v.born));
+  const v = me || demoVillage, editable = !!me && mode === 'home', t = me ? now() : v.born;
+  V3.setSeason(seasonIdx(v, t));
   V3.setBuildings(items(v, editable));
+  /* solidité des défenses abîmées (une barre au-dessus) */
+  for (const b of v.b) if (BLD[b.type].hps && b.lvl > 0) V3.setBldHp('m' + b.id, isBroken(b) ? 0 : hpOf(b) / hpMaxOf(b), true);
   const b = editable && sel != null && !place ? v.b.find(x => x.id === sel) : null;
   V3.select(b || null);
-  if (editable && place) V3.ghost(place.type, place.gx, place.gz, placeValid()); else V3.ghost(null);
+  if (editable && place && place.kind === 'wall') V3.ghost('rempart', place.gx, place.gz, true);
+  else if (editable && place) V3.ghost(place.type, place.gx, place.gz, placeValid()); else V3.ghost(null);
   V3.setPeople(peopleOf(v));
+  /* portails démoniaques : visibles pendant la charge */
+  const ri = me ? raidInfo(v, t) : { p: [] };
+  V3.setPortals(ri.p.map(p => Object.assign({ frac: ri.frac, ready: ri.st === 'ready' }, p)));
 }
 function setMode(m) {
   mode = m;
@@ -230,6 +239,7 @@ function setMode(m) {
 function onTap(cx, cy) {
   if (modal || mode !== 'home' || !me) return;
   if (sheet) { closeSheet(); return; }
+  if (place && place.kind === 'wall') { wallTap(cx, cy); return; }
   if (place) {
     const g = V3.pickGround(cx, cy); if (!g) return;
     const s = BLD[place.type].size;
@@ -242,11 +252,13 @@ function onTap(cx, cy) {
   const pk = V3.pickPerson(cx, cy, 16) || (k ? null : V3.pickPerson(cx, cy, 30));
   if (pk) { selP = pk; sel = null; SND.sfx('click'); refreshScene(); renderAll(); return; }
   if (k === 'merch') { sel = null; selP = null; SND.sfx('click'); openSheet('merch'); return; }
+  if (k && k.indexOf('portal') === 0) { sel = null; selP = null; SND.sfx('click'); openSheet('defense'); return; }
   sel = k && k[0] === 'm' ? +k.slice(1) : null; selP = null;
   refreshScene(); renderAll();
 }
 function startPlace(type) {
   if (!me) return;
+  if (type === 'rempart') { startWallMode(); return; }
   const d = BLD[type], hl = hallLvl(me);
   if ((d.hall || 1) > hl) { toast('Il faut une halle du village de niveau ' + d.hall + '.'); return; }
   if (countOf(me, type) >= limitOf(type, hl)) { toast('Nombre maximum atteint : agrandissez la halle.'); return; }
@@ -266,7 +278,7 @@ function confirmPlace() {
   if (!placeValid()) { toast('Emplacement occupé ou trop près du bord.'); return; }
   const p = place;
   const r = p.kind === 'new' ? act({ type: 'build', b: p.type, gx: p.gx, gz: p.gz }) : act({ type: 'move', id: p.id, gx: p.gx, gz: p.gz });
-  if (r) { place = null; if (p.kind === 'new') { toast('Chantier lancé : les bâtisseurs s’y mettent.'); sel = r.id || null; } refreshScene(); renderAll(); }
+  if (r) { place = null; if (p.kind === 'new') { toast(r.inst ? BLD[p.type].name + ' en place.' : 'Chantier lancé : les bâtisseurs s’y mettent.'); sel = r.inst ? null : r.id || null; } refreshScene(); renderAll(); }
 }
 
 /* ---------- HUD du haut ---------- */
@@ -282,6 +294,8 @@ function topHTML() {
   else chips += `<button class="glass chipb" data-act="sheet" data-s="village">${ico('link', 'c-tro')}Inviter</button>`;
   if (v.feast > t) chips += `<span class="glass chipb">${ico('mug', 'c-tro')}Fête · ${fmtDur(v.feast - t)}</span>`;
   if (merchHere(v, t)) chips += `<button class="glass chipb live" data-act="sheet" data-s="merch">${ico('or')}Marchand · ${fmtDur(merchLeaves(v, t) - t)}</button>`;
+  const ri = raidInfo(v, t);
+  if (ri.st !== 'calm') chips += `<button class="glass chipb${ri.st === 'ready' ? ' alert' : ''}" data-act="sheet" data-s="defense">${ico('flame', '')}${ri.st === 'ready' ? 'Portail chargé !' : 'Portail · ' + fmtDur(ri.ready - t)}</button>`;
   const head = `<div class="idrow"><button class="glass me" data-act="sheet" data-s="village"><span class="crest" style="background:${safeColor(v.c)}">${esc(initial(v.name))}</span>
     <span class="idtxt"><b>${esc(v.name)}</b><small>${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</small></span></button>
     <div class="chips">${chips}</div></div>`;
@@ -344,6 +358,7 @@ function bldLine(v, b, t) {
 }
 function bldPanel() {
   const v = me, b = v.b.find(x => x.id === sel); if (!b) return '';
+  if (isDef(b)) return defPanel(v, b);
   const d = BLD[b.type], t = now(), hl = hallLvl(v);
   let h = `<div class="glass card"><h3><span>${esc(d.name)}</span><span class="row"><small>${b.lvl > 0 ? 'niveau ' + b.lvl : 'chantier'}</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>`;
   if (b.up) {
@@ -390,7 +405,7 @@ function personPanel() {
 }
 function navBar() {
   const v = me;
-  const idle = v.vil.some(p => p.job == null), canBuild = SHOP.some(k => (BLD[k].hall || 1) <= hallLvl(v) && countOf(v, k) < limitOf(k, hallLvl(v)) && !missingTxt(v, costOf(k, 1)));
+  const idle = v.vil.some(p => p.job == null), canBuild = SHOP.some(k => !BLD[k].inst && (BLD[k].hall || 1) <= hallLvl(v) && countOf(v, k) < limitOf(k, hallLvl(v)) && !missingTxt(v, costOf(k, 1)));
   const unseen = v.log.some(l => l.t > (LS.get('mk2.read.' + vid) || 0) && AWAY_KINDS.has(l.k));
   const myHero = activeHero(v, uid);
   return `<nav class="glass nav" aria-label="Menus">
@@ -398,13 +413,15 @@ function navBar() {
     <button data-act="sheet" data-s="people">${ico('people', '')}Villageois${v.cands.length || idle ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="hero">${ico('crown', '')}${myHero ? esc(myHero.name) : 'Héros'}${myHero && myHero.sp ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="donjon">${djIco('sword')}Donjon</button>
+    <button data-act="sheet" data-s="defense">${djIco('shield')}Défense${raidInfo(v, now()).st !== 'calm' || v.b.some(b => repairCostOf(b)) ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="journal">${ico('scroll', '')}Journal${unseen ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="village">${ico('house', '')}Village</button></nav>`;
 }
 function renderBottom() {
   let h = '';
   if (mode === 'home' && me) {
-    if (place) {
+    if (place && place.kind === 'wall') h = wallBarHTML();
+    else if (place) {
       const valid = placeValid(), d = BLD[place.type];
       h = `<div class="glass card"><div class="row split"><b>${place.kind === 'new' ? 'Placer' : 'Déplacer'} : ${esc(d.name)}</b><span class="note">Touchez le terrain pour choisir.</span></div>
         ${valid ? '' : '<p class="why">Emplacement occupé ou trop près du bord.</p>'}
@@ -444,7 +461,7 @@ function sheetBuild() {
       const d = BLD[k], n = countOf(v, k), lim = limitOf(k, hl), c = costOf(k, 1), locked = (d.hall || 1) > hl;
       const miss = missingTxt(v, c), full = n >= lim;
       h += `<div class="item"><div class="head"><b>${esc(d.name)}</b><small>${locked ? 'halle niveau ' + d.hall : n + ' sur ' + lim}</small></div><p>${esc(d.desc)}</p>
-        <div class="foot"><span class="chips2">${chipsRes(c, v.r)}<span class="dur">${ico('hammer', '')}${fmtDur(workOf(k, 1) / Math.max(1, sr.perSite) * 3600000)}</span></span>
+        <div class="foot"><span class="chips2">${chipsRes(c, v.r)}<span class="dur">${ico('hammer', '')}${d.inst ? 'tout de suite' + (k === 'rempart' ? ', en ligne' : '') : fmtDur(workOf(k, 1) / Math.max(1, sr.perSite) * 3600000)}</span></span>
         <button class="btn small${locked || full || miss ? ' off' : ' primary'}" data-act="place" data-type="${k}">${locked ? 'Verrouillé' : full ? 'Maximum' : 'Construire'}</button></div></div>`;
     }
     h += '</div>';
@@ -565,7 +582,7 @@ function sheetHero() {
   if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
-const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil' };
+const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield' };
 function sheetJournal() {
   const v = me;
   if (!v.log.length) return '<p class="note">Rien pour l’instant.</p>';
@@ -614,14 +631,15 @@ function sheetHelp() {
     + sec('Construire', ['Les bâtisseurs font avancer les chantiers, plus vite s’ils sont doués en construction. Sans bâtisseur, ça avance quand même un peu.', 'Agrandir la halle débloque des bâtiments, plus de bâtisseurs et plus de chantiers à la fois.'])
     + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence (menu Héros, bouton +1) ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10.'])
     + sec('L’équipement', ['Chaque héros porte une arme, un casque, une armure, des bottes et, dès le niveau 8, un bijou (menu Héros). Chaque classe manie sa famille d’armes : lames, arcs ou bâtons.', 'Les objets ont 5 raretés : commun (gris), peu commun (vert), rare (bleu), épique (violet), légendaire (orange, avec un pouvoir). Les objets d’ensemble (turquoise) donnent un bonus à 2 et à 4 pièces portées.', 'On les trouve en donjon : dans les coffres, sur les boss, parfois sur un monstre ; mieux dans les donjons plus hauts. À deux, chacun trouve ses propres objets.', 'Dans le sac, les flèches comparent avec l’objet porté : ▲ mieux, ▼ moins bien. Vendre un objet rapporte de l’or (la bourse commune) ; le fondre à la forge rend du fer.', 'La forge (avec le fer de la mine) fabrique un objet au choix, l’améliore jusqu’à +5 et sertit les pierres précieuses : trois pierres pareilles se fusionnent en une plus belle.', 'Un jour sur deux, un marchand ambulant s’installe près de la halle avec quelques objets à vendre.', 'Au niveau 6, un familier accompagne le héros : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.'])
+    + sec('Les raids et la défense', ['À partir du 3e jour, un portail démoniaque s’ouvre au bord de la vallée (au plus un raid par jour). Il se charge pendant 3 heures : vous voyez de quel côté viendront les gobelins.', 'Le raid ne part que quand vous êtes absents tous les deux depuis 2 heures. Il se joue tout seul ; à votre retour, un bilan s’affiche et vous pouvez revoir le combat.', 'Les gobelins foncent piller la halle, les voleurs filent vers l’entrepôt, les trolls cassent ce qui bloque (bien plus fort sur les palissades et les portes). Tous prennent le chemin le plus court, en comptant ce qu’il faudrait casser.', 'Ce qu’ils emportent est perdu s’ils regagnent le portail ; abattus avant, ils lâchent tout. Si la halle est pillée, le moral baisse pendant un jour.', 'Menu Défense : palissades (posées en ligne), portes (vos héros et villageois passent), tours d’archers, pièges à pointes et filets cachés. Vos héros défendent la halle et gagnent de l’expérience ; chaque ennemi abattu rapporte de l’or.', 'Refermez un portail avec votre héros (seul ou à deux) : un petit donjon et son gardien. Tous les portails refermés : pas de raid cette fois.', 'Après un raid, réparez les défenses abîmées (menu Défense).'])
     + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de l’or, de la pierre et du bois pour le village, des objets et des pierres précieuses dans ton sac, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié (on garde les meilleurs objets).', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant' };
+  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch }[sheet];
+  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense }[sheet];
   setHTML(els.sheetBody, f ? f() : '');
   if (sheet === 'village' && sheetArg === 'feast' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#feastSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
@@ -694,6 +712,7 @@ function renderModal() {
   else if (M && M.kind === 'info') h = `<h2>${esc(M.title)}</h2><p>${esc(M.text)}</p><button class="btn primary" data-act="closeModal">Compris</button>`;
   else if (M && M.kind === 'newhero' && me) h = heroHTML(true);
   else if (M && M.kind === 'djres' && dj) h = djResHTML();
+  else if (M && M.kind === 'raid' && me) h = raidModalHTML();
   else if (M && M.kind === 'djfloor' && dj && dj.run) h = djFloorHTML();
   else if (M && M.kind === 'djfloorwait' && dj && dj.run && dj.duo) h = djFloorWaitHTML();
   else if (M && M.kind === 'djinv' && me) h = djInvHTML();
@@ -748,6 +767,7 @@ document.addEventListener('pointerup', release, true);
 document.addEventListener('pointercancel', release, true);
 const ACT = {
   ...ACT_EQ,
+  ...ACT_RAID,
   noop() {},
   orient: b => { orient = b.dataset.o; LS.set('mk2.orient', orient); applyOrientation(); renderAll(); },
   sheet: b => { renderSheet.scrolled = false; openSheet(b.dataset.s, b.dataset.k); },
@@ -773,7 +793,7 @@ const ACT = {
   heroForm: () => { closeSheet(true); setMode('hero'); },
   feast: () => { if (act({ type: 'feast' })) toast('C’est la fête à la taverne !'); },
   claim: b => act({ type: 'claim', id: b.dataset.id }),
-  djGo: b => djBegin(+b.dataset.k || 1, b.dataset.th),
+  djGo: b => djBegin(+b.dataset.k || 1, b.dataset.th, +b.dataset.pi || 0),
   djBack: () => djBack(),
   djFlee: () => {
     if (!dj || dj.st.over) return;
@@ -785,7 +805,7 @@ const ACT = {
   djUp: () => djAscend(),
   djDown: () => djDescend(),
   djLeaveFloor: () => { if (dj && dj.duo && dj.duo.role === 'guest' && dj.st.over === 'floor' && !dj.ended && confirm('Rentrer au village ? Tu gardes toute l’expérience gagnée ; ' + (dj.duo.mateName || 'ton partenaire') + ' pourra continuer seul·e.')) djGuestQuit(false); },
-  djInvite: b => djInvite(+b.dataset.k || 1, b.dataset.th),
+  djInvite: b => djInvite(+b.dataset.k || 1, b.dataset.th, +b.dataset.pi || 0),
   djYes: () => djAnswer(true),
   djNo: () => djAnswer(false),
   djCancel: () => djCancelInvite(),
@@ -803,7 +823,7 @@ const ACT = {
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
 const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill', 'djInvite', 'djYes', 'djDown',
-  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet']);
+  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet', 'repair', 'upwalls', 'gate', 'raidReplay']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (!QUIET.has(b.dataset.act)) SND.sfx('click');
@@ -846,7 +866,7 @@ function tick() {
   if (vsim) {
     simulateVillage(vsim, now()); recompute(); if (mode !== 'donjon') newsCheck(); goalCheck();
     if (!pending.length && !committing && vraw && now() - Math.max(vraw.t, lastSync) > 20 * 60000) { pending.push({ type: 'sync' }); scheduleCommit(50); }
-    candCheck();
+    candCheck(); raidCheck();
   }
   renderAll(); refreshScene();
 }
@@ -949,7 +969,7 @@ async function joinVillage(pname) {
   } catch (e) { formErr('#jErr', e && e.code === 'not_granted' ? 'Impossible de rejoindre : ce village a peut-être déjà ses deux habitants.' : 'Ça n’a pas marché. Réessaie.'); }
   busy = false; renderAll();
 }
-if (window.MK_TEST) window.__mk = { get me() { return me; }, get mode() { return mode; }, get vid() { return vid; }, toScreen: (x, z) => gl ? V3.toScreen(x, z) : null, act: (a, o) => act(a, o), fx: () => gl ? V3._fx() : null, simAt: T => vraw ? JSON.stringify(simulateVillage(clone(vraw), T)) : null, now: () => now(), get busy() { return pending.length + (committing ? 1 : 0); }, get dj() { return dj; }, djBegin: (l, th) => djBegin(l, th) };
+if (window.MK_TEST) window.__mk = { get me() { return me; }, get mode() { return mode; }, get vid() { return vid; }, toScreen: (x, z) => gl ? V3.toScreen(x, z) : null, act: (a, o) => act(a, o), fx: () => gl ? V3._fx() : null, simAt: T => vraw ? JSON.stringify(simulateVillage(clone(vraw), T)) : null, now: () => now(), get busy() { return pending.length + (committing ? 1 : 0); }, get dj() { return dj; }, djBegin: (l, th, pi) => djBegin(l, th, pi), get rp() { return rp; }, raidReplay: () => raidReplayStart() };
 async function boot() {
   const cv = $('#gl');
   gl = typeof THREE !== 'undefined' && V3.init(cv);

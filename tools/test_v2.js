@@ -1,7 +1,7 @@
 /* Essais des règles du nouveau jeu (village commun). Usage : node tools/test_v2.js */
 const fs = require('fs'), path = require('path');
-const src = ['p2_rules.js', 'p2e_equip.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
-const R = new Function(src + '\nreturn { VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone, genItem, cleanItem, itemInfo, canWear, gearOf, compareItem, bagOf, bagMax, mulberry32, merchHere, merchDay, RARITY, SETS, POWERS, GEMS, gemOf, craftCost, improveCost, SLOTS, DROP, rollRarity, forgeLvlOf };')();
+const src = ['p2_rules.js', 'p2e_equip.js', 'p2r_raid.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
+const R = new Function(src + '\nreturn { VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone, genItem, cleanItem, itemInfo, canWear, gearOf, compareItem, bagOf, bagMax, mulberry32, merchHere, merchDay, RARITY, SETS, POWERS, GEMS, gemOf, craftCost, improveCost, SLOTS, DROP, rollRarity, forgeLvlOf, hpOf, hpMaxOf, repairCostOf, raidTick, raidInput, raidStart, raidStep, raidResult, raidReplay, raidInfo, raidLevel, raidClosePortal, raidField, raidFoeStep, raidHurtFoe, RAID_FIRST, RAID_CHARGE, RAID_AWAY, RAID_FOES, limitOf, fits };')();
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
 const H = 3600000, D = 24 * H, T0 = Date.UTC(2026, 9, 12, 8, 0, 0);
@@ -134,7 +134,7 @@ vfe.r.biere = 50;
 ok(R.applyV(vfe, { type: 'feast' }, who).ok && vfe.cnt.fete === 1, 'fête avec de la bière, comptée pour les objectifs');
 
 /* 13. Hiver sans famine (ou pas) */
-let vh1 = R.clone(v); vh1.r.pain = 3000; vh1.r.viande = 3000; vh1.r.bois = 3000;
+let vh1 = R.clone(v); vh1.r.pain = 3000; vh1.r.viande = 3000; vh1.r.bois = 3000; vh1.raid = { n: 0, next: 9e15 };   // pas de raid ici : on ne regarde que l'hiver
 R.simulateVillage(vh1, T0 + 8 * D + H);
 ok(vh1.cnt.win === 1 && vh1.log.some(l => /sans famine/.test(l.m)), 'un hiver passé sans famine est compté');
 ok(vh1.r.bois >= 3000, 'les maisons ne brûlent plus de bois en hiver (' + Math.round(vh1.r.bois) + ')');
@@ -273,6 +273,149 @@ ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
   ok(vi.r.fer > fi + 10, 'un mineur à la mine de fer : +' + Math.round(vi.r.fer - fi) + ' fer en 5 heures');
   const nv = R.newVillage('vnew', 'Neuf', '#D27A22', T0, 'u9', 'X');
   ok(nv.r.fer === 0 && nv.r.or === 0 && R.goalsOf(nv).length === 3, 'nouveau village : fer et or à zéro');
+}
+
+/* 17. Défense : palissades, portes, tours, pièges ; portails et raids */
+{
+  const vd = R.newVillage('vdef', 'Fort-Brume', '#D27A22', T0, 'u1', 'Téo');
+  vd.members.u2 = { name: 'Léa', t: T0, hi: 1 };
+  vd.r.bois = 2000; vd.r.pierre = 2000; vd.r.fer = 200;
+  ok(JSON.stringify(R.costOf('rempart', 1)) === '{"bois":8}' && JSON.stringify(R.costOf('rempart', 3)) === '{"pierre":20,"fer":5}', 'prix des palissades par niveau (bois, puis pierre, puis pierre et fer)');
+  /* une ligne de palissades, d'un coup */
+  const tiles = []; for (let x = 4; x <= 9; x++) tiles.push([x, 4]);
+  let r = R.applyV(vd, { type: 'walls', tiles }, who);
+  ok(r.ok && r.n === 6 && vd.b.filter(b => b.type === 'rempart').length === 6 && vd.r.bois === 2000 - 48, 'une ligne de 6 palissades posée tout de suite (48 bois)');
+  r = R.applyV(vd, { type: 'walls', tiles: [[4, 4], [10, 4]] }, who);
+  ok(r.ok && r.n === 1 && r.why, 'une case déjà prise est sautée');
+  ok(!R.applyV(R.clone(vd), { type: 'walls', tiles: [[0, 0]] }, who).ok, 'pas de palissade au bord de la vallée');
+  const lim = R.limitOf('rempart', 1), many = []; for (let i = 0; i < 40; i++) many.push([3 + (i % 18), 20 + Math.floor(i / 18)]);
+  r = R.applyV(R.clone(vd), { type: 'walls', tiles: many }, who);
+  ok(r.ok && r.n === lim - 7 && /agrandissez la halle/.test(r.why), 'au plus ' + lim + ' palissades avec la halle niveau 1');
+  /* porte, amélioration de toutes les palissades, piège, tour */
+  const w1 = vd.b.find(b => b.type === 'rempart' && b.gx === 6);
+  ok(R.applyV(vd, { type: 'gate', id: w1.id }, who).ok && w1.type === 'porte' && w1.lvl === 1, 'une palissade devient une porte');
+  r = R.applyV(vd, { type: 'upwalls', t: 'rempart', lvl: 1 }, who);
+  ok(r.ok && r.n === 6 && vd.b.filter(b => b.type === 'rempart').every(b => b.lvl === 2), 'toutes les palissades passent en mur de pierre');
+  ok(!R.applyV(R.clone(vd), { type: 'upwalls', t: 'rempart', lvl: 2 }, who).ok, 'mur renforcé : il faut une halle plus grande');
+  r = R.applyV(vd, { type: 'build', b: 'piege', gx: 12, gz: 16 }, who);
+  ok(r.ok && r.inst && vd.b.find(b => b.id === r.id).lvl === 1, 'piège posé tout de suite');
+  const tsp = R.freeSpot(vd, 'tour', 15, 4); r = R.applyV(vd, { type: 'build', b: 'tour', gx: tsp[0], gz: tsp[1] }, who);
+  const tour = vd.b.find(b => b.id === r.id);
+  ok(r.ok && !r.inst && tour.lvl === 0 && tour.up, 'la tour d’archers, elle, se construit');
+  R.simulateVillage(vd, vd.t + 3 * H);
+  ok(tour.lvl === 1, 'tour terminée');
+  /* dégâts et réparation */
+  const w2 = vd.b.find(b => b.type === 'rempart'); w2.hp = 0; const w3 = vd.b.filter(b => b.type === 'rempart')[1]; w3.hp = 250;
+  const rc = R.repairCostOf(w2), p0 = vd.r.pierre;
+  r = R.applyV(vd, { type: 'repair' }, who);
+  ok(r.ok && r.n === 2 && w2.hp == null && w3.hp == null && vd.r.pierre < p0 && rc.pierre === Math.ceil(14 * 0.6), 'réparation : la ruine et le mur abîmé (' + (p0 - vd.r.pierre) + ' pierre)');
+  ok(!R.applyV(R.clone(vd), { type: 'repair' }, who).ok, 'rien à réparer ensuite');
+
+  /* calendrier des portails */
+  const vc = R.newVillage('vcal', 'Val', '#D27A22', T0, 'u1', 'Téo');
+  vc.members.u2 = { name: 'Léa', t: T0, hi: 1 };
+  ok(vc.raid.next === T0 + 2 * D && !vc.raid.p, 'premier portail prévu au début du 3e jour');
+  R.simulateVillage(vc, T0 + 2 * D - 5 * 60000);
+  ok(!vc.raid.p && !vc.lastRaid, 'rien avant le 3e jour');
+  R.simulateVillage(vc, T0 + 2 * D + 60000);
+  ok(vc.raid.p && vc.raid.p.length === 1 && vc.log.some(l => l.k === 'portal'), 'le 3e jour, un portail s’ouvre (halle niveau 1) : ' + vc.log.filter(l => l.k === 'portal').slice(-1)[0].m);
+  ok(R.raidInfo(vc, vc.t).st === 'charge', 'il se charge');
+  /* quelqu'un est là : pas de raid, même portail chargé */
+  let tt = vc.t;
+  for (let i = 0; i < 18; i++) { tt += 20 * 60000; R.simulateVillage(vc, tt); R.applyV(vc, { type: 'sync' }, i % 2 ? who : who2); }
+  ok(!vc.lastRaid && vc.raid.p && R.raidInfo(vc, vc.t).st === 'ready' && vc.log.some(l => /chargé/.test(l.m)), 'portail chargé, mais un joueur est là toutes les 20 minutes : pas de raid');
+  const absent = vc.t;
+  R.simulateVillage(vc, absent + 2 * H - 2 * 60000);
+  ok(!vc.lastRaid, 'pas encore de raid après 1 h 58 d’absence');
+  R.simulateVillage(vc, absent + 2 * H + 2 * 60000);
+  ok(vc.lastRaid && !vc.raid.p && vc.raid.n === 1 && vc.log.some(l => l.k === 'raid'), 'après 2 h d’absence des deux : le raid (' + vc.log.filter(l => l.k === 'raid')[0].m + ')');
+  const lr = vc.lastRaid;
+  ok(vc.raid.next >= lr.t + 20 * H && vc.raid.next <= lr.t + 28 * H, 'portail suivant dans ' + Math.round((vc.raid.next - lr.t) / H) + ' h (au plus un raid par jour)');
+  ok(lr.F.length === 4 && lr.F.filter(f => f[0] === 'voleur').length === 1, 'premier raid, doux : 3 gobelins et 1 voleur');
+  /* rediffusion : le même combat, même après un aller-retour par la base de données */
+  const rep = st => { let n = 0; while (!st.over && n++ < 4000) { R.raidStep(st); st.ev.length = 0; } return R.raidResult(st); };
+  const back = JSON.parse(JSON.stringify(lr));
+  ok(JSON.stringify(rep(R.raidReplay(back))) === JSON.stringify(lr.res), 'la rediffusion rejoue exactement le même raid');
+  ok(lr.res.f === 4 && lr.res.k + lr.res.e === 4, 'bilan : ' + lr.res.k + ' vaincus, ' + lr.res.e + ' enfuis, volé ' + JSON.stringify(lr.res.lost) + ', repris ' + JSON.stringify(lr.res.back));
+
+  /* un village sans défense (sans héros) : le butin s'en va, la halle est pillée */
+  const vn = R.newVillage('vnu', 'Nu', '#D27A22', T0, 'u1', 'Téo'); vn.r.bois = 1000; vn.r.pierre = 1000; vn.r.or = 300;
+  vn.raid = { n: 3, next: vn.t }; R.simulateVillage(vn, vn.t + 60000);
+  const bois0 = vn.r.bois, or0 = vn.r.or;
+  R.simulateVillage(vn, vn.raid.at + 3 * H + 2 * 60000);
+  const rn = vn.lastRaid && vn.lastRaid.res;
+  ok(rn && rn.k === 0 && rn.e === rn.f && Object.keys(rn.lost).length > 0, 'sans défense : tous repartent avec du butin ' + JSON.stringify(rn && rn.lost));
+  ok(rn && rn.h === 1 && vn.raidMor > vn.t && R.moraleParts(vn, vn.t).some(p => /pillée/.test(p[0])), 'la halle est pillée : moral en baisse pour un jour');
+  ok(rn && rn.lost.or > 0 && vn.r.or < or0, 'le voleur file avec de l’or (' + (rn && rn.lost.or) + ')');
+  ok(rn && Object.keys(rn.lost).every(k => rn.lost[k] <= Math.floor(vn.lastRaid.R[k] * 0.3)), 'jamais plus de 30 % d’une ressource');
+
+  /* des défenseurs : deux héros de niveau 5, puis avec une tour d'archers en plus */
+  const guard = tower => {
+    const vg = R.newVillage('vgd', 'Garde', '#D27A22', T0, 'u1', 'Téo'); vg.members.u2 = { name: 'Léa', t: T0, hi: 1 };
+    R.applyV(vg, { type: 'hero', name: 'Brokk', race: 'nain', cls: 'guerrier', sex: 'm', col: '#D27A22' }, who);
+    R.applyV(vg, { type: 'hero', name: 'Aelith', race: 'elfe', cls: 'rodeur', sex: 'f', col: '#4A78C2' }, who2);
+    for (const h of Object.values(vg.heroes)) h.lvl = 5;
+    vg.r.bois = 800; vg.r.pierre = 800;
+    if (tower) vg.b.push({ id: vg.nid++, type: 'tour', lvl: 3, gx: 12, gz: 15, up: null });
+    vg.raid = { n: 3, next: vg.t }; R.simulateVillage(vg, vg.t + 60000);
+    const xp0 = Object.values(vg.heroes).map(h => h.xp);
+    R.simulateVillage(vg, vg.raid.at + 3 * H + 2 * 60000);
+    return { vg, res: vg.lastRaid && vg.lastRaid.res, xp0 };
+  };
+  const g1 = guard(false), g2 = guard(true), vg = g2.vg;
+  const sum = o => Object.values(o || {}).reduce((a, b) => a + b, 0);
+  ok(g1.res && g1.res.k >= 3 && g1.res.g > 0, 'deux héros de niveau 5 défendent la halle : ' + g1.res.k + ' ennemis vaincus sur ' + g1.res.f + ', +' + g1.res.g + ' or');
+  ok(g2.res && g2.res.k > g1.res.k && sum(g2.res.lost) < sum(g1.res.lost), 'avec une tour d’archers en plus : ' + g2.res.k + ' vaincus, ' + sum(g2.res.lost) + ' volés au lieu de ' + sum(g1.res.lost));
+  ok(Object.values(vg.heroes).every((h, i) => h.xp > g2.xp0[i] || h.lvl > 5), 'les héros gagnent de l’expérience en défendant (+' + g2.res.xp + ')');
+
+  /* les trolls suivent les mêmes chemins mais cassent les murs 4 fois plus vite */
+  ok(R.RAID_FOES.troll.wall === 4 && R.RAID_FOES.gobelin.wall === 1, 'trolls : ×4 sur les murs et les portes');
+  const ring = []; const hall = vg.b.find(b => b.type === 'halle');
+  for (let x = hall.gx - 2; x <= hall.gx + 4; x++) for (let z = hall.gz - 2; z <= hall.gz + 4; z++) if (x === hall.gx - 2 || x === hall.gx + 4 || z === hall.gz - 2 || z === hall.gz + 4) ring.push([x, z]);
+  const inpT = { t: 0, n: 5, sd: 12345, L: 1, P: [[12, 0, 0, 0]], B: [[1, 'halle', 1, hall.gx, hall.gz, 0]].concat(ring.map((c, i) => [500 + i, 'rempart', 1, c[0], c[1], 200])), H: [], F: [['troll', 0, 0]], R: { bois: 500, pierre: 500, pain: 0, viande: 0, fer: 0, or: 0 } };
+  let st = R.raidStart(inpT), firstHit = null;
+  for (let i = 0; i < 3000 && !st.over && firstHit == null; i++) { R.raidStep(st); for (const S of st.S) if (S.kind === 'wall' && S.hp < 200) firstHit = 200 - S.hp; st.ev.length = 0; }
+  ok(firstHit === R.RAID_FOES.troll.sdmg * 4, 'un coup de troll enlève ' + firstHit + ' à la palissade (4 × ' + R.RAID_FOES.troll.sdmg + ')');
+  const resT = rep(R.raidStart(inpT));
+  ok(resT.br >= 1 && resT.h === 1, 'le troll perce l’enceinte (' + resT.br + ' palissade cassée) et atteint la halle');
+  const inpG = Object.assign({}, inpT, { F: [['gobelin', 0, 0]] }), resG = rep(R.raidStart(inpG));
+  ok(resG.br >= 1 && resG.s > resT.s, 'un gobelin y arrive aussi, mais bien plus lentement (' + resG.s + ' s contre ' + resT.s + ' s)');
+  /* une porte dans l'enceinte : les ennemis vont droit dessus (plus facile à casser), comme les trolls */
+  const gi = ring.findIndex(c => c[0] === hall.gx + 1 && c[1] === hall.gz - 2);
+  const inpD = Object.assign({}, inpT, { B: inpT.B.map((e, i) => i === gi + 1 ? [e[0], 'porte', 1, e[3], e[4], 150] : e) });
+  let sd = R.raidStart(inpD), broke = null;
+  for (let i = 0; i < 3000 && !sd.over && !broke; i++) { R.raidStep(sd); for (const e of sd.ev) if (e.k === 'break') broke = sd.S[e.si]; sd.ev.length = 0; }
+  ok(broke && broke.kind === 'gate', 'le troll casse la porte plutôt que le mur');
+  /* les pièges et les tours font leur travail */
+  const inpP = Object.assign({}, inpT, { B: [[1, 'halle', 1, hall.gx, hall.gz, 0], [2, 'piege', 3, 12, 3, 0], [3, 'piege', 3, 12, 4, 0], [4, 'tour', 3, 14, 5, 1900]], F: [['gobelin', 0, 0], ['gobelin', 0, 0.4]] });
+  const resP = rep(R.raidStart(inpP));
+  ok(resP.k === 2, 'deux pièges à pointes et une tour : les deux gobelins tombent');
+  /* un voleur abattu rend son butin */
+  const sb = R.raidStart(Object.assign({}, inpT, { B: [[1, 'halle', 1, hall.gx, hall.gz, 0]], F: [['voleur', 0, 0]], R: { bois: 0, pierre: 0, pain: 0, viande: 0, fer: 0, or: 200 } }));
+  for (let i = 0; i < 3000 && !sb.over && !sb.foes[0].loot; i++) { R.raidStep(sb); sb.ev.length = 0; }
+  const thief = sb.foes[0], lootN = thief.loot ? thief.loot[1] : -1; ok(thief.loot && thief.loot[0] === 'or', 'le voleur prend de l’or (' + lootN + ')');
+  R.raidHurtFoe(sb, thief, 9999);
+  ok(thief.dead && sb.back.or === lootN && !sb.lost.or, 'abattu avant le portail : l’or est repris');
+
+  /* fermer le portail avec son héros */
+  const vp = R.newVillage('vpo', 'Porte', '#D27A22', T0, 'u1', 'Téo');
+  R.applyV(vp, { type: 'hero', name: 'Brokk', race: 'nain', cls: 'guerrier', sex: 'm', col: '#D27A22' }, who);
+  vp.raid = { n: 1, next: vp.t }; R.simulateVillage(vp, vp.t + 60000);
+  const bk = Object.values(vp.heroes)[0];
+  r = R.applyV(R.clone(vp), { type: 'djEnd', hid: bk.id, lvl: 1, win: false, xp: 50, theme: 'portail', pi: 0 }, who);
+  ok(r.ok && !r.closed, 'défaite au portail : il reste ouvert');
+  r = R.applyV(vp, { type: 'djEnd', hid: bk.id, lvl: 1, win: true, xp: 200, theme: 'portail', pi: 0 }, who);
+  ok(r.ok && r.closed && r.closed.all && !vp.raid.p && vp.raid.next >= vp.t + 20 * H && bk.dj === 1, 'gardien vaincu : le portail se referme, pas de raid cette fois (le niveau des donjons ne bouge pas)');
+  R.simulateVillage(vp, vp.t + 10 * H);
+  ok(!vp.lastRaid, 'aucun raid ensuite');
+
+  /* rapidité : un gros raid (halle 5, 3 portails, enceinte) */
+  const vb = R.newVillage('vbig', 'Grand', '#D27A22', T0, 'u1', 'Téo');
+  vb.b.find(b => b.type === 'halle').lvl = 5; vb.r.bois = 3000; vb.r.pierre = 3000;
+  R.applyV(vb, { type: 'walls', tiles: ring }, who);
+  vb.raid = { n: 9, next: vb.t }; R.simulateVillage(vb, vb.t + 60000);
+  const tb = Date.now(); R.simulateVillage(vb, vb.raid.at + 3 * H + 2 * 60000); const mb = Date.now() - tb;
+  ok(vb.lastRaid && vb.lastRaid.P.length === 3 && vb.lastRaid.F.length >= 14 && mb < 800, 'halle 5 : 3 portails, ' + (vb.lastRaid && vb.lastRaid.F.length) + ' ennemis, raid simulé (avec 3 h de village) en ' + mb + ' ms');
 }
 
 /* 14. Rapidité : simuler 3 jours */

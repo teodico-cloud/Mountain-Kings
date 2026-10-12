@@ -48,6 +48,18 @@ function normVillage(v) {
   v.bag = B;
   if (v.merch && typeof v.merch === 'object') v.merch = { d: v.merch.d | 0, it: fbArr(v.merch.it).map(fbItem).filter(Boolean), gm: fbArr(v.merch.gm), sold: String(v.merch.sold || '') };
   else delete v.merch;
+  /* Raids (étape 4) : portails ouverts, dernier raid (gardé pour la rediffusion) */
+  if (v.raid && typeof v.raid === 'object') {
+    if (v.raid.p) { v.raid.p = fbArr(v.raid.p).map(fbArr); v.raid.cl = fbArr(v.raid.cl); while (v.raid.cl.length < v.raid.p.length) v.raid.cl.push(0); }
+  } else delete v.raid;
+  if (v.lastRaid && typeof v.lastRaid === 'object') {
+    const L = v.lastRaid;
+    for (const k of ['P', 'B', 'H', 'F']) L[k] = fbArr(L[k]).map(fbArr);
+    L.R = Object.assign({}, fbObj(L.R));
+    L.res = Object.assign({ k: 0, e: 0, f: 0, h: 0, g: 0, xp: 0, br: 0, s: 0 }, fbObj(L.res));
+    L.res.lost = Object.assign({}, fbObj(L.res.lost)); L.res.back = Object.assign({}, fbObj(L.res.back));
+    L.res.ko = fbArr(L.res.ko); L.res.dmg = fbArr(L.res.dmg).map(fbArr);
+  } else delete v.lastRaid;
   return v;
 }
 const fbItem = x => x && typeof x === 'object' && x.sl ? Object.assign({}, x, { gm: Object.assign({}, fbObj(x.gm)) }) : null;
@@ -265,15 +277,23 @@ const BLD = {
   fleurs: { name: 'Parterre de fleurs', size: 1, max: 1, cost: { bois: 10, pierre: 5 }, work: 5, deco: 1, cat: 'deco', desc: 'Égaie le village : +1 de moral.' },
   fontaine: { name: 'Fontaine', size: 2, max: 1, cost: { pierre: 120 }, work: 60, deco: 4, hall: 2, cat: 'deco', desc: 'La fierté du village : +4 de moral.' },
   statue: { name: 'Statue', size: 1, max: 1, cost: { pierre: 80, bois: 20 }, work: 40, deco: 3, hall: 3, cat: 'deco', desc: 'Statue d’un héros de légende : +3 de moral.' },
-  marchand: { name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
+  /* Défense (étape 4) : palissades, portes et pièges se posent et s'améliorent tout de suite (inst) ; la tour se construit.
+     hps : solidité par niveau (les dégâts des raids restent jusqu'à la réparation ; 0 = détruit, en ruine). */
+  rempart: { name: 'Palissade', size: 1, max: 3, costs: [{ bois: 8 }, { pierre: 14 }, { pierre: 20, fer: 5 }], hps: [200, 500, 1000], inst: 1, def: 'wall', lvlNames: ['Palissade de bois', 'Mur de pierre', 'Mur renforcé'], cat: 'def', desc: 'Bloque les ennemis : ils doivent la contourner ou la casser. Se pose en ligne, tout de suite.' },
+  porte: { name: 'Porte', size: 1, max: 3, costs: [{ bois: 25 }, { bois: 20, pierre: 25 }, { pierre: 30, fer: 10 }], hps: [150, 380, 760], inst: 1, def: 'gate', lvlNames: ['Porte de bois', 'Porte cloutée', 'Porte de fer'], cat: 'def', desc: 'Dans une palissade : vos héros et vos villageois passent, les ennemis non. Moins solide qu’un mur, alors les ennemis s’y attaquent souvent.' },
+  tour: { name: 'Tour d’archers', size: 2, max: 3, cost: { bois: 120, pierre: 90 }, mul: 2, work: 90, hps: [700, 1200, 1900], def: 'tower', tw: { range: [5.5, 6, 6.5], dmg: [14, 22, 34], rate: 1.2 }, cat: 'def', desc: 'Ses archers tirent sur les ennemis à portée pendant les raids.' },
+  piege: { name: 'Piège à pointes', size: 1, max: 3, costs: [{ bois: 25, pierre: 10 }, { pierre: 20, fer: 10 }, { pierre: 30, fer: 20 }], inst: 1, def: 'trap', trap: { dmg: [45, 75, 120], uses: [3, 3, 3] }, cat: 'def', desc: 'Caché dans le sol : blesse les ennemis qui marchent dessus (3 fois par raid). On marche dessus sans risque.' },
+  filet: { name: 'Filet', size: 1, max: 2, costs: [{ bois: 30 }, { bois: 30, fer: 8 }], inst: 1, def: 'trap', trap: { root: [3, 4.5], uses: [1, 2] }, cat: 'def', desc: 'Caché dans le sol : immobilise quelques secondes l’ennemi qui marche dessus (les trolls s’en défont deux fois plus vite).' },
+  marchand:{ name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
 };
-const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'banc', 'fleurs', 'fontaine', 'statue'];
-const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['heros', 'Pour les héros'], ['deco', 'Décorations']];
+const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'rempart', 'porte', 'tour', 'piege', 'filet', 'banc', 'fleurs', 'fontaine', 'statue'];
+const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['heros', 'Pour les héros'], ['def', 'Défense'], ['deco', 'Décorations']];
 const LIMITS = {
   halle: [1, 1, 1, 1, 1],
   maison: [3, 5, 7, 9, 12], bucheron: [1, 2, 2, 3, 3], carriere: [1, 1, 2, 2, 3], champ: [2, 3, 4, 5, 6],
   moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], brasserie: [0, 1, 1, 1, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
   taverne: [0, 1, 1, 1, 1], mine: [0, 1, 1, 2, 2], forge: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
+  rempart: [24, 40, 56, 72, 90], porte: [2, 3, 4, 5, 6], tour: [1, 2, 3, 4, 5], piege: [2, 4, 6, 8, 10], filet: [1, 2, 3, 4, 5],
 };
 const DECO_MAX = 15;             // le moral apporté par les décorations est plafonné
 const FEAST = { cost: { pain: 30, viande: 30, biere: 20 }, mor: 15, len: DAY, cd: 3 * DAY };
@@ -286,7 +306,23 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const r2 = x => Math.round(x * 100) / 100;
 
 /* ---------- bâtiments : coûts, places, emplois ---------- */
-function costOf(type, toLvl) { const d = BLD[type], c = {}; let m = 1; for (let i = 1; i < toLvl; i++) m *= d.mul || 2; for (const k in d.cost) c[k] = Math.round(d.cost[k] * m / 5) * 5; return c; }
+function costOf(type, toLvl) {
+  const d = BLD[type], c = {};
+  if (d.costs) return Object.assign(c, d.costs[Math.max(1, Math.min(d.costs.length, toLvl | 0)) - 1]);   // défenses : un prix par niveau
+  let m = 1; for (let i = 1; i < toLvl; i++) m *= d.mul || 2; for (const k in d.cost) c[k] = Math.round(d.cost[k] * m / 5) * 5; return c;
+}
+/* Solidité des défenses (palissade, porte, tour) : b.hp absent = intacte, 0 = détruite (en ruine, ne bloque plus rien). */
+const hpMaxOf = b => { const d = BLD[b.type]; return d && d.hps ? d.hps[Math.max(1, Math.min(d.hps.length, b.lvl | 0)) - 1] : 0; };
+const hpOf = b => b.hp == null ? hpMaxOf(b) : b.hp;
+const isBroken = b => !!(BLD[b.type] && BLD[b.type].hps) && b.hp === 0;
+/* Réparer coûte une part du prix, selon les dégâts (palissades, portes : 60 % du prix du niveau pour une ruine ; tour : 30 %). */
+function repairCostOf(b) {
+  const d = BLD[b.type], mx = hpMaxOf(b); if (!mx || b.hp == null || b.hp >= mx || b.lvl < 1) return null;
+  const f = (1 - b.hp / mx) * (d.inst ? 0.6 : 0.3), c = costOf(b.type, b.lvl), out = {};
+  for (const k in c) { const n = Math.ceil(c[k] * f); if (n > 0) out[k] = n; }
+  return out;
+}
+const lvlName = b => { const d = BLD[b.type]; return d.lvlNames ? d.lvlNames[Math.max(1, Math.min(d.lvlNames.length, b.lvl | 0)) - 1] : d.name; };
 function workOf(type, toLvl) { let m = 1; for (let i = 1; i < toLvl; i++) m *= 2; return Math.round(BLD[type].work * m); }
 const hallLvl = v => { const h = v.b.find(b => b.type === 'halle'); return h ? Math.max(1, h.lvl) : 1; };
 const maxLvlOf = (type, hl) => type === 'halle' ? BLD.halle.max : Math.min(BLD[type].max, hl + 1);
@@ -352,6 +388,7 @@ function moraleParts(v, t) {
   let tr = 0; for (const p of v.vil) tr += TRAITS[p.tr] && TRAITS[p.tr].mor || 0;
   if (tr) out.push(['Caractères', tr]);
   if (v.feast > t) out.push(['Fête à la taverne', FEAST.mor]);
+  if (v.raidMor > t) out.push(['Halle pillée par les gobelins', -10]);
   return out;
 }
 const moraleOf = (v, t) => Math.max(0, Math.min(100, 50 + moraleParts(v, t).reduce((a, p) => a + p[1], 0)));
@@ -413,6 +450,15 @@ const heroesAt = (v, target) => Object.values(v.heroes || {}).filter(h => h && h
 /* Rang d'une compétence (0 = pas encore ouverte, puis 1 à 5) ; points dépensés dans hero.sk = { s0, s1, s2 }. */
 const skillRank = (h, i) => h.lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, (h.sk && h.sk['s' + i]) | 0)) : 0;
 const DJ_XP_CAP = lvl => Math.round(1500 * (1 + 0.25 * (lvl - 1)));      // garde-fou : expérience maximale d'un donjon
+const DJ_END_THEMES = ['mine', 'crypte', 'prof', 'portail'];               // donjons reconnus au retour (portail : fermer un portail démoniaque)
+/* Expérience gagnée (donjon ou défense du village) : niveaux et points de compétence. Renvoie le nombre de niveaux gagnés. */
+function heroAddXp(hh, xp) {
+  const lv0 = hh.lvl;
+  hh.xp = (hh.xp || 0) + Math.max(0, Math.round(xp));
+  while (hh.lvl < HERO_MAX_LVL && hh.xp >= heroXpNeed(hh.lvl)) { hh.xp -= heroXpNeed(hh.lvl); hh.lvl++; hh.sp = (hh.sp || 0) + (hh.lvl === 9 ? 2 : 1); }
+  if (hh.lvl >= HERO_MAX_LVL) hh.xp = Math.min(hh.xp, heroXpNeed(hh.lvl));
+  return hh.lvl - lv0;
+}
 /* Prisonnier délivré : un villageois expérimenté (9 dans sa spécialité, au moins 5 ailleurs) qui voudrait s'installer. */
 function prisonerOf(v, t) {
   const taken = new Set(v.vil.map(x => x.name).concat(v.cands.map(x => x.name)));
@@ -458,6 +504,7 @@ function newVillage(vid, name, col, t, uid, pname) {
     r: { bois: 160, pierre: 80, ble: 0, farine: 0, pain: 60, viande: 40, orge: 0, biere: 0, fer: 0, or: 0 },
     b: [], vil: [], cands: [], log: [], hunger: 0, feast: 0, feastCd: 0, ws: seasonIdx({ born: t }, t),
     goals: [], cnt: { acc: 0, fete: 0, win: 0 }, wok: 0,
+    here: t, raid: { n: 0, next: t + RAID_FIRST },        // premier portail au début du 3e jour
   };
   const add = (type, gx, gz) => { const b = { id: v.nid++, type, lvl: 1, gx, gz, up: null }; v.b.push(b); return b; };
   add('halle', 10, 10);
@@ -479,6 +526,8 @@ function stepVillage(v) {
   const t = v.t, h = 1 / 60, cap = capOf(v), si = seasonIdx(v, t), S = SEASONS[si];
   const mor = moraleOf(v, t), mf = moraleF(mor);
   const add = (k, n) => { v.r[k] = NO_CAP.has(k) ? (v.r[k] || 0) + n : Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
+  /* Portails démoniaques et raids (p2r_raid.js) : le portail s'ouvre, se charge, puis le raid vient quand les deux joueurs sont absents. */
+  raidTick(v);
   /* Le marchand ambulant : un jour sur deux, il s'installe sur la place avec quelques objets */
   const md = merchDay(v, t);
   if (md % 2 === 1 && (!v.merch || v.merch.d !== md)) { v.merch = genMerch(v, md); addLog(v, t, 'Un marchand ambulant s’installe sur la place du village, jusqu’à demain.', 'merch'); }
@@ -530,7 +579,7 @@ function stepVillage(v) {
     for (const b of open) {
       b.up.done = r2(b.up.done + work);
       if (b.up.done >= b.up.need) {
-        b.lvl = b.up.to; b.up = null;
+        b.lvl = b.up.to; b.up = null; if (BLD[b.type].hps) delete b.hp;   // une tour agrandie est aussi remise à neuf
         addLog(v, t, (b.lvl > 1 ? BLD[b.type].name + ' agrandi(e) au niveau ' + b.lvl : BLD[b.type].name + ' terminé(e)') + '.', 'built');
       }
     }
@@ -617,6 +666,8 @@ function bldRate(v, b, t) {
 function applyV(v, a, who) {
   const fail = err => ({ ok: false, err });
   const t = v.t, hl = hallLvl(v), nm = (v.members[who.uid] && v.members[who.uid].name) || who.name || 'Quelqu’un';
+  /* Dernière présence d'un joueur (toute action, même la simple mise à jour de l'heure) : les raids attendent 2 h d'absence des deux. */
+  if (v.members[who.uid]) v.here = t;
   switch (a.type) {
     case 'sync': return { ok: true };            // simple mise à jour de l'heure du village
     case 'join': {
@@ -653,11 +704,59 @@ function applyV(v, a, who) {
       if (!fits(v, a.b, a.gx, a.gz)) return fail('Emplacement occupé ou trop près du bord.');
       const c = costOf(a.b, 1), m = missingTxt(v, c); if (m) return fail(m);
       pay(v, c);
+      /* Palissade, porte, piège : posés tout de suite. Le reste : un chantier pour les bâtisseurs. */
+      if (d.inst) { const b = { id: v.nid++, type: a.b, lvl: 1, gx: a.gx, gz: a.gz, up: null }; v.b.push(b); return { ok: true, id: b.id, inst: true }; }
       const b = { id: v.nid++, type: a.b, lvl: 0, gx: a.gx, gz: a.gz, up: { to: 1, need: workOf(a.b, 1), done: 0, q: ++v.q } };
       if (a.b === 'champ') b.crop = a.crop === 'orge' ? 'orge' : 'ble';
       v.b.push(b);
       addLog(v, t, nm + ' lance un chantier : ' + d.name.toLowerCase() + '.', 'site');
       return { ok: true, id: b.id };
+    }
+    case 'walls': {
+      /* Une ou plusieurs cases de palissade d'un coup (toute une ligne), posées tout de suite, tant qu'il y a de quoi payer. */
+      const tiles = Array.isArray(a.tiles) ? a.tiles.slice(0, 40) : [];
+      let n = 0, why = '';
+      for (const tl of tiles) {
+        const gx = tl && tl[0], gz = tl && tl[1];
+        if (countOf(v, 'rempart') >= limitOf('rempart', hl)) { why = why || 'Plus de palissade possible : agrandissez la halle.'; break; }
+        if (!fits(v, 'rempart', gx, gz)) { why = why || 'Case occupée ou trop près du bord.'; continue; }
+        const c = costOf('rempart', 1), m = missingTxt(v, c); if (m) { why = why || m; break; }
+        pay(v, c); v.b.push({ id: v.nid++, type: 'rempart', lvl: 1, gx, gz, up: null }); n++;
+      }
+      if (!n) return fail(why || 'Aucune palissade posée.');
+      return { ok: true, n, why };
+    }
+    case 'gate': {
+      /* Une palissade devient une porte (niveau 1) : les héros et les villageois passent, pas les ennemis. */
+      const b = v.b.find(x => x.id === a.id); if (!b || b.type !== 'rempart') return fail('Choisis une palissade.');
+      if (countOf(v, 'porte') >= limitOf('porte', hl)) return fail('Plus de porte possible : agrandissez la halle.');
+      const c = costOf('porte', 1), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); b.type = 'porte'; b.lvl = 1; delete b.hp;
+      return { ok: true };
+    }
+    case 'upwalls': {
+      /* Améliorer d'un coup toutes les défenses d'un type et d'un niveau (palissades, portes, pièges), tant qu'il y a de quoi payer. */
+      const type = BLD[a.t] && BLD[a.t].inst ? a.t : 'rempart', L = a.lvl | 0, to = L + 1;
+      if (to > maxLvlOf(type, hl)) return fail(to > BLD[type].max ? 'Niveau maximum atteint.' : 'Agrandissez d’abord la halle du village.');
+      const c = costOf(type, to); let n = 0;
+      for (const b of v.b) {
+        if (b.type !== type || b.lvl !== L) continue;
+        if (missingTxt(v, c)) break;
+        pay(v, c); b.lvl = to; delete b.hp; n++;
+      }
+      if (!n) return fail(missingTxt(v, c) || 'Rien à améliorer à ce niveau.');
+      addLog(v, t, nm + ' renforce les défenses : ' + n + ' × ' + lvlName({ type, lvl: to }).toLowerCase() + '.', 'def');
+      return { ok: true, n };
+    }
+    case 'repair': {
+      /* Réparer les défenses abîmées (les ruines d'abord), tant qu'il y a de quoi payer. */
+      const list = v.b.filter(b => repairCostOf(b)).sort((x, y) => (x.hp === 0 ? 0 : 1) - (y.hp === 0 ? 0 : 1) || hpOf(x) / hpMaxOf(x) - hpOf(y) / hpMaxOf(y));
+      if (!list.length) return fail('Rien à réparer.');
+      let n = 0, why = '';
+      for (const b of list) { const c = repairCostOf(b), m = missingTxt(v, c); if (m) { why = m; break; } pay(v, c); delete b.hp; n++; }
+      if (!n) return fail(why);
+      addLog(v, t, nm + ' fait réparer ' + n + ' défense' + (n > 1 ? 's' : '') + '.', 'def');
+      return { ok: true, n, left: list.length - n, why };
     }
     case 'upgrade': {
       const b = v.b.find(x => x.id === a.id); if (!b) return fail('Bâtiment introuvable.');
@@ -665,7 +764,9 @@ function applyV(v, a, who) {
       const to = b.lvl + 1, mx = maxLvlOf(b.type, hl);
       if (to > mx) return fail(to > BLD[b.type].max ? 'Niveau maximum atteint.' : 'Agrandissez d’abord la halle du village.');
       const c = costOf(b.type, to), m = missingTxt(v, c); if (m) return fail(m);
-      pay(v, c); b.up = { to, need: workOf(b.type, to), done: 0, q: ++v.q };
+      pay(v, c);
+      if (BLD[b.type].inst) { b.lvl = to; delete b.hp; return { ok: true, inst: true }; }   // défenses : tout de suite (et réparées)
+      b.up = { to, need: workOf(b.type, to), done: 0, q: ++v.q };
       addLog(v, t, nm + ' lance l’agrandissement : ' + BLD[b.type].name.toLowerCase() + ' niveau ' + to + '.', 'site');
       return { ok: true };
     }
@@ -682,7 +783,7 @@ function applyV(v, a, who) {
       v.b = v.b.filter(x => x !== b);
       for (const p of v.vil) if (p.job === b.id) p.job = null;
       for (const hh of Object.values(v.heroes)) if (hh && hh.at === b.id) hh.at = null;
-      addLog(v, t, nm + ' démolit : ' + BLD[b.type].name.toLowerCase() + '.', 'demolish');
+      if (!BLD[b.type].inst) addLog(v, t, nm + ' démolit : ' + BLD[b.type].name.toLowerCase() + '.', 'demolish');   // une palissade retirée : pas de quoi le noter
       return { ok: true };
     }
     case 'job': {
@@ -750,14 +851,11 @@ function applyV(v, a, who) {
     case 'djEnd': {
       /* Retour de donjon : expérience (et niveaux) pour le héros, butin pour le village, niveau suivant ouvert, prisonnier délivré. */
       const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
-      const L = Math.max(1, Math.min(99, a.lvl | 0)), win = !!a.win, th = a.theme === 'crypte' || a.theme === 'prof' ? a.theme : 'mine', deep = Math.max(0, Math.min(200, a.deep | 0));
+      const L = Math.max(1, Math.min(99, a.lvl | 0)), win = !!a.win, th = DJ_END_THEMES.includes(a.theme) ? a.theme : 'mine', deep = Math.max(0, Math.min(200, a.deep | 0));
       let xp = Math.max(0, Math.min(DJ_XP_CAP(L) * (th === 'prof' ? 1 + deep : 1), Math.round(+a.xp || 0)));
       if (hh.race === 'humain') xp = Math.round(xp * 1.1);                 // Apprend vite
-      const lv0 = hh.lvl;
-      hh.xp = (hh.xp || 0) + xp;
-      while (hh.lvl < HERO_MAX_LVL && hh.xp >= heroXpNeed(hh.lvl)) { hh.xp -= heroXpNeed(hh.lvl); hh.lvl++; hh.sp = (hh.sp || 0) + (hh.lvl === 9 ? 2 : 1); }
-      if (hh.lvl >= HERO_MAX_LVL) hh.xp = Math.min(hh.xp, heroXpNeed(hh.lvl));
-      if (win && th !== 'prof') hh.dj = Math.max(hh.dj || 1, Math.min(99, L + 1));
+      const up = heroAddXp(hh, xp);
+      if (win && (th === 'mine' || th === 'crypte')) hh.dj = Math.max(hh.dj || 1, Math.min(99, L + 1));
       if (th === 'prof') hh.deep = Math.max(hh.deep || 0, deep);
       hh.runs = (hh.runs || 0) + 1; if (win) hh.wins = (hh.wins || 0) + 1;
       const cap = capOf(v), got = {};
@@ -780,13 +878,15 @@ function applyV(v, a, who) {
       for (const g in (a.gems && typeof a.gems === 'object' ? a.gems : {})) { const G = gemOf(g), n = Math.max(0, Math.min(10, a.gems[g] | 0)); if (G && n) bag.gm[G.key] = (bag.gm[G.key] || 0) + n; }
       if (gold + autoGold) v.r.or = (v.r.or || 0) + gold + autoGold;
       if (gold) got.or = gold;
-      const up = hh.lvl - lv0;
       const fl = deep ? deep + ' étage' + (deep > 1 ? 's terminés' : ' terminé') : 'aucun étage terminé';
       const what = th === 'prof' ? (win ? ' remonte des Profondeurs (' : ' a dû fuir les Profondeurs (') + fl + ')'
+        : th === 'portail' ? (win ? ' a vaincu le gardien du portail démoniaque' : ' a dû fuir le portail démoniaque') + ' (niveau ' + L + ')'
         : win ? ' revient vainqueur ' + (th === 'crypte' ? 'de la crypte des rois' : 'de la mine des gobelins') + ' (niveau ' + L + ')' : ' a dû fuir ' + (th === 'crypte' ? 'la crypte des rois' : 'la mine des gobelins') + ' (niveau ' + L + ')';
       addLog(v, t, hh.name + what + ' : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + (nItems ? ', ' + nItems + ' objet' + (nItems > 1 ? 's' : '') : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : '') + (autoSold ? ' Sac plein : ' + autoSold + ' objet' + (autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + autoGold + ' or.' : ''), 'dj');
-      if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + (th === 'crypte' ? ' d’un tombeau de la crypte' : ' d’un cachot souterrain') + ', voudrait s’installer au village.', 'cand');
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold };
+      if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + (th === 'crypte' ? ' d’un tombeau de la crypte' : th === 'portail' ? ' d’une cage du gardien du portail' : ' d’un cachot souterrain') + ', voudrait s’installer au village.', 'cand');
+      /* Portail démoniaque vaincu : il se referme (s'il est encore ouvert) ; tous refermés = pas de raid cette fois. */
+      const closed = th === 'portail' && win ? raidClosePortal(v, t, a.pi | 0, hh.name) : null;
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed };
     }
     /* ---------- équipement (étape 3) ---------- */
     case 'equip': {
@@ -1021,7 +1121,7 @@ const SETS = {
   abime: { name: 'Panoplie de l’abîme', sfx: 'de l’Abîme', b2: { dmg: 8, hp: 8 }, b2t: '+8 % de dégâts et de vie', b4t: 'Une potion de plus, et les potions soignent 30 % de plus.' },
 };
 const SET_SLOTS = ['arme', 'casque', 'armure', 'bottes'];
-const SET_OF_THEME = { mine: 'troll', crypte: 'roi' };
+const SET_OF_THEME = { mine: 'troll', crypte: 'roi', portail: 'abime' };   // le gardien du portail laisse parfois une pièce de l'abîme
 /* Pierres précieuses : 3 tailles (éclat, pierre, parfaite) ; trois pareilles se fusionnent en une plus belle. */
 const GEMS = {
   rubis: { name: 'Rubis', fem: false, stat: 'hp', v: [2, 4, 7], col: '#e0464e' },
@@ -1196,6 +1296,505 @@ function genMerch(v, d) {
   return { d, it, gm, sold: '' };
 }
 
+/* ===================== RAIDS : portails démoniaques, gobelins, voleurs et trolls (pur, sans DOM) =====================
+   Le calendrier : le premier portail s'ouvre au début du 3e jour du village ; il se charge pendant 3 heures (on voit de quel côté
+   viendra le raid), puis le raid part dès que les deux joueurs sont absents depuis 2 heures. Le portail suivant s'ouvre 20 à 28 heures
+   après (au plus un raid par jour). Refermer tous les portails avec son héros (le donjon du portail) annule le raid.
+   Le combat est simulé d'un coup, de façon déterministe : seulement + − × ÷ et la racine carrée (même résultat sur tous les téléphones),
+   10 pas par seconde. La rediffusion rejoue exactement la même simulation à partir de ce qui est gardé dans v.lastRaid.
+   Le village fait le donjon : bâtiments et palissades sont des murs, le terrain libre des couloirs. Tout le monde suit les mêmes chemins
+   (le plus court, en comptant ce qu'il faudrait casser) ; les trolls cassent les murs et les portes 4 fois plus vite.
+   Coordonnées en cases du village : x = colonne (gx), y = ligne (gz) ; le centre d'une case est à +0,5. */
+const RAID_FIRST = 2 * DAY, RAID_CHARGE = 3 * HOUR, RAID_AWAY = 2 * HOUR, RAID_GAP = 20 * HOUR, RAID_GAP_RND = 8 * HOUR;
+const RAID_DT = 0.1, RAID_LIMIT = 300;                // pas de 1/10 s ; au bout de 5 minutes, ceux qui restent repartent
+const RAID_ZONE = 5.5;                                // les héros défendent autour de la halle, dans ce rayon (en cases)
+const RAID_PATH_K = 40;                               // casser un mur de 200 de solidité « vaut » un détour de 5 cases
+const RAID_BLD_HP = 2500;                             // un bâtiment ordinaire (par case de côté) : on le contourne presque toujours
+const RAID_SIDES = ['nord', 'est', 'sud', 'ouest'], RAID_AT = ['au nord', 'à l’est', 'au sud', 'à l’ouest'], RAID_OF = ['du nord', 'de l’est', 'du sud', 'de l’ouest'];
+const RAID_LOOT = ['bois', 'pierre', 'pain', 'viande', 'fer'];
+/* Ennemis au niveau 1 (vie, dégâts sur les héros, secondes entre deux coups, allonge, vitesse en cases par seconde,
+   butin emporté, dégâts sur les murs : sdmg × wall). */
+const RAID_FOES = {
+  gobelin: { name: 'Gobelin', plural: 'Gobelins', hp: 90, dmg: 8, rate: 1.0, reach: 0.35, speed: 1.6, r: 0.3, carry: 15, sdmg: 8, wall: 1, xp: 6, gold: 3, fight: true },
+  voleur: { name: 'Gobelin voleur', plural: 'Gobelins voleurs', hp: 60, dmg: 0, rate: 1.0, reach: 0, speed: 2.3, r: 0.28, carry: 35, sdmg: 3, wall: 1, xp: 8, gold: 5, thief: true },
+  troll: { name: 'Troll', plural: 'Trolls', hp: 520, dmg: 26, rate: 1.6, reach: 0.45, speed: 1.0, r: 0.45, carry: 25, sdmg: 26, wall: 4, xp: 25, gold: 12, fight: true },
+};
+/* Héros en défense, au niveau 1 (attaque simple seulement ; le mage touche aussi autour de sa cible, le prêtre soigne en frappant). */
+const RAID_HERO = {
+  guerrier: { hp: 340, dmg: 14, armor: 0.25, range: 1.0, cd: 1.0, speed: 2.4 },
+  paladin: { hp: 320, dmg: 13, armor: 0.22, range: 1.0, cd: 1.0, speed: 2.3 },
+  rodeur: { hp: 230, dmg: 11, armor: 0.05, range: 5.5, cd: 0.9, speed: 2.5 },
+  mage: { hp: 200, dmg: 12, armor: 0, range: 5, cd: 1.1, speed: 2.3 },
+  voleur: { hp: 260, dmg: 9, armor: 0.15, range: 1.0, cd: 0.6, speed: 2.6 },
+  pretre: { hp: 210, dmg: 9, armor: 0.05, range: 4.5, cd: 1.1, speed: 2.3 },
+  druide: { hp: 250, dmg: 10, armor: 0.1, range: 4.5, cd: 1.0, speed: 2.3 },
+  necro: { hp: 200, dmg: 10, armor: 0.05, range: 5, cd: 1.2, speed: 2.3 },
+};
+const RAID_NB = [[1, 0, 1], [-1, 0, 1], [0, 1, 1], [0, -1, 1], [1, 1, Math.SQRT2], [1, -1, Math.SQRT2], [-1, 1, Math.SQRT2], [-1, -1, Math.SQRT2]];
+
+/* ---------- outils (déterministes) ---------- */
+const raidPow = (b, n) => { let k = 1; for (let i = 0; i < n; i++) k *= b; return k; };
+function raidRnd(st) { const a = st.rs = (st.rs + 0x6D2B79F5) | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }
+const raidCell = v => Math.max(0, Math.min(GRID - 1, Math.floor(v)));
+const raidLen = (dx, dy) => Math.sqrt(dx * dx + dy * dy);
+const raidDist = (a, b) => raidLen(a.x - b.x, a.y - b.y);
+const raidAlive = u => u.on && !u.dead && !u.out;
+function raidDistRect(x, y, S) { const dx = Math.max(S.x0 - x, 0, x - (S.x0 + S.s)), dy = Math.max(S.y0 - y, 0, y - (S.y0 + S.s)); return raidLen(dx, dy); }
+function raidFace(u, t) { const dx = t.x - u.x, dy = t.y - u.y, L = raidLen(dx, dy); if (L > 1e-6) { u.fx = dx / L; u.fy = dy / L; } }
+
+/* ---------- le calendrier ---------- */
+/* Niveau des ennemis : la moyenne du meilleur héros de chaque joueur. */
+function raidLevel(v) {
+  const best = Object.keys(v.members || {}).map(uid => heroesOf(v, uid).reduce((m, h) => Math.max(m, h.lvl | 0), 0)).filter(x => x > 0);
+  return best.length ? Math.max(1, Math.round(best.reduce((a, b) => a + b, 0) / best.length)) : 1;
+}
+/* Appelé à chaque minute de la simulation du village. */
+function raidTick(v) {
+  const t = v.t;
+  if (!v.raid || typeof v.raid !== 'object') v.raid = { n: 0, next: Math.max(v.born + RAID_FIRST, t + 6 * HOUR) };
+  const R = v.raid;
+  if (!R.p) { if (t >= (R.next || 0)) raidOpen(v, t); return; }
+  if (t < (R.at || 0) + RAID_CHARGE) return;
+  if (!R.rd) { R.rd = 1; addLog(v, t, (R.p.length > 1 ? 'Les portails sont chargés' : 'Le portail est chargé') + ' : les gobelins attaqueront dès que vous serez absents tous les deux.', 'portal'); }
+  if (t - (v.here || 0) < RAID_AWAY) return;
+  raidResolve(v, t);
+}
+/* Un (ou plusieurs, selon la halle) portail s'ouvre au bord de la vallée, d'un côté tiré au hasard. */
+function raidOpen(v, t) {
+  const R = v.raid, rnd = mulberry32(hash((v.seed ^ Math.imul((R.n | 0) + 1 + 7 * (R.closed | 0), 0x2c1b3c6d)) >>> 0));
+  const hl = hallLvl(v), n = hl >= 5 ? 3 : hl >= 3 ? 2 : 1, sides = [0, 1, 2, 3];
+  for (let i = 3; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)), s = sides[i]; sides[i] = sides[j]; sides[j] = s; }
+  R.p = [];
+  for (let i = 0; i < n; i++) { const s = sides[i], k = 4 + Math.floor(rnd() * (GRID - 8)); R.p.push(s === 0 ? [k, 0, 0] : s === 1 ? [GRID - 1, k, 1] : s === 2 ? [k, GRID - 1, 2] : [0, k, 3]); }
+  R.cl = R.p.map(() => 0); R.sd = (Math.floor(rnd() * 4294967295) >>> 0) || 1; R.at = t; R.rd = 0;
+  const where = R.p.map(p => RAID_AT[p[2]]);
+  addLog(v, t, (n > 1 ? n + ' portails démoniaques s’ouvrent au bord de la vallée (' + where.join(', ') + ') : ils seront chargés' : 'Un portail démoniaque s’ouvre ' + where[0] + ' de la vallée : il sera chargé') + ' dans 3 heures. Préparez vos défenses, ou refermez-le avec votre héros !', 'portal');
+}
+/* Portail refermé par un héros (donjon du portail gagné). Tous refermés : pas de raid cette fois, le suivant viendra plus tard. */
+function raidClosePortal(v, t, pi, who) {
+  const R = v.raid; if (!R || !R.p || !R.p[pi] || !R.cl || R.cl[pi]) return null;
+  R.cl[pi] = 1;
+  const left = R.cl.filter(c => !c).length, side = R.p[pi][2];
+  if (!left) { const rnd = mulberry32((R.sd ^ 0x51ed27) >>> 0); R.p = null; R.cl = null; R.rd = 0; R.closed = (R.closed | 0) + 1; R.next = t + RAID_GAP + Math.floor(rnd() * (RAID_GAP_RND / MIN)) * MIN; }
+  addLog(v, t, who + ' referme le portail ' + RAID_OF[side] + (left ? ' : il en reste ' + left + ' ouvert' + (left > 1 ? 's' : '') + '.' : ' : pas de raid cette fois !'), 'portal');
+  return { side, all: !left };
+}
+/* Pour l'affichage : calme, portail qui se charge, ou portail chargé. */
+function raidInfo(v, t) {
+  const R = v.raid || {};
+  if (!R.p) return { st: 'calm', next: R.next || 0, p: [] };
+  const ready = (R.at || 0) + RAID_CHARGE;
+  return { st: t < ready ? 'charge' : 'ready', ready, frac: Math.max(0, Math.min(1, (t - (R.at || 0)) / RAID_CHARGE)), p: R.p.map((p, i) => ({ x: p[0], y: p[1], side: p[2], cl: !!(R.cl && R.cl[i]), i })) };
+}
+
+/* ---------- le raid : ce qu'on garde pour le simuler (et le rediffuser) ---------- */
+function raidHeroStats(h) {
+  const C = RAID_HERO[h.cls] || RAID_HERO.guerrier, L = Math.max(1, Math.min(HERO_MAX_LVL, h.lvl | 0)), pw = raidPow(1.1, L - 1), G = gearOf(h);
+  const hp = Math.round(C.hp * pw * (h.race === 'nain' ? 1.15 : 1) * (1 + G.hp / 100));
+  const dmg = r1(C.dmg * pw * (1 + G.dmg / 100));
+  return [h.id, String(h.name || ''), RAID_HERO[h.cls] ? h.cls : 'guerrier', RACES[h.race] ? h.race : 'humain', h.sex === 'f' ? 'f' : 'm', COLORS.includes(h.col) ? h.col : COLORS[0], L, hp, dmg,
+    r2(Math.min(0.6, C.armor + G.armor / 100)), C.range, r2(C.cd / (1 + G.haste / 100)), r2(C.speed * (h.race === 'elfe' ? 1.1 : 1))];
+}
+/* Les assaillants : gobelins, voleurs (1 + halle/2) et trolls (dès la halle 2) ; un peu plus nombreux au fil des raids. Le tout premier raid est doux. */
+function raidForce(v, R, open) {
+  const hl = hallLvl(v), n = R.n | 0, rnd = mulberry32((R.sd ^ 0x7f4a7c15) >>> 0);
+  let gob = 3 + hl + Math.min(3, Math.floor(n / 3)), vol = 1 + Math.floor(hl / 2), tro = Math.floor(hl / 2);
+  if (n === 0) { gob = 3; vol = 1; tro = 0; }
+  const list = [];
+  for (let i = 0; i < tro; i++) list.push('troll');
+  for (let i = 0; i < gob; i++) list.push('gobelin');
+  for (let i = 0; i < vol; i++) list.push('voleur');
+  /* les trolls ouvrent la marche, les gobelins suivent, les voleurs se faufilent un peu après */
+  return list.map((type, i) => [type, open[i % open.length], r1((type === 'troll' ? 0 : type === 'gobelin' ? 1.5 : 6) + i * 0.6 + rnd() * 0.8)]);
+}
+function raidInput(v, t) {
+  const R = v.raid, open = R.p.map((p, i) => i).filter(i => !R.cl[i]);
+  const B = v.b.filter(b => BLD[b.type] && b.type !== 'marchand').map(b => [b.id, b.type, b.lvl | 0, b.gx, b.gz, BLD[b.type].hps ? Math.round(hpOf(b)) : 0]);
+  const H = Object.values(v.heroes || {}).filter(Boolean).sort((a, b) => (a.n || 0) - (b.n || 0)).map(raidHeroStats);
+  const stock = {}; for (const k of RAID_LOOT.concat(['or'])) stock[k] = Math.floor(v.r[k] || 0);
+  return { t, n: R.n | 0, sd: R.sd, L: raidLevel(v), P: R.p.map((p, i) => [p[0], p[1], p[2], R.cl[i] ? 1 : 0]), B, H, F: raidForce(v, R, open), R: stock };
+}
+
+/* ---------- le combat ---------- */
+function raidMark(st, S, val) { for (let y = S.y0; y < S.y0 + S.s; y++) for (let x = S.x0; x < S.x0 + S.s; x++) if (x >= 0 && y >= 0 && x < GRID && y < GRID) st.occ[y * GRID + x] = val; }
+function raidStart(inp) {
+  const N = GRID * GRID, L = Math.max(1, inp.L | 0);
+  const st = {
+    inp, t: 0, n: 0, rs: (inp.sd ^ 0x2545f491) >>> 0, over: false, ev: [],
+    S: [], occ: new Int16Array(N), trapAt: new Int16Array(N), traps: [], towers: [], foes: [], heroes: [],
+    ff: {}, hf: new Map(), gen: 0, hall: -1, stores: [],
+    stock: Object.assign({}, inp.R), taken: {}, lost: {}, back: {}, kills: 0, esc: 0, gold: 0, xp: 0, heart: 0, broke: 0,
+    L, mul: raidPow(1.12, L - 1), lootMul: 1 + 0.15 * (L - 1),
+    defMul: raidPow(1.08, L - 1),        // tours et pièges suivent un peu le niveau des ennemis (moins vite : il faut les améliorer)
+  };
+  for (const e of inp.B) {
+    const id = e[0], type = e[1], lvl = e[2] | 0, gx = e[3], gz = e[4], d = BLD[type]; if (!d) continue;
+    if (d.def === 'trap') {
+      if (lvl < 1) continue;
+      const T = d.trap, k = Math.min(lvl, d.max) - 1;
+      st.traps.push({ id, type, lvl, x: gx, y: gz, uses: T.uses[k], cd: 0, dmg: T.dmg ? T.dmg[k] : 0, root: T.root ? T.root[k] : 0, shown: false });
+      st.trapAt[gz * GRID + gx] = st.traps.length;
+      continue;
+    }
+    const s = d.size, kind = type === 'halle' ? 'halle' : type === 'rempart' ? 'wall' : type === 'porte' ? 'gate' : type === 'tour' && lvl > 0 ? 'tower' : type === 'entrepot' && lvl > 0 ? 'store' : 'bld';
+    const def = kind === 'wall' || kind === 'gate' || kind === 'tower', max = def ? hpMaxOf({ type, lvl }) : RAID_BLD_HP * s, hp = def ? Math.max(0, Math.min(max, e[5])) : max;
+    const S = { id, type, kind, lvl, x0: gx, y0: gz, s, x: gx + s / 2, y: gz + s / 2, hp, max, hp0: hp, dead: hp <= 0 };
+    st.S.push(S);
+    const si = st.S.length - 1;
+    if (!S.dead) raidMark(st, S, si + 1);
+    if (kind === 'halle' && st.hall < 0) st.hall = si;
+    if (kind === 'store') st.stores.push(si);
+    if (kind === 'tower') { const T = d.tw, k = Math.min(lvl, d.max) - 1; st.towers.push({ si, cd: 0.6, range: T.range[k], dmg: T.dmg[k], rate: T.rate, n: 0 }); }
+  }
+  if (st.hall < 0) { st.S.push({ id: 0, type: 'halle', kind: 'halle', lvl: 1, x0: 11, y0: 11, s: 2, x: 12, y: 12, hp: 1, max: 1, hp0: 1, dead: false }); st.hall = st.S.length - 1; }
+  /* Les héros se postent autour de la halle */
+  const spots = raidSpots(st, inp.H.length);
+  inp.H.forEach((e, i) => {
+    const sp = spots[i] || [st.S[st.hall].x, st.S[st.hall].y + st.S[st.hall].s / 2 + 0.5];
+    st.heroes.push({ id: e[0], name: e[1], cls: e[2], race: e[3], sex: e[4], col: e[5], lvl: e[6], kind: 'hero', hp: e[7], hpMax: e[7], dmg: e[8], armor: e[9], range: e[10], cd: e[11], speed: e[12],
+      r: 0.3, x: sp[0], y: sp[1], px: sp[0], py: sp[1], home: sp, atkT: 0.2 + 0.1 * i, atkN: 0, mv: false, ko: false, dead: false, fx: 0, fy: 1 });
+  });
+  inp.F.forEach((f, i) => {
+    const type = RAID_FOES[f[0]] ? f[0] : 'gobelin', D = RAID_FOES[type], k = st.mul;
+    st.foes.push({ id: 100 + i, type, kind: 'mob', pi: Math.max(0, Math.min(inp.P.length - 1, f[1] | 0)), delay: +f[2] || 0, on: false, dead: false, out: false,
+      r: D.r, big: type === 'troll', hp: r1(D.hp * k), hpMax: r1(D.hp * k), dmg: r1(D.dmg * k), sdmg: r1(D.sdmg * k), rate: D.rate, reach: D.reach, speed: D.speed,
+      carry: D.carry, wall: D.wall, fight: !!D.fight, thief: !!D.thief, x: 0, y: 0, px: 0, py: 0, fx: 0, fy: 1, mv: false, atkT: 0.5, atkN: 0, goal: 't', tk: 'h', pl: 0, loot: null, root: 0 });
+  });
+  return st;
+}
+/* Places de départ des héros : les cases libres tout autour de la halle (puis un peu plus loin), réparties. */
+function raidSpots(st, n) {
+  const H = st.S[st.hall], out = [];
+  for (let ring = 1; ring <= 3 && out.length < Math.max(n, 1) * 2; ring++) {
+    const cells = [];
+    for (let y = H.y0 - ring; y < H.y0 + H.s + ring; y++) for (let x = H.x0 - ring; x < H.x0 + H.s + ring; x++) {
+      if (x < 0 || y < 0 || x >= GRID || y >= GRID) continue;
+      const edge = x === H.x0 - ring || y === H.y0 - ring || x === H.x0 + H.s + ring - 1 || y === H.y0 + H.s + ring - 1;
+      if (edge && !st.occ[y * GRID + x]) cells.push([x + 0.5, y + 0.5]);
+    }
+    for (const c of cells) out.push(c);
+  }
+  if (!n || !out.length) return out;
+  const step = Math.max(1, Math.floor(out.length / n)), pick = [];
+  for (let i = 0; i < n; i++) pick.push(out[(i * step) % out.length]);
+  return pick;
+}
+
+/* ---------- chemins : une carte des distances par but (halle, réserve, portail), refaite quand un mur tombe ---------- */
+function raidCost(st, i, ti) {
+  const o = st.occ[i] - 1; if (o < 0) return 1;
+  if (o === ti) return 1e7;
+  const S = st.S[o]; return S.kind === 'halle' ? 1e7 : 1 + S.hp / RAID_PATH_K;
+}
+function raidGoals(st, key) {
+  const out = [];
+  if (key[0] === 'p') {
+    const P = st.inp.P[+key.slice(1)] || st.inp.P[0];
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = P[0] + dx, y = P[1] + dy; if (x >= 0 && y >= 0 && x < GRID && y < GRID) out.push(y * GRID + x); }
+    return out;
+  }
+  const S = st.S[key === 'h' ? st.hall : st.stores[+key.slice(1)]];
+  for (let y = S.y0 - 1; y <= S.y0 + S.s; y++) for (let x = S.x0 - 1; x <= S.x0 + S.s; x++) {
+    if (x < 0 || y < 0 || x >= GRID || y >= GRID) continue;
+    if (x >= S.x0 && x < S.x0 + S.s && y >= S.y0 && y < S.y0 + S.s) continue;
+    out.push(y * GRID + x);
+  }
+  return out;
+}
+function raidField(st, key) {
+  const f0 = st.ff[key]; if (f0 && f0.g === st.gen) return f0;
+  const N = GRID * GRID, d = new Float64Array(N).fill(1e9), ti = key === 'h' ? st.hall : key[0] === 's' ? st.stores[+key.slice(1)] : -1;
+  /* tas binaire ; à égalité, la plus petite case d'abord (même ordre partout) */
+  const hd = [], hi = [];
+  const less = (da, ia, db, ib) => da < db || (da === db && ia < ib);
+  const push = (i, x) => { let k = hd.length; hd.push(x); hi.push(i); while (k > 0) { const p = (k - 1) >> 1; if (!less(x, i, hd[p], hi[p])) break; hd[k] = hd[p]; hi[k] = hi[p]; k = p; } hd[k] = x; hi[k] = i; };
+  for (const g of raidGoals(st, key)) if (d[g] > 0) { d[g] = 0; push(g, 0); }
+  while (hd.length) {
+    const i = hi[0], di = hd[0], li = hi.pop(), ld = hd.pop(), n = hd.length;
+    if (n > 0) {
+      let k = 0;
+      for (;;) { const l = 2 * k + 1; if (l >= n) break; const r = l + 1, m = r < n && less(hd[r], hi[r], hd[l], hi[l]) ? r : l; if (!less(hd[m], hi[m], ld, li)) break; hd[k] = hd[m]; hi[k] = hi[m]; k = m; }
+      hd[k] = ld; hi[k] = li;
+    }
+    if (di > d[i]) continue;
+    const ec = raidCost(st, i, ti); if (ec >= 1e7) continue;      // on ne traverse ni la halle ni la cible
+    const x = i % GRID, y = (i / GRID) | 0;
+    for (const nb of RAID_NB) {
+      const nx = x + nb[0], ny = y + nb[1]; if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID) continue;
+      if (nb[0] && nb[1] && (st.occ[y * GRID + nx] || st.occ[ny * GRID + x])) continue;   // pas de coin coupé entre deux murs
+      const ni = ny * GRID + nx, nd = di + ec * nb[2];
+      if (nd < d[ni]) { d[ni] = nd; push(ni, nd); }
+    }
+  }
+  return (st.ff[key] = { d, g: st.gen, ti });
+}
+/* Les héros passent par les cases libres, les portes et les ruines (pas à travers les murs ni les bâtiments). */
+const raidHeroPass = (st, i) => { const o = st.occ[i] - 1; return o < 0 || st.S[o].kind === 'gate'; };
+function raidHeroField(st, goal) {
+  const f0 = st.hf.get(goal); if (f0 && f0.g === st.gen) return f0.d;
+  const N = GRID * GRID, d = new Float64Array(N).fill(1e9), q = [goal]; d[goal] = 0;
+  for (let h = 0; h < q.length; h++) {
+    const i = q[h], x = i % GRID, y = (i / GRID) | 0;
+    for (const nb of RAID_NB) {
+      const nx = x + nb[0], ny = y + nb[1]; if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID) continue;
+      const ni = ny * GRID + nx; if (d[ni] < 1e9 || !raidHeroPass(st, ni)) continue;
+      if (nb[0] && nb[1] && (!raidHeroPass(st, y * GRID + nx) || !raidHeroPass(st, ny * GRID + x))) continue;
+      d[ni] = d[i] + 1; q.push(ni);
+    }
+  }
+  if (st.hf.size > 80) st.hf.clear();
+  st.hf.set(goal, { d, g: st.gen });
+  return d;
+}
+
+/* ---------- dégâts ---------- */
+function raidHurtFoe(st, u, v) {
+  if (!raidAlive(u) || !(v > 0)) return;
+  u.hp -= v; st.ev.push({ k: 'hit', id: u.id, v: Math.round(v) });
+  if (u.hp <= 0) raidKill(st, u);
+}
+function raidKill(st, u) {
+  const D = RAID_FOES[u.type];
+  u.hp = 0; u.dead = true; st.kills++;
+  st.gold += D.gold * (1 + 0.1 * (st.L - 1)); st.xp += D.xp * (1 + 0.25 * (st.L - 1));
+  if (u.loot) { st.back[u.loot[0]] = (st.back[u.loot[0]] || 0) + u.loot[1]; st.ev.push({ k: 'drop', id: u.id, x: u.x, y: u.y, r: u.loot[0], n: u.loot[1] }); u.loot = null; }
+  st.ev.push({ k: 'die', id: u.id, x: u.x, y: u.y, big: u.big });
+}
+function raidHurtHero(st, h, v) {
+  if (h.ko) return;
+  const n = v * (1 - h.armor); h.hp -= n; st.ev.push({ k: 'hurt', id: h.id, v: Math.round(n) });
+  if (h.hp <= 0) { h.hp = 0; h.ko = true; h.dead = true; st.ev.push({ k: 'ko', id: h.id, x: h.x, y: h.y }); }
+}
+function raidHurtStruct(st, si, v) {
+  const S = st.S[si]; if (S.dead || S.kind === 'halle') return;
+  S.hp -= v; S.hitT = st.t;
+  if (S.hp <= 0) {
+    S.hp = 0; S.dead = true; raidMark(st, S, 0); st.gen++;
+    if (S.kind !== 'bld' && S.kind !== 'store') st.broke++;
+    st.ev.push({ k: 'break', si, x: S.x, y: S.y, kind: S.kind });
+  }
+}
+
+/* ---------- chacun son tour ---------- */
+function raidSpawn(st, u) {
+  const P = st.inp.P[u.pi] || st.inp.P[0], j = (raidRnd(st) - 0.5) * 0.6, side = P[2];
+  u.x = u.px = P[0] + 0.5 + (side === 0 || side === 2 ? j : 0);
+  u.y = u.py = P[1] + 0.5 + (side === 1 || side === 3 ? j : 0);
+  u.on = true;
+  /* le voleur file vers les réserves (l'entrepôt le plus facile à atteindre) ; s'il n'y en a pas, vers la halle */
+  if (u.thief && st.stores.length) { const ci = raidCell(u.y) * GRID + raidCell(u.x); let bk = '', bd = 1e18; st.stores.forEach((si, k) => { const dd = raidField(st, 's' + k).d[ci]; if (dd < bd) { bd = dd; bk = 's' + k; } }); u.tk = bk; }
+  st.ev.push({ k: 'spawn', id: u.id, x: u.x, y: u.y });
+}
+function raidMoveTo(u, tx, ty, sp) {
+  const dx = tx - u.x, dy = ty - u.y, L = raidLen(dx, dy); if (L < 1e-6) return;
+  const k = Math.min(sp, L) / L; u.x += dx * k; u.y += dy * k; u.mv = true; u.fx = dx / L; u.fy = dy / L;
+}
+/* Pillage : chacun emporte sa part (le voleur prend de l'or s'il y en a) ; à la halle, le cœur du village, la part est plus grosse.
+   Jamais plus de 30 % d'une ressource par raid. */
+function raidTake(st, u) {
+  const T = st.S[raidField(st, u.tk).ti], heart = !!T && T.kind === 'halle';
+  if (heart && !st.heart) { st.heart = 1; st.ev.push({ k: 'heart', id: u.id }); }
+  const want = Math.round(u.carry * st.lootMul * (heart ? 1.5 : 1));
+  const avail = k => Math.max(0, Math.min(st.stock[k] || 0, Math.floor((st.inp.R[k] || 0) * 0.3) - (st.taken[k] || 0)));
+  let res = null;
+  if (u.thief && avail('or') >= 5) res = 'or';
+  else for (const k of RAID_LOOT) if (avail(k) > 0 && (!res || avail(k) > avail(res))) res = k;
+  const n = res ? Math.min(want, avail(res)) : 0;
+  if (n > 0) { st.stock[res] -= n; st.taken[res] = (st.taken[res] || 0) + n; u.loot = [res, n]; st.ev.push({ k: 'loot', id: u.id, r: res, n }); }
+  u.goal = 'h';
+}
+function raidTrapCheck(st, u) {
+  const ti = st.trapAt[raidCell(u.y) * GRID + raidCell(u.x)] - 1; if (ti < 0) return;
+  const T = st.traps[ti]; if (T.uses <= 0) return;
+  if (T.type === 'piege') {
+    if (T.cd > 1e-9) return;
+    T.uses--; T.cd = 2; T.shown = true;
+    st.ev.push({ k: 'trap', i: ti, x: T.x + 0.5, y: T.y + 0.5, t: 'piege' });
+    for (const o of st.foes) if (raidAlive(o) && raidCell(o.x) === T.x && raidCell(o.y) === T.y) raidHurtFoe(st, o, T.dmg * st.defMul);
+  } else if (u.root <= 0) {
+    T.uses--; T.shown = true; u.root = T.root * (u.type === 'troll' ? 0.5 : 1);
+    st.ev.push({ k: 'trap', i: ti, x: T.x + 0.5, y: T.y + 0.5, t: 'filet', id: u.id });
+  }
+}
+function raidFoeStep(st, u) {
+  if (!raidAlive(u)) return;
+  u.mv = false; u.atkT -= RAID_DT; if (u.root > 0) u.root -= RAID_DT;
+  /* 1) un héros à portée : on se bat (les voleurs, eux, ne se battent jamais) */
+  if (u.fight) {
+    let h = null, bd = 1e9;
+    for (const o of st.heroes) { if (o.ko) continue; const d = raidDist(u, o); if (d <= u.r + o.r + u.reach && d < bd) { bd = d; h = o; } }
+    if (h) { raidFace(u, h); if (u.atkT <= 1e-9) { u.atkT = u.rate; u.atkN++; raidHurtHero(st, h, u.dmg); } return; }
+  }
+  if (u.atkT < 0) u.atkT = 0;
+  /* 2) en plein pillage */
+  if (u.pl > 0) { u.pl -= RAID_DT; if (u.pl <= 0) raidTake(st, u); return; }
+  if (u.root > 0) return;
+  /* 3) en route : vers sa cible, puis vers son portail avec le butin */
+  const f = raidField(st, u.goal === 'h' ? 'p' + u.pi : u.tk), cx = raidCell(u.x), cy = raidCell(u.y), ci = cy * GRID + cx;
+  if (f.d[ci] <= 0) {
+    if (u.goal === 'h') {
+      /* il rentre dans le portail (au bord de la vallée, le terrain est libre) avant de disparaître */
+      const P = st.inp.P[u.pi] || st.inp.P[0], px = P[0] + 0.5, py = P[1] + 0.5;
+      if (raidLen(u.x - px, u.y - py) > 0.45) { raidMoveTo(u, px, py, u.speed * RAID_DT * (u.loot ? 0.85 : 1)); return; }
+      u.out = true; st.esc++;
+      if (u.loot) st.lost[u.loot[0]] = (st.lost[u.loot[0]] || 0) + u.loot[1];
+      st.ev.push({ k: 'escape', id: u.id, x: u.x, y: u.y, r: u.loot ? u.loot[0] : '', n: u.loot ? u.loot[1] : 0 });
+      return;
+    }
+    u.pl = u.thief ? 1.0 : 1.5;
+    const T = st.S[f.ti]; if (T) raidFace(u, T);
+    st.ev.push({ k: 'plunder', id: u.id });
+    return;
+  }
+  let best = -1, bv = 1e18;
+  for (const nb of RAID_NB) {
+    const nx = cx + nb[0], ny = cy + nb[1]; if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID) continue;
+    if (nb[0] && nb[1] && (st.occ[cy * GRID + nx] || st.occ[ny * GRID + cx])) continue;
+    const ni = ny * GRID + nx, c = raidCost(st, ni, f.ti); if (c >= 1e7) continue;
+    const val = f.d[ni] + c * nb[2];
+    if (val < bv) { bv = val; best = ni; }
+  }
+  if (best < 0) return;
+  const o = st.occ[best] - 1;
+  if (o >= 0) {
+    /* le chemin passe par un mur, une porte (ou, faute de mieux, un bâtiment) : on le casse */
+    const S = st.S[o];
+    if (raidDistRect(u.x, u.y, S) <= u.r + 0.4) { raidFace(u, S); if (u.atkT <= 1e-9) { u.atkT = u.rate; u.atkN++; raidHurtStruct(st, o, u.sdmg * (S.kind === 'wall' || S.kind === 'gate' || S.kind === 'tower' ? u.wall : 1)); } return; }
+    const px = Math.max(S.x0, Math.min(u.x, S.x0 + S.s)), py = Math.max(S.y0, Math.min(u.y, S.y0 + S.s)), dx = px - u.x, dy = py - u.y, L = raidLen(dx, dy), want = L - (u.r + 0.3);
+    if (want > 0 && L > 1e-6) { const k = Math.min(u.speed * RAID_DT, want) / L; u.x += dx * k; u.y += dy * k; u.mv = true; u.fx = dx / L; u.fy = dy / L; }
+    return;
+  }
+  raidMoveTo(u, best % GRID + 0.5, ((best / GRID) | 0) + 0.5, u.speed * RAID_DT * (u.loot ? 0.85 : 1));
+  raidTrapCheck(st, u);
+}
+function raidHeroStep(st, h) {
+  if (h.ko) return;
+  h.atkT -= RAID_DT; h.mv = false;
+  /* d'abord ceux qui emportent du butin ou qui pillent, puis les voleurs, puis le plus proche */
+  const score = u => raidDist(h, u) - (u.loot ? 3 : 0) - (u.pl > 0 ? 2 : 0) - (u.thief ? 1 : 0);
+  let tgt = null, bd = 1e9;
+  for (const u of st.foes) { if (!raidAlive(u) || raidDist(h, u) > h.range + u.r) continue; const sc = score(u); if (sc < bd) { bd = sc; tgt = u; } }
+  if (tgt) {
+    raidFace(h, tgt);
+    if (h.atkT <= 1e-9) {
+      h.atkT = h.cd; h.atkN++;
+      st.ev.push({ k: 'hhit', id: h.id, tgt: tgt.id, sh: h.range > 2 ? h.cls : '' });
+      raidHurtFoe(st, tgt, h.dmg);
+      if (h.cls === 'mage') for (const o of st.foes) if (o !== tgt && raidAlive(o) && raidDist(o, tgt) <= 1.2 + o.r) raidHurtFoe(st, o, h.dmg * 0.5);
+      if (h.cls === 'pretre') {
+        let w = null; for (const o of st.heroes) if (!o.ko && o.hp < o.hpMax * 0.8 && (!w || o.hp / o.hpMax < w.hp / w.hpMax)) w = o;
+        if (w) { const n = Math.min(w.hpMax - w.hp, h.dmg * 1.2); w.hp += n; st.ev.push({ k: 'heal', id: w.id, v: Math.round(n) }); }
+      }
+    }
+    return;
+  }
+  if (h.atkT < 0) h.atkT = 0;
+  /* l'ennemi le plus proche dans la zone de défense, sinon retour à son poste */
+  const H = st.S[st.hall]; let ch = null; bd = 1e9;
+  for (const u of st.foes) { if (!raidAlive(u) || raidLen(u.x - H.x, u.y - H.y) > RAID_ZONE + (u.loot ? 2.5 : 0.5)) continue; const sc = score(u); if (sc < bd) { bd = sc; ch = u; } }   // un pillard qui s'enfuit, on le poursuit un peu plus loin
+  const gx = ch ? ch.x : h.home[0], gy = ch ? ch.y : h.home[1];
+  if (!ch && raidLen(h.x - gx, h.y - gy) < 0.15) return;
+  const cx = raidCell(h.x), cy = raidCell(h.y), goal = raidCell(gy) * GRID + raidCell(gx);
+  let tx = gx, ty = gy;
+  if (cy * GRID + cx !== goal) {
+    const d = raidHeroField(st, goal);
+    let best = -1, bv = d[cy * GRID + cx];
+    for (const nb of RAID_NB) {
+      const nx = cx + nb[0], ny = cy + nb[1]; if (nx < 0 || ny < 0 || nx >= GRID || ny >= GRID) continue;
+      const ni = ny * GRID + nx; if (!raidHeroPass(st, ni)) continue;
+      if (nb[0] && nb[1] && (!raidHeroPass(st, cy * GRID + nx) || !raidHeroPass(st, ny * GRID + cx))) continue;
+      if (d[ni] < bv) { bv = d[ni]; best = ni; }
+    }
+    if (best < 0) return;
+    tx = best % GRID + 0.5; ty = ((best / GRID) | 0) + 0.5;
+  }
+  const dx = tx - h.x, dy = ty - h.y, L = raidLen(dx, dy); if (L < 1e-6) return;
+  const k = Math.min(h.speed * RAID_DT, L) / L, nx = h.x + dx * k, ny = h.y + dy * k;
+  const far = raidLen(nx - H.x, ny - H.y);
+  if (far > RAID_ZONE + 3 && far > raidLen(h.x - H.x, h.y - H.y)) return;     // on ne s'éloigne pas trop de la halle
+  h.x = nx; h.y = ny; h.mv = true; h.fx = dx / L; h.fy = dy / L;
+}
+function raidTowerStep(st, tw, i) {
+  const S = st.S[tw.si]; if (S.dead) return;
+  tw.cd -= RAID_DT; if (tw.cd > 1e-9) return;
+  /* les archers visent d'abord les pillards chargés de butin, puis les voleurs et les blessés ; un troll seulement s'il n'y a rien d'autre */
+  let best = null, bs = 1e9;
+  for (const u of st.foes) {
+    if (!raidAlive(u)) continue;
+    const d = raidLen(u.x - S.x, u.y - S.y); if (d > tw.range) continue;
+    const sc = d - (u.loot ? 4 : 0) - (u.pl > 0 ? 2 : 0) - (u.thief ? 1.5 : 0) + (u.big ? 2.5 : 0) - 2 * (1 - u.hp / u.hpMax);
+    if (sc < bs) { bs = sc; best = u; }
+  }
+  if (!best) { tw.cd = 0.2; return; }
+  tw.cd = tw.rate; tw.n++;
+  st.ev.push({ k: 'tshot', i, si: tw.si, tgt: best.id, x: S.x, y: S.y });
+  raidHurtFoe(st, best, tw.dmg * st.defMul);
+}
+/* Les assaillants s'écartent un peu les uns des autres (sans jamais entrer dans un mur). */
+function raidNudge(st, u, dx, dy) { if (u.pl > 0) return; const x = u.x + dx, y = u.y + dy; if (x < 0.05 || y < 0.05 || x > GRID - 0.05 || y > GRID - 0.05 || st.occ[raidCell(y) * GRID + raidCell(x)]) return; u.x = x; u.y = y; }
+function raidSeparate(st) {
+  const L = st.foes.filter(raidAlive);
+  for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
+    const a = L[i], b = L[j], dx = b.x - a.x, dy = b.y - a.y, d2 = dx * dx + dy * dy, m = a.r + b.r;
+    if (d2 >= m * m) continue;
+    const d = Math.sqrt(d2), nx = d < 1e-4 ? 1 : dx / d, ny = d < 1e-4 ? 0 : dy / d, push = (m - d) * 0.25;
+    raidNudge(st, a, -nx * push, -ny * push); raidNudge(st, b, nx * push, ny * push);
+  }
+}
+function raidStep(st) {
+  if (st.over) return;
+  for (const u of st.foes) { u.px = u.x; u.py = u.y; }
+  for (const h of st.heroes) { h.px = h.x; h.py = h.y; }
+  for (const u of st.foes) if (!u.on && !u.dead && !u.out && st.t + 1e-9 >= u.delay) raidSpawn(st, u);
+  for (const T of st.traps) if (T.cd > 0) T.cd -= RAID_DT;
+  st.towers.forEach((tw, i) => raidTowerStep(st, tw, i));
+  for (const h of st.heroes) raidHeroStep(st, h);
+  for (const u of st.foes) raidFoeStep(st, u);
+  raidSeparate(st);
+  st.t = Math.round((st.t + RAID_DT) * 10) / 10; st.n++;
+  const waiting = st.foes.some(u => !u.on && !u.dead && !u.out), alive = st.foes.some(raidAlive);
+  if (!waiting && !alive) st.over = true;
+  else if (st.t >= RAID_LIMIT) {
+    /* le temps est écoulé : ceux qui restent repartent par le portail (avec ce qu'ils portent) */
+    for (const u of st.foes) if (raidAlive(u)) { u.out = true; st.esc++; if (u.loot) st.lost[u.loot[0]] = (st.lost[u.loot[0]] || 0) + u.loot[1]; st.ev.push({ k: 'escape', id: u.id, x: u.x, y: u.y, r: u.loot ? u.loot[0] : '', n: u.loot ? u.loot[1] : 0 }); }
+    st.over = true;
+  }
+  if (st.over) st.ev.push({ k: 'end' });
+}
+function raidResult(st) {
+  const dmg = [];
+  for (const S of st.S) if ((S.kind === 'wall' || S.kind === 'gate' || S.kind === 'tower') && S.hp !== S.hp0) dmg.push([S.id, Math.max(0, Math.round(S.hp))]);
+  const round = o => { const out = {}; for (const k of RAID_LOOT.concat(['or'])) { const n = Math.round(o[k] || 0); if (n > 0) out[k] = n; } return out; };
+  return { k: st.kills, e: st.esc, f: st.foes.length, lost: round(st.lost), back: round(st.back), h: st.heart, g: Math.round(st.gold), xp: Math.round(st.xp), br: st.broke,
+    ko: st.heroes.filter(h => h.ko).map(h => h.id), dmg, s: Math.round(st.t) };
+}
+/* Tout le raid d'un coup, à la minute où il part ; le village garde de quoi le rediffuser. */
+function raidResolve(v, t) {
+  const inp = raidInput(v, t), st = raidStart(inp);
+  for (let guard = 0; !st.over && guard < 4000; guard++) { raidStep(st); st.ev.length = 0; }
+  raidApply(v, t, inp, raidResult(st));
+}
+function raidApply(v, t, inp, res) {
+  for (const [id, hp] of res.dmg) { const b = v.b.find(x => x.id === id); if (!b || !BLD[b.type].hps) continue; if (hp >= hpMaxOf(b)) delete b.hp; else b.hp = hp; }
+  for (const k in res.lost) v.r[k] = Math.max(0, (v.r[k] || 0) - res.lost[k]);
+  if (res.g) v.r.or = (v.r.or || 0) + res.g;
+  const ups = [];
+  if (res.xp) for (const h of Object.values(v.heroes || {}).filter(Boolean).sort((a, b) => (a.n || 0) - (b.n || 0))) if (heroAddXp(h, h.race === 'humain' ? res.xp * 1.1 : res.xp)) ups.push(h.name + ' (niveau ' + h.lvl + ')');
+  if (res.h) v.raidMor = t + DAY;
+  const lostTxt = Object.keys(res.lost).map(k => res.lost[k] + ' ' + RES_LABEL[k].toLowerCase()).join(', ');
+  let m = (lostTxt ? 'Raid des gobelins : ' : 'Raid repoussé ! ') + res.k + ' ennemi' + (res.k > 1 ? 's' : '') + ' vaincu' + (res.k > 1 ? 's' : '') + ' sur ' + res.f;
+  if (res.e) m += ', ' + res.e + ' enfui' + (res.e > 1 ? 's' : '') + (lostTxt ? ' avec ' + lostTxt : ' les mains vides');
+  m += '.' + (res.g ? ' +' + res.g + ' or.' : '') + (res.br ? ' ' + res.br + ' défense' + (res.br > 1 ? 's détruites' : ' détruite') + ' : à réparer (menu Défense).' : '');
+  addLog(v, t, m, 'raid');
+  if (res.h) addLog(v, t, 'Les gobelins ont pillé la halle, le cœur du village : le moral baisse pour un jour.', 'raid');
+  if (ups.length) addLog(v, t, 'En défendant le village : ' + ups.join(', ') + ' !', 'hero');
+  v.lastRaid = { t, n: inp.n, sd: inp.sd, L: inp.L, P: inp.P, B: inp.B, H: inp.H, F: inp.F, R: inp.R, res };
+  const rnd = mulberry32((inp.sd ^ 0x63d83595) >>> 0);
+  v.raid = { n: (inp.n | 0) + 1, next: t + RAID_GAP + Math.floor(rnd() * (RAID_GAP_RND / MIN)) * MIN, closed: (v.raid && v.raid.closed) | 0 };
+}
+/* Rediffusion : le même combat, rejoué à partir de ce que le village a gardé. */
+const raidReplay = lr => raidStart({ t: lr.t, n: lr.n, sd: lr.sd, L: lr.L, P: lr.P, B: lr.B, H: lr.H, F: lr.F, R: lr.R });
+
 /* ===================== DONJONS : fabrication à partir d'une graine (pur, sans DOM) =====================
    Même graine + même niveau = même donjon, sur les deux téléphones. Une case = 1 unité (≈ un personnage). */
 const DJ_TILE = { WALL: 0, FLOOR: 1 };
@@ -1220,14 +1819,21 @@ const DJ_MONSTERS = {
   spectre: { name: 'Spectre', hp: 32, dmg: 6, speed: 2.6, range: 5.5, rate: 2.4, xp: 6, w: 1, ranged: true, evade: 0.3, shot: 'ghost' },
   necromant: { name: 'Nécromant', hp: 34, dmg: 4, speed: 2.1, range: 5, rate: 2.8, xp: 7, w: 1, raises: true },
   golem: { name: 'Golem d’os', hp: 140, dmg: 15, speed: 1.5, range: 1.4, rate: 2.5, xp: 13, w: 1, big: true },
+  /* le portail démoniaque (étape 4) : des diablotins, et les gobelins et trolls qui attendent d'en sortir */
+  diablotin: { name: 'Diablotin', hp: 30, dmg: 5, speed: 3.6, range: 1.0, rate: 1.1, xp: 4, w: 4 },
+  lanceflamme: { name: 'Diablotin cracheur de feu', hp: 26, dmg: 7, speed: 2.4, range: 5.5, rate: 2.4, xp: 5, w: 2, ranged: true, shot: 'fire' },
 };
 const DJ_BOSSES = {
   chefTroll: { name: 'Chef troll', hp: 520, dmg: 16, speed: 1.8, range: 1.6, rate: 2.1, xp: 80, big: true, boss: true },
   roiSquelette: { name: 'Roi squelette', hp: 560, dmg: 15, speed: 1.9, range: 1.7, rate: 2.0, xp: 85, big: true, boss: true },
+  gardien: { name: 'Gardien du portail', hp: 540, dmg: 15, speed: 1.9, range: 1.7, rate: 2.0, xp: 85, big: true, boss: true },
 };
+/* Renforts des boss qui appellent à l'aide (tempête d'os ou pluie de feu) */
+const DJ_BOSS_ADDS = { roiSquelette: ['squelette', 'squelette', 'squelette', 'archerSq'], gardien: ['diablotin', 'diablotin', 'diablotin', 'lanceflamme'] };
 const DJ_THEMES = {
   mine: { name: 'Mine des gobelins', the: 'la mine des gobelins', monsters: ['gobelin', 'archer', 'chaman', 'troll'], boss: 'chefTroll' },
   crypte: { name: 'Crypte des rois', the: 'la crypte des rois', monsters: ['squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem'], boss: 'roiSquelette' },
+  portail: { name: 'Portail démoniaque', the: 'le portail démoniaque', monsters: ['diablotin', 'lanceflamme', 'gobelin', 'troll'], boss: 'gardien', rooms: 3 },
 };
 const DJ_PRISONER_CHANCE = lvl => Math.min(0.10, 0.03 + 0.007 * lvl);   // rare : de 4 % (niveau 1) à 10 %
 
@@ -1254,7 +1860,7 @@ const djCenter = r => [r.x + (r.w >> 1), r.y + (r.h >> 1)];
    opts (étages des Profondeurs) : { rooms: nombre de salles de combat, boss: false pour un étage sans boss }. */
 function genDungeon(seed, lvl, theme, opts) {
   const o = opts || {}, R = mulberry32((seed ^ 0x9e3779b9) >>> 0), pick = a => a[Math.floor(R() * a.length)];
-  const T = DJ_THEMES[theme] || DJ_THEMES.mine, coin = R() < 0.5 ? 1 : 0, nFight = o.rooms || 5 + coin, withBoss = o.boss !== false;
+  const T = DJ_THEMES[theme] || DJ_THEMES.mine, coin = R() < 0.5 ? 1 : 0, nFight = o.rooms || T.rooms || 5 + coin, withBoss = o.boss !== false;
   let rooms = null;
   for (let attempt = 0; attempt < 50 && !rooms; attempt++) {
     const list = [{ k: 'entree', w: 8, h: 8, shape: 'rect', kind: 'start', x: 0, y: 0 }];
@@ -1991,8 +2597,9 @@ function djMobStep(st, m) {
   m.mv = false; m.fx = dx / dd; m.fy = dy / dd;
   if (m.atkT <= 0) start('melee', t.id, m.big ? 0.55 : 0.35, 'melee');
 }
-function djBossStep(st, m) { return m.type === 'roiSquelette' ? djBossRoi(st, m) : djBossTroll(st, m); }
-/* Le roi squelette : tempête d'os (des cercles s'allument sous les héros puis explosent), renforts à 70 % et 40 %, rage sous 30 %. */
+function djBossStep(st, m) { return m.type === 'roiSquelette' || m.type === 'gardien' ? djBossRoi(st, m) : djBossTroll(st, m); }
+/* Le roi squelette : tempête d'os (des cercles s'allument sous les héros puis explosent), renforts à 70 % et 40 %, rage sous 30 %.
+   Le gardien du portail fait de même, avec une pluie de feu et des diablotins. */
 function djBossRoi(st, m) {
   const S = m.sp, dt = DJ_DT;
   if (S.storm == null) S.storm = 5;
@@ -2000,7 +2607,7 @@ function djBossRoi(st, m) {
   if ((S.phase === 0 && m.hp < m.hpMax * 0.7) || (S.phase === 1 && m.hp < m.hpMax * 0.4)) {
     S.phase++;
     const c = djCenter(st.d.rooms[m.room]);
-    ['squelette', 'squelette', 'squelette', 'archerSq'].forEach((type, k) => {
+    (DJ_BOSS_ADDS[m.type] || DJ_BOSS_ADDS.roiSquelette).forEach((type, k) => {
       const a = k / 4 * 6.2832 + S.phase, x = m.x + Math.cos(a) * 2.6, y = m.y + Math.sin(a) * 2.6, ok = djFree(st, x, y, 0.38);
       const n = djMob(st, type, ok ? x : c[0] + 0.5, ok ? y : c[1] + 0.5, m.room, false); n.awake = true; st.mobs.push(n);
       st.ev.push({ k: 'spawn', id: n.id, x: n.x, y: n.y });
@@ -2012,7 +2619,7 @@ function djBossRoi(st, m) {
     S.actT -= dt; m.mv = false;
     if (S.actT <= 0) {
       for (const p of S.pts) for (const t of djFoes(st)) if (Math.hypot(t.x - p[0], t.y - p[1]) <= 1.6 + t.r) djHit(st, t, m.dmg * 1.4);
-      st.ev.push({ k: 'storm', id: m.id, pts: S.pts, r: 1.6 }); S.act = null; S.storm = 7.5;
+      st.ev.push({ k: 'storm', id: m.id, pts: S.pts, r: 1.6, c: m.type === 'gardien' ? 'fire' : 'bone' }); S.act = null; S.storm = 7.5;
     }
     return true;
   }
@@ -2251,9 +2858,9 @@ function djProgress(st) {
 /* ===================== DONJONS À DEUX : l'hôte simule, l'invitée affiche =====================
    Le téléphone de l'hôte fait tourner le combat et envoie l'état ~7 fois par seconde ; celui de l'invitée l'affiche
    (en lissant), déplace lui-même son héros (pour qu'il réponde tout de suite) et envoie sa position et ses boutons. */
-const DJ_PV = 3;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent
+const DJ_PV = 4;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent (4 : donjon du portail)
 const DJ_PETS = ['loup', 'faucon', 'sanglier', 'chouette'];
-const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette'];
+const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette', 'diablotin', 'lanceflamme', 'gardien'];
 const DJ_ST = { idle: 'i', lock: 'l', clear: 'c', open: 'o', fight: 'f' }, DJ_STR = { i: 'idle', l: 'lock', c: 'clear', o: 'open', f: 'fight' };
 const djR1 = x => Math.round(x * 10) / 10, djR2 = x => Math.round(x * 100) / 100;
 /* Instantané envoyé par l'hôte (nombres arrondis, listes courtes). evs : événements depuis le précédent (pour les effets). */
@@ -2775,7 +3382,8 @@ const V3 = (() => {
     x.drawImage(baseCanvas, 0, 0);
     mask = new Uint8Array(MASK_N * MASK_N); fieldTiles = [];
     if (biome === 'green') for (let j = 0; j < MASK_N; j++) for (let i = 0; i < MASK_N; i++) { if (inLake(i / MASK_K - W_HALF, j / MASK_K - W_HALF, 1.15)) mask[j * MASK_N + i] = 3; }
-    const blds = items.filter(it => it.type !== 'rempart' && it.key !== 'ghost'), walls = items.filter(it => it.type === 'rempart');
+    const wallish = it => it.type === 'rempart' || it.type === 'porte', hidden = it => it.type === 'piege' || it.type === 'filet';
+    const blds = items.filter(it => !wallish(it) && !hidden(it) && it.key !== 'ghost'), walls = items.filter(wallish);
     const cen = b => { const s = BLD[b.type].size; return [b.gx + s / 2 - half, b.gz + s / 2 - half, s]; };
     const R = mulberry32(blds.length * 131 + 7);
     // sol tassé autour des bâtiments
@@ -3097,7 +3705,7 @@ const V3 = (() => {
     glowTex = radialTexture();
     emberMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xff8a3a, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false });
     try { buildWorld(); } catch (e) { console.error('décor', e); }
-    scene.add(bldGroup); scene.add(unitGroup); scene.add(fxGroup); scene.add(rangeGroup); scene.add(wallGroup);
+    scene.add(bldGroup); scene.add(unitGroup); scene.add(fxGroup); scene.add(rangeGroup); scene.add(wallGroup); scene.add(portalGroup);
     selMesh = new THREE.Mesh(geo('plane'), selMat); selMesh.visible = false; selMesh.renderOrder = 2; scene.add(selMesh);
     ghostMesh = new THREE.Mesh(geo('plane'), ghostOk); ghostMesh.visible = false; ghostMesh.renderOrder = 3; scene.add(ghostMesh);
     const zc = document.createElement('canvas'); zc.width = zc.height = GRID * 4;
@@ -3191,6 +3799,7 @@ const V3 = (() => {
     setRay(cx, cy);
     const hits = ray.intersectObjects(bldGroup.children, true);
     for (const h of hits) { let o = h.object; while (o && o.parent !== bldGroup) o = o.parent; if (o && o.userData.key != null) return o.userData.key; }
+    if (portalGroup.visible) { const ph = ray.intersectObjects(portalGroup.children, true); for (const h of ph) { let o = h.object; while (o && o.parent !== portalGroup) o = o.parent; if (o && o.userData.key != null) return o.userData.key; } }
     const g = pickGround(cx, cy);
     if (g) { const w = wallAt.get(Math.floor(g[0]) + ',' + Math.floor(g[1])); if (w) return w.key; }
     return null;
@@ -3198,8 +3807,9 @@ const V3 = (() => {
 
   /* ---------- bâtiments affichés ---------- */
   /* Modèles provisoires (en attendant ceux générés avec Meshy) et équivalents dessinés par le code. */
-  const B_MODEL = { halle: 'castle', taverne: 'tavern', bucheron: 'lumbermill', carriere: 'mine', moulin: 'windmill', boulangerie: 'market', entrepot: 'barracks' };
-  const V1_PROC = { halle: 'mairie', taverne: 'camp', bucheron: 'scierie', carriere: 'carriere', moulin: 'ferme', entrepot: 'entrepot', boulangerie: 'caserne' };
+  const B_MODEL = { halle: 'castle', taverne: 'tavern', bucheron: 'lumbermill', carriere: 'mine', moulin: 'windmill', boulangerie: 'market', entrepot: 'barracks', tour: 'tower_A' };
+  const V1_PROC = { halle: 'mairie', taverne: 'camp', bucheron: 'scierie', carriere: 'carriere', moulin: 'ferme', entrepot: 'entrepot', boulangerie: 'caserne', tour: 'tour' };
+  const bModelOf = it => it.type === 'tour' && it.lvl >= 3 ? 'tower_B' : B_MODEL[it.type];
   const SMOKE = ['halle', 'taverne', 'bucheron', 'boulangerie'];
   const TEAM = { '#D27A22': 2, '#2F8A63': 3, '#4A78C2': 0, '#B24F78': 2, '#8A67C6': 0 };
   const MODEL_RY = Math.PI / 4;
@@ -3388,7 +3998,23 @@ const V3 = (() => {
     g.add(P('box', 0x5f4127, 0.5, 0.03, 0.03, 0.62, 0.24, 0, 0, true));
     return { g, info: { top: 1.0, muzzle: 0.5, emit: [] } };
   }
-  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG };
+  /* Pièges : une plaque à pointes, un filet roulé, posés au ras du sol (les ennemis ne les voient pas venir). */
+  let netGeo = null;
+  function piegeG(it) {
+    const g = new THREE.Group(), L = Math.max(1, it.lvl | 0), c = L >= 3 ? 0xd0d4d8 : L >= 2 ? 0xb8bcc0 : 0x9a8f80;
+    g.add(P('box', 0x4a4038, 0.78, 0.04, 0.78, 0, 0, 0, 0, true));
+    for (const [x, z] of [[-0.22, -0.22], [0.22, -0.22], [-0.22, 0.22], [0.22, 0.22], [0, 0]]) g.add(P('cone6', c, 0.1, 0.14 + 0.03 * L, 0.1, x, 0.04, z, 0, true));
+    return { g, info: { top: 0.5, muzzle: 0.2, emit: [] } };
+  }
+  function filetG(it) {
+    const g = new THREE.Group();
+    if (!netGeo) { netGeo = new THREE.TorusGeometry(0.26, 0.05, 5, 14); netGeo.rotateX(Math.PI / 2); }
+    g.add(P('cyl8', 0x7a6a4e, 0.7, 0.04, 0.7, 0, 0, 0, 0, true));
+    const ring = new THREE.Mesh(netGeo, mat(it.lvl >= 2 ? 0x8f8a80 : 0x9a8660)); ring.position.y = 0.07; g.add(ring);
+    for (let i = 0; i < 4; i++) g.add(P('box', 0x8a7856, 0.62, 0.02, 0.025, 0, 0.05, 0, i * Math.PI / 4, true));
+    return { g, info: { top: 0.5, muzzle: 0.2, emit: [] } };
+  }
+  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG };
   function build(it) {
     const s = BLD[it.type].size, g = new THREE.Group();
     let info = { top: 1.2, muzzle: 1, emit: [] };
@@ -3403,7 +4029,7 @@ const V3 = (() => {
       const b = PROC2[it.type](it); g.add(b.g); info = b.info;
       if (it.up) g.add(makeScaffold(s, Math.min(2.4, info.top * 0.7)));
     } else if (LIB.ok && (LIB.m2[it.type] || B_MODEL[it.type])) {
-      const m = modelInst(LIB.m2[it.type] ? 'm2:' + it.type : B_MODEL[it.type], team, false, foot * (1 + 0.035 * (Math.min(5, it.lvl) - 1)), MODEL_RY);
+      const m = modelInst(LIB.m2[it.type] ? 'm2:' + it.type : bModelOf(it), team, false, foot * (it.type === 'tour' ? 0.8 : 1 + 0.035 * (Math.min(5, it.lvl) - 1)), MODEL_RY);
       if (m) { g.add(m); info.top = m.userData.h; info.muzzle = Math.max(0.8, info.top * 0.8); }
       if (SMOKE.includes(it.type) && !LIB.m2[it.type]) info.emit.push([0.15, info.top * 0.9, -0.15]);   // les modèles Meshy ont leur propre fumée (ou pas de cheminée)
       if (it.up) g.add(makeScaffold(s, Math.min(2.4, info.top * 0.6)));
@@ -3422,7 +4048,7 @@ const V3 = (() => {
     const seen = new Set(), walls = [];
     const fresh = blds.size === 0 && wallAt.size === 0;
     for (const it of items) {
-      if (it.type === 'rempart') { walls.push(it); continue; }
+      if (it.type === 'rempart' || it.type === 'porte') { walls.push(it); continue; }
       seen.add(it.key);
       const old = blds.get(it.key), sig = sigOf(it);
       if (old && old.sig === sig) { old.item = it; continue; }
@@ -3450,9 +4076,15 @@ const V3 = (() => {
     d5: { post: ['box', 0x4d5966, 0.66, 1.25], cap: ['box', 0x3c4552, 0.74, 0.13], band: [0x7fe0ff, 0.68, 0.07, 0.86, true], link: [0x56626f, 0.48, 1.02] },
   };
   for (let l = 1; l <= 5; l++) WS['o' + l] = { post: ['cyl6', 0x4a3424, 0.3, 0.95 + 0.07 * l], cap: ['cone6', l >= 4 ? 0xe6dcc0 : 0x6b4a2b, 0.32, 0.34], band: l >= 3 ? [0x6e5a48, 0.33, 0.07, 0.6] : null, link: [0x34241a, 0.16, 0.72 + 0.06 * l] };
+  /* Portes (dans une palissade) : deux poteaux, une traverse, un vantail ; renforcées de fer aux niveaux 2 et 3. */
+  const GS = {
+    1: { post: 0x6b4a2b, beam: 0x5a3d22, panel: 0x8b5e34, band: null },
+    2: { post: 0x8e8a80, beam: 0x6f767c, panel: 0x7a5230, band: 0x3c3c40 },
+    3: { post: 0x6f767c, beam: 0x4d5966, panel: 0x5c636b, band: 0xc9922e },
+  };
   function setWalls(items, fresh) {
     const live = items.filter(w => !w.dead), dead = items.filter(w => w.dead);
-    const sig = items.map(w => w.gx + ',' + w.gz + ',' + w.lvl + (w.orc ? 'o' : '') + (w.dead ? 'x' : '')).join(';');
+    const sig = items.map(w => w.gx + ',' + w.gz + ',' + w.lvl + (w.type === 'porte' ? 'g' : '') + (w.orc ? 'o' : '') + (w.dead ? 'x' : '')).join(';');
     const prev = new Set(wallAt.keys());
     wallAt.clear();
     for (const w of items) if (!w.dead) wallAt.set(w.gx + ',' + w.gz, w);
@@ -3468,21 +4100,42 @@ const V3 = (() => {
       q.setFromAxisAngle(up, ry || 0); ps.set(x, y, z); sc.set(sx, sy, sz);
       sets.get(id).mats.push(m4.clone().compose(ps, q, sc));
     };
-    const styleOf = w => WS[(w.orc ? 'o' : 'd') + Math.max(1, Math.min(5, w.lvl | 0))];
+    /* niveau d'aspect : palissade de bois (1), mur de pierre (3), mur renforcé (4) */
+    const vl = w => w.type === 'rempart' && !w.orc ? [1, 1, 3, 4][Math.max(1, Math.min(3, w.lvl | 0))] : Math.max(1, Math.min(5, w.lvl | 0));
+    const styleOf = w => WS[(w.orc ? 'o' : 'd') + vl(w)];
+    const keyOf = w => (w.orc ? 'o' : 'd') + vl(w);
     const isW = (x, z) => wallAt.has(x + ',' + z);
+    const gate = w => w.type === 'porte';
     for (const w of live) {
-      const st = styleOf(w), X = w.gx + 0.5 - half, Z = w.gz + 0.5 - half, key = (w.orc ? 'o' : 'd') + w.lvl;
-      const [pk, pc, pw, ph] = st.post;
-      push(key, pk, pc, false, X, 0, Z, pw, ph, pw);
-      const [ck, cc, cw, chh] = st.cap; push(key, ck, cc, false, X, ph, Z, cw, chh, cw);
-      if (st.band) { const [bc, bw, bh, by, glow] = st.band; push(key, 'box', bc, !!glow, X, by, Z, bw, bh, bw); }
-      const link = (o, cx, cz, len, ry) => { const lw = o.lvl < w.lvl ? o : w, ls = styleOf(lw), [lc, lwid, lh] = ls.link; push((lw.orc ? 'o' : 'd') + lw.lvl, 'box', lc, false, cx, 0, cz, len, lh, lwid, ry); };
+      const X = w.gx + 0.5 - half, Z = w.gz + 0.5 - half;
+      if (gate(w)) {
+        /* la porte s'aligne sur la palissade qui la porte */
+        const G = GS[Math.max(1, Math.min(3, w.lvl | 0))], horiz = isW(w.gx - 1, w.gz) || isW(w.gx + 1, w.gz) || !(isW(w.gx, w.gz - 1) || isW(w.gx, w.gz + 1));
+        const ry = horiz ? 0 : Math.PI / 2, ax = horiz ? 1 : 0, az = horiz ? 0 : 1, key = 'g' + w.lvl;
+        for (const s of [-1, 1]) push(key, 'box', G.post, false, X + s * 0.4 * ax, 0, Z + s * 0.4 * az, 0.2, 1.15, 0.2);
+        push(key, 'box', G.beam, false, X, 1.0, Z, 1.0, 0.16, 0.2, ry);
+        push(key, 'box', G.panel, false, X, 0, Z, 0.62, 0.86, 0.1, ry);
+        if (G.band) for (const y of [0.18, 0.6]) push(key, 'box', G.band, false, X, y, Z, 0.64, 0.06, 0.12, ry);
+      } else {
+        const st = styleOf(w), key = keyOf(w);
+        const [pk, pc, pw, ph] = st.post;
+        push(key, pk, pc, false, X, 0, Z, pw, ph, pw);
+        const [ck, cc, cw, chh] = st.cap; push(key, ck, cc, false, X, ph, Z, cw, chh, cw);
+        if (st.band) { const [bc, bw, bh, by, glow] = st.band; push(key, 'box', bc, !!glow, X, by, Z, bw, bh, bw); }
+      }
+      /* liaisons avec les voisins (raccourcies contre une porte : ses poteaux vont jusqu'au bord de la case) */
+      const link = (o, dir) => {
+        const a = gate(w) ? 0.5 : 0, b = gate(o) ? 0.5 : 0, L = 1 - a - b; if (L <= 0.01) return;
+        const lw = gate(w) ? o : gate(o) ? w : vl(o) < vl(w) ? o : w, [lc, lwid, lh] = styleOf(lw).link, c = a + L / 2;
+        push(keyOf(lw), 'box', lc, false, dir ? X : X + c, 0, dir ? Z + c : Z, L, lh, lwid, dir ? Math.PI / 2 : 0);
+      };
       const E = wallAt.get((w.gx + 1) + ',' + w.gz), S = wallAt.get(w.gx + ',' + (w.gz + 1));
-      if (E) link(E, X + 0.5, Z, 1, 0);
-      if (S) link(S, X, Z + 0.5, 1, Math.PI / 2);
+      if (E) link(E, 0);
+      if (S) link(S, 1);
+      const diag = (o, cx, cz, ry) => { if (gate(w) || gate(o)) return; const lw = vl(o) < vl(w) ? o : w, [lc, lwid, lh] = styleOf(lw).link; push(keyOf(lw), 'box', lc, false, cx, 0, cz, Math.SQRT2, lh, lwid, ry); };
       const SE = wallAt.get((w.gx + 1) + ',' + (w.gz + 1)), SW = wallAt.get((w.gx - 1) + ',' + (w.gz + 1));
-      if (SE && !isW(w.gx + 1, w.gz) && !isW(w.gx, w.gz + 1)) link(SE, X + 0.5, Z + 0.5, Math.SQRT2, -Math.PI / 4);
-      if (SW && !isW(w.gx - 1, w.gz) && !isW(w.gx, w.gz + 1)) link(SW, X - 0.5, Z + 0.5, Math.SQRT2, Math.PI / 4);
+      if (SE && !isW(w.gx + 1, w.gz) && !isW(w.gx, w.gz + 1)) diag(SE, X + 0.5, Z + 0.5, -Math.PI / 4);
+      if (SW && !isW(w.gx - 1, w.gz) && !isW(w.gx, w.gz + 1)) diag(SW, X - 0.5, Z + 0.5, Math.PI / 4);
     }
     for (const w of dead) {
       const X = w.gx + 0.5 - half, Z = w.gz + 0.5 - half, c = w.orc ? 0x3a2a1e : 0x6b6258, r = ((w.gx * 7 + w.gz * 13) % 10) / 10;
@@ -3506,9 +4159,9 @@ const V3 = (() => {
   }
   function pruneAnims(g) { anims = anims.filter(a => { let o = a.o; while (o) { if (o === g) return false; o = o.parent; } return true; }); }
   function clearBuildings() { setBuildings([]); }
-  function setBldHp(key, frac) {
+  function setBldHp(key, frac, noBurn) {
     const rec = blds.get(key); if (!rec) { wallBar(key, frac); return; }
-    rec.burn = frac > 0 && frac < 0.55;
+    rec.burn = !noBurn && frac > 0 && frac < 0.55;
     if (frac >= 0.999 || frac <= 0) { if (rec.hp) rec.hp.visible = false; return; }
     if (!rec.hp) { rec.hp = makeBar(1.1, 0x5fd17a); rec.hp.position.set(0, rec.info.top + 0.3, 0); rec.g.add(rec.hp); }
     rec.hp.visible = true; setBar(rec.hp, frac);
@@ -3622,9 +4275,10 @@ const V3 = (() => {
   const people = new Map(), lifeGroup = new THREE.Group();
   let vilBlocked = null, vilSpots = [], bldSpots = new Map(), bldCenters = new Map();
   function planVillage(items) {
-    const blds = items.filter(it => it.type !== 'rempart' && it.key !== 'ghost' && !it.dead);
+    const PASS = new Set(['porte', 'piege', 'filet']);           // on passe les portes, on marche sur les pièges
+    const blds = items.filter(it => it.type !== 'rempart' && !PASS.has(it.type) && it.key !== 'ghost' && !it.dead);
     vilBlocked = new Uint8Array(GRID * GRID); vilSpots = []; bldSpots = new Map(); bldCenters = new Map();
-    for (const b of items) { if (b.key === 'ghost') continue; const sz = BLD[b.type].size; for (let i = 0; i < sz; i++) for (let j = 0; j < sz; j++) { const x = b.gx + i, z = b.gz + j; if (x >= 0 && z >= 0 && x < GRID && z < GRID) vilBlocked[z * GRID + x] = 1; } }
+    for (const b of items) { if (b.key === 'ghost' || PASS.has(b.type) || (b.dead && BLD[b.type].hps)) continue; const sz = BLD[b.type].size; for (let i = 0; i < sz; i++) for (let j = 0; j < sz; j++) { const x = b.gx + i, z = b.gz + j; if (x >= 0 && z >= 0 && x < GRID && z < GRID) vilBlocked[z * GRID + x] = 1; } }
     for (const b of blds) {
       const sz = BLD[b.type].size, seen = new Set(), cands = [];
       for (let i = -1; i <= sz; i++) for (const [x, z] of [[b.gx + i, b.gz + sz], [b.gx + sz, b.gz + i], [b.gx + i, b.gz - 1], [b.gx - 1, b.gz + i]]) {
@@ -4000,6 +4654,8 @@ const V3 = (() => {
     warm: { exp: 0.88, bg: 0xb7d0de, fog: 0xc8dae3, near: 75, far: 175, sun: 0xffeccc, sunI: 2.0, sunPos: [-26, 30, 18], hemiS: 0xcfe0f2, hemiG: 0x5e5032, hemiI: 0.55, ground: 0xffffff, win: 0xffd28a, glow: 0.18, embers: false, env: [0xbfd9ef, 0xf3e7cf, 0x6f6a4a], envI: 0.6, bio: 'green' },
     donjon: { exp: 1.0, bg: 0x0a0b0f, fog: 0x0a0b0f, near: 64, far: 104, sun: 0xa9b8ff, sunI: 0.6, sunPos: [-14, 30, 10], hemiS: 0x5a6680, hemiG: 0x1c1814, hemiI: 0.62, ground: 0xffffff, win: 0xffa040, glow: 0.4, embers: false, env: [0x2a3040, 0x2a2826, 0x101010], envI: 0.35, bio: null },
     dark: { exp: 0.8, bg: 0x1a2032, fog: 0x1d2437, near: 58, far: 125, sun: 0xa9b8ff, sunI: 1.3, sunPos: [26, 32, -8], hemiS: 0x7d8cc6, hemiG: 0x2b2a36, hemiI: 0.8, ground: 0xe4e9f4, win: 0xffa040, glow: 0.55, embers: true, env: [0x2a3558, 0x3a4566, 0x1c1d26], envI: 0.5, bio: 'snow' },
+    /* rediffusion d'un raid : le village au crépuscule (sans changer la saison du sol) */
+    raid: { exp: 0.84, bg: 0x5e4a5c, fog: 0x6c5566, near: 70, far: 165, sun: 0xffb07a, sunI: 1.55, sunPos: [-26, 22, 18], hemiS: 0xc9a2b4, hemiG: 0x4a3a32, hemiI: 0.62, ground: 0xf2e4dc, win: 0xffb060, glow: 0.38, embers: true, env: [0x8a6a80, 0xd8a890, 0x4a3a32], envI: 0.55, bio: null },
   };
   let P_MOOD = MOODS.warm;
   const envCache = {};
@@ -4111,7 +4767,7 @@ const V3 = (() => {
      Visuels provisoires, en attendant les modèles Meshy (murs et sols peints, portes, coffres, torches). */
   const djGroup = new THREE.Group();
   let DJ = null;
-  const djHidden = () => [terrainGroup, decoGroup, forestGroup, decoProc, lifeGroup, bldGroup, unitGroup, wallGroup, rangeGroup];
+  const djHidden = () => [terrainGroup, decoGroup, forestGroup, decoProc, lifeGroup, bldGroup, unitGroup, wallGroup, rangeGroup, portalGroup];
   const DJ_U = {
     gobelin: { m: 'barbarian', tex: 'orc_barbarian', show: ['1H_Axe'], atk: '1H_Melee_Attack_Chop', h: 0.95, w: 1.05 },
     archer: { m: 'rogue', tex: 'orc_rogue', show: ['2H_Crossbow'], atk: '2H_Ranged_Shoot', h: 0.95, w: 0.95 },
@@ -4127,11 +4783,16 @@ const V3 = (() => {
     necromant: { m: 'rogue', tint: 0x7a6a9a, show: ['Throwable', 'Rogue_Cape'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 1.0, w: 0.95 },
     golem: { m: 'barbarian', tint: 0xe6dcc6, show: [], atk: '2H_Melee_Attack_Chop', h: 1.9, w: 1.35 },
     roiSquelette: { m: 'knight', tint: 0xe0d6bf, show: ['2H_Sword', 'Knight_Helmet', 'Knight_Cape'], atk: '2H_Melee_Attack_Chop', h: 2.4, w: 1.3 },
+    /* le portail démoniaque (modèles provisoires teintés de rouge) */
+    diablotin: { m: 'rogue', tex: 'orc_rogue', tint: 0xff8a6a, show: ['Knife'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.72, w: 0.95 },
+    lanceflamme: { m: 'rogue', tex: 'orc_rogue', tint: 0xffb07a, show: ['Throwable'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.8, w: 0.95 },
+    gardien: { m: 'barbarian', tex: 'troll', tint: 0xff7a5a, show: ['2H_Axe', 'Barbarian_Hat'], atk: '2H_Melee_Attack_Chop', h: 2.5, w: 1.45 },
   };
   /* Couleurs du décor selon le donjon. */
   const DJ_LOOK = {
     mine: { room: [0x6b645a, 0x625b52, 0x736b5f], hall: [0x4f4a44, 0x57514a], wall: [0x5d564d, 0x534d45], torch: 0xffa040, light: 0xffb066 },
     crypte: { room: [0x5e626b, 0x565a63, 0x666a73], hall: [0x44474e, 0x4b4e55], wall: [0x4d5159, 0x454951], torch: 0x5fe0c8, light: 0xa8d8ff },
+    portail: { room: [0x5a4442, 0x52403e, 0x63494a], hall: [0x40302f, 0x473534], wall: [0x4a3634, 0x412f2e], torch: 0xff5a2a, light: 0xff8a5a },
   };
   const DJ_HERO_ATK = { guerrier: '1H_Melee_Attack_Chop', paladin: '1H_Melee_Attack_Chop', rodeur: '2H_Ranged_Shoot', voleur: '1H_Melee_Attack_Slice_Diagonal' };
   const DJ_CAST_ANIM = { tourbillon: 'spin', cri: 'cheer', bouclier: 'cheer', consecration: 'cheer', poison: 'cheer', fumee: 'cheer', lumiere: 'cheer', priere: 'cheer', ours: 'cheer', loup: 'cheer', racines: 'cheer', squelettes: 'cheer', nova: 'cheer' };
@@ -4387,7 +5048,7 @@ const V3 = (() => {
       case 'form': { const p = P2(e.id); if (p) { burst(p[0], p[1], 0.6, e.f === 'ours' ? 0x8a6a4a : e.f === 'loup' ? 0x9a9a9a : 0x7bd36a, 6); } break; }
       case 'tele': djTele(e); break;
       case 'teleCancel': for (const t of DJ.teles) if (t.id === e.id && !t.fly && !t.fade) { t.t = t.T; } break;
-      case 'storm': for (const p of e.pts || []) { burst(p[0], p[1], 0.3, 0xe8e0c8, 5); wave(p[0], p[1], 0xd8d0b8, e.r, 0.4); } shake(0.3); break;
+      case 'storm': { const fire = e.c === 'fire'; for (const p of e.pts || []) { burst(p[0], p[1], 0.3, fire ? 0xff7a2a : 0xe8e0c8, 5); wave(p[0], p[1], fire ? 0xff5a2a : 0xd8d0b8, e.r, 0.4); } shake(0.3); break; }
       case 'raised': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xa070ff, 1.2, 0.6); djNum(p[0], p[1], 'relevé…', '#c9a0ff', false); } break; }
       case 'combo': { const p = P2(e.id); if (p) { djNum(p[0], p[1], 'COMBO !', '#ffd23f', true); wave(p[0], p[1], 0xffd23f, 1.3, 0.35); for (let i = 0; i < 4; i++) spark(p[0], 0.7 + i * 0.25, p[1], 0xffe07a); } break; }
       case 'item': {
@@ -4555,6 +5216,170 @@ const V3 = (() => {
     sun.position.set(cam.tx + sp[0], sp[1], cam.tz + sp[2]); sun.target.position.set(cam.tx, 0, cam.tz); sun.target.updateMatrixWorld();
   }
 
+  /* ---------- portails démoniaques, au bord de la vallée ----------
+     Deux menhirs sombres et un anneau de feu ; la lueur grandit pendant la charge, et bat quand le portail est prêt. */
+  const portalGroup = new THREE.Group();
+  const portals = new Map();
+  function makePortalRec(p) {
+    const g = new THREE.Group(), disp = [];
+    g.add(P('cyl8', 0x3a3236, 2.1, 0.16, 1.1, 0, 0, 0));
+    for (const s of [-1, 1]) g.add(P('box', 0x2e2629, 0.34, 2.15, 0.42, s * 0.98, 0.1, 0, s * 0.08));
+    const rg = new THREE.TorusGeometry(0.82, 0.11, 6, 26); disp.push(rg);
+    const ringM = basic(0xff4a2a); disp.push(ringM);
+    const ring = new THREE.Mesh(rg, ringM); ring.position.y = 1.18; g.add(ring);
+    const dg = new THREE.CircleGeometry(0.76, 26); disp.push(dg);
+    const discM = basic(0xa0203f, { transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }); disp.push(discM);
+    const disc = new THREE.Mesh(dg, discM); disc.position.y = 1.18; g.add(disc);
+    const glow = makeGlow(0xff3a2a, 4, 1.2); g.add(glow);
+    const side = p.side | 0, out = 0.35;
+    g.position.set(p.x + 0.5 - half + (side === 1 ? out : side === 3 ? -out : 0), 0, p.y + 0.5 - half + (side === 0 ? -out : side === 2 ? out : 0));
+    g.rotation.y = side === 1 || side === 3 ? Math.PI / 2 : 0;
+    g.userData.key = 'portal' + (p.i | 0);
+    return { g, ring, disc, glow, discM, ringM, disp, x: p.x, y: p.y, frac: 0, ready: false, ph: Math.random() * 6 };
+  }
+  function disposePortal(r) { if (r.g.parent) r.g.parent.remove(r.g); for (const d of r.disp) d.dispose(); r.glow.material.dispose(); }
+  function setPortals(list) {
+    const seen = new Set();
+    for (const p of list || []) {
+      if (p.cl) continue;
+      const k = p.i | 0; seen.add(k);
+      let r = portals.get(k);
+      if (!r || r.x !== p.x || r.y !== p.y) { if (r) disposePortal(r); r = makePortalRec(p); portals.set(k, r); portalGroup.add(r.g); }
+      r.frac = p.frac == null ? 1 : p.frac; r.ready = !!p.ready;
+    }
+    for (const [k, r] of portals) if (!seen.has(k)) { disposePortal(r); portals.delete(k); }
+  }
+  function animPortal(r, dt, tNow) {
+    const k = r.ready ? 0.75 + 0.25 * Math.sin(tNow * 5 + r.ph) : 0.25 + 0.55 * r.frac;
+    r.disc.rotation.z += dt * (r.ready ? 2.2 : 0.8);
+    r.discM.opacity = 0.25 + 0.45 * k; r.glow.material.opacity = 0.12 + 0.5 * k;
+    r.ring.scale.setScalar(0.92 + 0.08 * Math.sin(tNow * 3 + r.ph));
+    if (Math.random() < dt * (1 + 5 * k)) spark(r.g.position.x + half + (Math.random() - 0.5) * 1.4, 0.5 + Math.random() * 1.6, r.g.position.z + half + (Math.random() - 0.5) * 1.4, 0xff6a3a);
+  }
+
+  /* ---------- raids : la rediffusion, dans le village ----------
+     Le village tel qu'il était ce jour-là (l'appli passe ses bâtiments), les assaillants, les héros, les tirs des tours.
+     Les villageois sont à l'abri dans la halle. Une case du village (x, y) est dessinée en (x − half, y − half). */
+  const rdGroup = new THREE.Group();
+  let RD = null;
+  const RD_U = { gobelin: DJ_U.gobelin, voleur: { m: 'rogue', tex: 'orc_rogue', show: ['Knife', 'Rogue_Cape'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.85, w: 0.9 }, troll: DJ_U.troll };
+  const RD_SHOT = { mage: 0xff7a2a, pretre: 0xffe08a, druide: 0x7bd36a, necro: 0xa070ff };
+  function rdFoeRec(u) {
+    const def = RD_U[u.type] || RD_U.gobelin, g = djModel(def);
+    djPrepAnims(g);
+    g.add(djRing(0xb8402e, u.r * 2.4, 0.5));
+    const bar = makeBar(u.big ? 1.0 : 0.6, 0xd9483b); bar.position.y = def.h + 0.35; bar.visible = false; g.add(bar);
+    const sack = new THREE.Group(); sack.add(P('sph', 0xc9a26a, 0.34, 0.3, 0.34, 0, 0, 0, 0, true)); sack.add(P('cyl6', 0x7a5a3a, 0.09, 0.1, 0.09, 0, 0.28, 0, 0, true));
+    sack.position.set(0, def.h * 0.72, -0.24); sack.visible = false; g.add(sack);
+    return { g, kind: 'mob', bar, atkN: u.atkN, atkT: -9, lx: u.x, ly: u.y, h: def.h, sack };
+  }
+  function rdNum(x, y, text, color, big) {
+    if (!RD) return;
+    let n = RD.nums.find(q => !q.on);
+    if (!n) {
+      if (RD.nums.length >= 24) n = RD.nums.reduce((a, b) => (a.t > b.t ? a : b));
+      else {
+        const c = document.createElement('canvas'); c.width = 256; c.height = 48;
+        const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+        sp.renderOrder = 12; rdGroup.add(sp); n = { sp, c, tex }; RD.nums.push(n);
+      }
+    }
+    const g2 = n.c.getContext('2d'); g2.clearRect(0, 0, 256, 48);
+    g2.font = (big ? '800 30px' : '800 27px') + ' system-ui, sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle';
+    g2.lineWidth = 6; g2.strokeStyle = 'rgba(0,0,0,0.7)'; g2.strokeText(text, 128, 25); g2.fillStyle = color; g2.fillText(text, 128, 25);
+    n.tex.needsUpdate = true; n.on = true; n.t = 0;
+    const k = big ? 2.6 : 2.0; n.sp.scale.set(k, k * 0.1875, 1); n.sp.visible = true; n.sp.material.opacity = 1;
+    n.sp.position.set(x - half + (Math.random() - 0.5) * 0.4, 1.8 + (big ? 0.4 : 0), y - half + (Math.random() - 0.5) * 0.4);
+  }
+  function rdEnter(st) {
+    if (!ok) return;
+    if (RD) rdExit();
+    RD = { st, ents: new Map(), dying: [], nums: [], portals: [], frame: 0 };
+    lifeGroup.visible = false; portalGroup.visible = false; selMesh.visible = false; ghostMesh.visible = false; gridMesh.visible = false;
+    if (!rdGroup.parent) scene.add(rdGroup);
+    rdGroup.visible = true;
+    for (const p of st.inp.P) if (!p[3]) { const r = makePortalRec({ x: p[0], y: p[1], side: p[2] }); r.frac = 1; r.ready = true; rdGroup.add(r.g); RD.portals.push(r); }
+    setMood('raid');
+    /* caméra : sur la halle, un peu tournée vers le portail */
+    const H = st.S[st.hall], P0 = st.inp.P.find(p => !p[3]) || st.inp.P[0], k = 0.35;
+    cam.tx = clampT(H.x + (P0[0] + 0.5 - H.x) * k - half); cam.tz = clampT(H.y + (P0[1] + 0.5 - H.y) * k - half); cam.view = aspect < 0.8 ? 24 : 15; frustum();
+  }
+  function rdExit() {
+    if (!RD) return;
+    for (const r of RD.portals) disposePortal(r);
+    clearGroup(rdGroup); RD = null; rdGroup.visible = false;
+    lifeGroup.visible = true; portalGroup.visible = true;
+    for (const s of shots) fxGroup.remove(s.m); shots.length = 0;
+    mood = ''; setMood('warm');
+  }
+  function rdSync(st, alpha, dt, tNow) {
+    if (!RD) return;
+    RD.frame++; const fr = RD.frame;
+    const upd = (e, make) => { let r = RD.ents.get(e.id); if (!r) { r = make(e); RD.ents.set(e.id, r); rdGroup.add(r.g); } r.seen = fr; return r; };
+    for (const h of st.heroes) { const r = upd(h, djHeroRec); djPose(r, h, alpha, tNow); djBar(r, h.hp / h.hpMax, !h.ko); }
+    for (const u of st.foes) {
+      if (!u.on || u.out || u.dead) continue;
+      const r = upd(u, rdFoeRec);
+      djPose(r, u, alpha, tNow); djBar(r, u.hp / u.hpMax, u.hp < u.hpMax);
+      r.sack.visible = !!u.loot;
+      if (u.root > 0 && !r.net) { r.net = djRing(0xd8c08a, 1.1, 0.85); r.g.add(r.net); }
+      if (r.net) r.net.visible = u.root > 0;
+      r.frozen = u.root > 0 && !u.mv;
+    }
+    for (const [id, r] of RD.ents) if (r.seen !== fr) {
+      RD.ents.delete(id);
+      const u = st.foes.find(q => q.id === id);
+      if (u && u.out) { rdGroup.remove(r.g); smokeAt(r.lx - half, 0.4, r.ly - half, true); burst(r.lx, r.ly, 0.5, 0xff5a3a, 4); }
+      else if (r.g.userData.A && r.g.userData.A.death) { r.bar.visible = false; if (r.sack) r.sack.visible = false; djPlay(r, 'death', 1.3, true); RD.dying.push({ r, t: 0 }); }
+      else { rdGroup.remove(r.g); burst(r.lx, r.ly, 0.3, 0xd8d0c0, 4); }
+    }
+    for (const [, r] of RD.ents) { const U = r.g.userData; if (U.mixer) U.mixer.update(r.frozen ? 0 : dt); }
+    /* solidité des palissades, portes et tours */
+    for (const S of st.S) if (S.kind === 'wall' || S.kind === 'gate' || S.kind === 'tower') { const f = S.dead ? 0 : S.hp / S.max; if (S._f !== f) { S._f = f; setBldHp('r' + S.id, f); } }
+  }
+  function rdFx(e, st) {
+    if (!RD) return;
+    const pos = id => { const h = st.heroes.find(q => q.id === id); if (h) return [h.x, h.y]; const u = st.foes.find(q => q.id === id); return u ? [u.x, u.y] : null; };
+    const aimAtId = (id, b) => () => { const q = pos(id) || b; return [q[0], 0.8, q[1]]; };
+    switch (e.k) {
+      case 'hit': { const p = pos(e.id); if (p) { rdNum(p[0], p[1], String(e.v), '#ffffff'); spark(p[0], 0.8, p[1], 0xfff0d0); } break; }
+      case 'hurt': { const p = pos(e.id); if (p) rdNum(p[0], p[1], String(e.v), '#ff6b5b'); break; }
+      case 'heal': { const p = pos(e.id); if (p && e.v >= 2) rdNum(p[0], p[1], '+' + e.v, '#7dff8a'); break; }
+      case 'hhit': {
+        if (!e.sh) break;
+        const a = pos(e.id), b = pos(e.tgt); if (!a || !b) break;
+        if (e.sh === 'rodeur') spawnShot('arrow', a[0], 1.0, a[1], aimAtId(e.tgt, b), 0.25, 0.4);
+        else { const c = RD_SHOT[e.sh] || 0xffffff, s = makeGlow(c, 0.9, 1); s.position.set(a[0] - half, 1, a[1] - half); rdGroup.add(s); RD.dying.push({ fly: s, t: 0, T: 0.22, a, b }); }
+        break;
+      }
+      case 'tshot': { const b = pos(e.tgt); if (b) spawnShot('arrow', e.x, 2.4, e.y, aimAtId(e.tgt, b), 0.32, 0.7); break; }
+      case 'die': burst(e.x, e.y, 0.4, e.big ? 0xff7a3a : 0xbfb8a8, e.big ? 10 : 5); if (e.big) shake(0.25); break;
+      case 'loot': { const p = pos(e.id); if (p) rdNum(p[0], p[1], '−' + e.n + ' ' + RES_LABEL[e.r].toLowerCase(), '#ffb347', true); break; }
+      case 'drop': rdNum(e.x, e.y, e.n + ' ' + RES_LABEL[e.r].toLowerCase() + ' repris', '#7dff8a', true); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5) * 0.6, 0.4 + Math.random(), e.y + (Math.random() - 0.5) * 0.6, 0xffd27a); break;
+      case 'escape': if (e.n) rdNum(e.x, e.y, 'enfui avec ' + e.n + ' ' + RES_LABEL[e.r].toLowerCase(), '#ff8a5a', true); break;
+      case 'break': debris(e.x, e.y, e.kind === 'tower' ? 2 : 1, false, e.kind === 'tower' ? 18 : 9); dustRing(e.x, e.y, 0.6); shake(0.2); break;
+      case 'trap':
+        if (e.t === 'piege') { burst(e.x, e.y, 0.2, 0x9a9488, 6); for (let i = 0; i < 5; i++) spark(e.x + (Math.random() - 0.5) * 0.6, 0.3, e.y + (Math.random() - 0.5) * 0.6, 0xff5a3c); rdNum(e.x, e.y, 'piège !', '#ffd23f', true); }
+        else { wave(e.x, e.y, 0xd8c08a, 1.1, 0.6); rdNum(e.x, e.y, 'filet !', '#ffd23f', true); }
+        break;
+      case 'ko': wave(e.x, e.y, 0xffe08a, 1.2, 0.6); rdNum(e.x, e.y, 'à terre', '#ffd27a', true); break;
+      case 'heart': { const H = st.S[st.hall]; wave(H.x, H.y, 0xff3a2a, 3.5, 0.9); shake(0.3); rdNum(H.x, H.y, 'La halle est pillée !', '#ff6b5b', true); break; }
+      case 'spawn': smokeAt(e.x - half, 0.3, e.y - half, true); dustRing(e.x, e.y, 0.3); break;
+    }
+  }
+  function rdTick(dt, tNow) {
+    for (const n of RD.nums) if (n.on) { n.t += dt; n.sp.position.y += dt * 1.0; n.sp.material.opacity = Math.max(0, 1 - Math.pow(n.t / 1.1, 2)); if (n.t > 1.1) { n.on = false; n.sp.visible = false; } }
+    for (const d of RD.dying) {
+      d.t += dt;
+      if (d.fly) { const k = Math.min(1, d.t / d.T); d.fly.position.set(d.a[0] + (d.b[0] - d.a[0]) * k - half, 1, d.a[1] + (d.b[1] - d.a[1]) * k - half); if (k >= 1) { d.done = true; rdGroup.remove(d.fly); d.fly.material.dispose(); burst(d.b[0], d.b[1], 0.8, 0xffd0a0, 3); } continue; }
+      const U = d.r.g.userData; if (U.mixer) U.mixer.update(dt);
+      if (d.t > 1.5) { const k = Math.max(0, 1 - (d.t - 1.5) / 0.5); d.r.g.scale.setScalar(k); if (k <= 0) { d.done = true; rdGroup.remove(d.r.g); } }
+    }
+    RD.dying = RD.dying.filter(d => !d.done);
+    for (const r of RD.portals) animPortal(r, dt, tNow);
+  }
+
   /* ---------- boucle ---------- */
   let lastFrame = 0, emitClock = 0, emberClock = 0;
   const camQ = new THREE.Quaternion();
@@ -4665,6 +5490,8 @@ const V3 = (() => {
     }
     for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].done) sparks.splice(i, 1);
     if (DJ) djTick(dt, tNow);
+    if (RD) rdTick(dt, tNow);
+    if (portalGroup.visible) for (const r of portals.values()) animPortal(r, dt, tNow);
     renderer.render(scene, camera);
   }
 
@@ -4678,6 +5505,7 @@ const V3 = (() => {
     _fx: () => ({ flames: flames.length, burning: [...blds.values()].filter(r => r.burn).length, people: people.size, mood, biome }),
     onFrame: f => { frameHook = f; }, onTap: f => { tapHook = f; },
     dj: { enter: djEnter, exit: djExit, sync: djSync, fx: djFx, active: () => !!DJ },
+    setPortals, raid: { enter: rdEnter, exit: rdExit, sync: rdSync, fx: rdFx, active: () => !!RD },
   };
 })();
 
@@ -5148,20 +5976,22 @@ function onLiveRoom(r) {
   if (dj && dj.duo && dj.duo.role === 'guest' && !r && (!dj.st.over || dj.st.over === 'floor')) djLost();
   renderAll();
 }
-async function djInvite(lvl, th) {
+const djTheme = th => th === 'crypte' || th === 'prof' || th === 'portail' ? th : 'mine';
+async function djInvite(lvl, th, pi) {
   if (!me || dj || djLobby) return;
-  th = th === 'crypte' || th === 'prof' ? th : 'mine';
+  th = djTheme(th); pi = pi | 0;
+  if (th === 'portail' && !djPortalOpen(pi)) { toast('Ce portail est déjà refermé.'); return; }
   const hh = activeHero(me, uid), pk = partnerId(me); if (!hh || !pk) return;
   if (!isOnline(pk)) { toast(me.members[pk].name + ' n’est pas connecté·e en ce moment.'); return; }
   if (!activeHero(me, pk)) { toast(me.members[pk].name + ' n’a pas encore de héros.'); return; }
-  lvl = th === 'prof' ? hh.lvl : Math.max(1, Math.min(hh.dj || 1, lvl | 0 || 1));
+  lvl = th === 'prof' ? hh.lvl : th === 'portail' ? raidLevel(me) : Math.max(1, Math.min(hh.dj || 1, lvl | 0 || 1));
   const seed = hash((Math.floor(now()) ^ hashStr(hh.id + 'duo')) >>> 0) || 1;
-  djLobby = { lvl, seed, th };
+  djLobby = { lvl, seed, th, pi };
   try {
     await Promise.all([liveRef('h2g').delete(), liveRef('g2h').delete()]).catch(() => {});   // rien d'une ancienne partie
     const r = await liveRef('room').transact(cur => {
       if (cur && cur.st === 'wait' && cur.host !== uid && now() - (cur.t || 0) < 120000) return undefined;   // elle m'invite déjà
-      return { host: uid, hname: myName(), hhid: hh.id, lvl, seed, th, t: now(), st: 'wait', pv: DJ_PV };
+      return { host: uid, hname: myName(), hhid: hh.id, lvl, seed, th, pi, t: now(), st: 'wait', pv: DJ_PV };
     });
     if (!r.committed) { djLobby = null; onLiveRoom(djLive); return; }
     liveRef().onDisconnectRemove();
@@ -5200,11 +6030,21 @@ function djWaitHTML() {
 }
 
 /* ---------- entrée et sortie ---------- */
-function djBegin(lvl, th) {
+/* Un portail démoniaque encore ouvert ? (on ne referme pas deux fois le même) */
+const djPortalOpen = pi => { const R = me && me.raid; return !!(R && R.p && R.p[pi] && R.cl && !R.cl[pi]); };
+function djBegin(lvl, th, pi) {
   if (!me || dj) return;
   const hh = activeHero(me, uid); if (!hh) { toast('Crée d’abord ton héros.'); return; }
-  th = th === 'crypte' || th === 'prof' ? th : 'mine';
-  if ((hh.dj || 1) < DJ_OPEN[th]) { toast('Pas encore ouvert.'); return; }
+  th = djTheme(th); pi = pi | 0;
+  if ((hh.dj || 1) < (DJ_OPEN[th] || 1)) { toast('Pas encore ouvert.'); return; }
+  if (th === 'portail') {
+    if (!djPortalOpen(pi)) { toast('Ce portail est déjà refermé.'); return; }
+    const L = raidLevel(me), seed = hash((Math.floor(now()) ^ hashStr(hh.id + 'portail')) >>> 0) || 1, d = genDungeon(seed, L, 'portail');
+    djRun(djStart(d, [hh], { seed }), L, seed, hh.id, null);
+    dj.pi = pi;
+    toast('Le portail démoniaque, niveau ' + L + '. Au fond, son gardien : bats-le et le portail se refermera.');
+    return;
+  }
   const seed = hash((Math.floor(now()) ^ hashStr(hh.id)) >>> 0) || 1;
   if (th === 'prof') {
     const start = hh.lvl, d = djFloor(seed, 1, start);
@@ -5223,7 +6063,7 @@ function djBeginDuo(role, r) {
   if (!me || dj) return;
   const hH = me.heroes[r.hhid], gH = me.heroes[r.ghid];
   if (!hH || !gH) { toast('Héros introuvable : réessayez.'); if (role === 'host') liveRef().delete().catch(() => {}); return; }
-  const th = r.th === 'crypte' || r.th === 'prof' ? r.th : 'mine', mine = role === 'host' ? r.hhid : r.ghid;
+  const th = djTheme(r.th), mine = role === 'host' ? r.hhid : r.ghid;
   const d = th === 'prof' ? djFloor(r.seed, 1, r.lvl) : genDungeon(r.seed, r.lvl, th);
   const st = djStart(d, [hH, gH], { seed: d.seed, remote: role === 'host' ? r.ghid : null });
   const duo = { role, mateHid: role === 'host' ? r.ghid : r.hhid, mateName: role === 'host' ? (me.members[r.guest] || {}).name : r.hname, unsub: [],
@@ -5240,6 +6080,7 @@ function djBeginDuo(role, r) {
     liveRef('g2h').onDisconnectRemove();
   }
   djRun(st, r.lvl, r.seed, mine, duo, th === 'prof' ? djNewRun(r.lvl) : null);
+  if (dj && th === 'portail') dj.pi = r.pi | 0;
   toast('À deux dans ' + djThemeThe(th) + ' avec ' + (duo.mateName || 'ton partenaire') + ' ! Restez groupés.');
 }
 function djRun(st, lvl, seed, hid, duo, run) {
@@ -5267,9 +6108,10 @@ function djBack() {
   const guest = dj.duo && dj.duo.role === 'guest';     // le butin et le prisonnier ne comptent qu'une fois : c'est l'hôte qui les rapporte
   const items = (r.items && r.items[hid]) || [], gems = (r.gems && r.gems[hid]) || {};
   const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris, theme: r.theme || dj.st.d.theme, deep: r.deep || 0,
-    or: guest ? 0 : r.gold || 0, items, gems }, { quiet: true });
+    or: guest ? 0 : r.gold || 0, items, gems, pi: dj.pi | 0 }, { quiet: true });
   djLeave();
   if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
+  else if (res && res.closed) toast(res.closed.all ? 'Le portail est refermé : pas de raid cette fois !' : 'Le portail est refermé. Il en reste d’autres ouverts (menu Défense).');
   else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
   else if (res && res.autoSold) toast('Sac plein : ' + res.autoSold + ' objet' + (res.autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + res.autoGold + ' or. Fais de la place dans ton sac (menu Héros).');
   else if (res && res.items) toast(res.items + ' objet' + (res.items > 1 ? 's rangés' : ' rangé') + ' dans ton sac (menu Héros).');
@@ -5319,7 +6161,7 @@ function djResHTML() {
   let lead;
   if (r.lost) lead = 'La connexion avec ' + mate + ' est perdue : ' + (r.win ? 'l’étage était fini, tu gardes tout ce qui a été gagné.' : 'tu rentres avec la moitié de l’expérience gagnée.');
   else if (r.win && r.prof) lead = r.own ? 'Tu remontes des Profondeurs : toute l’expérience gagnée est à toi.' : (duo ? 'Vous remontez' : 'Tu remontes') + ' des Profondeurs avec tout le butin.';
-  else if (r.win) lead = duo ? 'Ensemble, vous avez vaincu ' + djBossThe(r.theme) + ' !' : cap1(djBossThe(r.theme)) + ' est vaincu.';
+  else if (r.win) lead = (duo ? 'Ensemble, vous avez vaincu ' + djBossThe(r.theme) + ' !' : cap1(djBossThe(r.theme)) + ' est vaincu.') + (r.theme === 'portail' ? ' Le portail démoniaque se referme.' : '');
   else if (r.fled) lead = fromHost ? mate + ' a quitté ' + the + ' : vous rentrez avec la moitié de l’expérience.' : 'Tu as quitté ' + the + ' avant la fin : la moitié de l’expérience' + (r.own ? '.' : ' et du butin.');
   else lead = (duo ? 'Vous êtes tombés tous les deux' : 'Ton héros est tombé') + ' : retour au village avec la moitié de l’expérience et du butin.';
   if (r.prof) lead += ' Étages terminés : ' + (r.deep || 0) + '.' + (hh && r.deep > (hh.deep || 0) ? ' Nouveau record !' : '');
@@ -5337,7 +6179,7 @@ function djResHTML() {
       ${myItems.length ? `<div class="row split"><b>Objets pour ton sac</b><small class="note">${myItems.length}${!r.win ? ' (les meilleurs)' : ''}</small></div>${itemListHTML(myItems, hh)}` : ''}
       ${Object.keys(myGems).length ? `<div class="row split"><b>Pierres précieuses</b><span class="chips2">${Object.keys(myGems).map(k => gemChip(k, myGems[k])).join('')}</span></div>` : ''}
       ${r.pris && !r.own ? '<p><b>Un prisonnier délivré</b> : il vous attendra au village, prêt à s’installer.</p>' : ''}
-      <p class="note">${r.kills} monstres vaincus${duo && r.combos ? ' · ' + r.combos + ' combo' + (r.combos > 1 ? 's' : '') : ''} · ${mm} min ${ss}${r.win && !r.prof ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
+      <p class="note">${r.kills} monstres vaincus${duo && r.combos ? ' · ' + r.combos + ' combo' + (r.combos > 1 ? 's' : '') : ''} · ${mm} min ${ss}${r.win && (r.theme === 'mine' || r.theme === 'crypte') ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
     <button class="btn primary" data-act="djBack">Retour au village</button>`;
 }
 /* ---------- les Profondeurs : fin d'étage, descendre ou remonter ---------- */
@@ -5506,7 +6348,7 @@ function djHudUpdate() {
 const DJ_SFX_ATK = { rodeur: 'shoot', mage: 'bolt', pretre: 'bolt', druide: 'shoot', necro: 'bolt' };
 function djEvents(st) {
   if (dj.duo && dj.duo.role === 'host') { for (const e of st.ev) dj.duo.evBuf.push(e); if (dj.duo.evBuf.length > 120) dj.duo.evBuf.splice(0, dj.duo.evBuf.length - 120); }
-  const crypt = st.d.theme === 'crypte';
+  const crypt = st.d.theme === 'crypte', portal = st.d.theme === 'portail';
   for (const e of st.ev) {
     if (gl) V3.dj.fx(e, st);
     const mine = e.id === dj.hid;
@@ -5517,11 +6359,11 @@ function djEvents(st) {
       case 'nocast': if (mine && performance.now() - dj.nocastT > 1200) { dj.nocastT = performance.now(); toast('Pas de cible à portée pour cette compétence.'); } break;
       case 'potion': if (mine) SND.sfx('built'); break;
       case 'chest': SND.sfx('coin'); toast('Coffre : ' + rewTxt(e.got) + '.'); break;
-      case 'loot': toast((crypt ? 'Trésor du roi : ' : 'Butin du chef : ') + rewTxt(e.got) + '.'); break;
+      case 'loot': toast((crypt ? 'Trésor du roi : ' : portal ? 'Trésor du gardien : ' : 'Butin du chef : ') + rewTxt(e.got) + '.'); break;
       case 'altar': SND.sfx('star'); toast('Autel des anciens rois · ' + DJ_BLESS[e.b] + ', jusqu’à la sortie.'); break;
       case 'free': SND.sfx('invite'); toast('Prisonnier délivré ! Il vous attendra au village.'); break;
-      case 'lock': SND.sfx(e.boss ? 'alarm' : 'wallhit'); if (e.boss) toast(crypt ? 'Le roi squelette ! Quand des cercles rouges s’allument sous vos pieds, sortez-en vite.' : 'Le chef troll ! Sors du cercle rouge et écarte-toi de sa charge.'); break;
-      case 'wavecome': toast((crypt ? 'D’autres morts sortent de leurs tombeaux…' : 'D’autres monstres sortent des galeries…') + ' (vague ' + e.n + ' sur ' + e.of + ')'); break;
+      case 'lock': SND.sfx(e.boss ? 'alarm' : 'wallhit'); if (e.boss) toast(crypt ? 'Le roi squelette ! Quand des cercles rouges s’allument sous vos pieds, sortez-en vite.' : portal ? 'Le gardien du portail ! Une pluie de feu s’annonce par des cercles rouges : sortez-en vite.' : 'Le chef troll ! Sors du cercle rouge et écarte-toi de sa charge.'); break;
+      case 'wavecome': toast((crypt ? 'D’autres morts sortent de leurs tombeaux…' : portal ? 'D’autres diablotins jaillissent des flammes…' : 'D’autres monstres sortent des galeries…') + ' (vague ' + e.n + ' sur ' + e.of + ')'); break;
       case 'clear': SND.sfx('star'); if (e.boss) toast(cap1('le ' + (dj.bossN || 'boss').toLowerCase()) + ' est vaincu ! ' + (st.d.floor ? 'Le passage est ouvert.' : 'La sortie est ouverte.')); break;
       case 'slam': case 'boom': SND.sfx('boom'); break;
       case 'storm': SND.sfx('storm'); break;
@@ -5828,6 +6670,269 @@ const ACT_EQ = {
   pet: b => { const p = b.dataset.p; if (act({ type: 'pet', hid: b.dataset.hid, p })) toast(PETS[p].name + ' : ' + PETS[p].txt); },
 };
 
+/* ===================== RAIDS : interface (menu Défense, pose des palissades en ligne, bilan, rediffusion) =====================
+   Les règles et le combat sont dans p2r_raid.js ; ici, seulement ce qu'on voit et ce qu'on touche.
+   Ce fichier ne fait que définir des fonctions et des actions (ACT_RAID) : l'application (p4_app) les appelle. */
+let rp = null;                                    // rediffusion en cours : { st, lr, speed, acc, sig, ended }
+const DEF_TYPES = ['rempart', 'porte', 'tour', 'piege', 'filet'];
+const isDef = b => !!BLD[b.type] && !!BLD[b.type].def;
+
+/* ---------- textes ---------- */
+function defLine(b) {
+  const d = BLD[b.type], k = Math.max(1, Math.min(d.max, b.lvl | 0)) - 1;
+  if (b.type === 'rempart') return 'Les ennemis doivent la contourner ou la casser (les trolls cassent 4 fois plus vite). Améliorez-la ici (ou toutes celles du même niveau), ou faites-en une porte.';
+  if (b.type === 'porte') return 'Vos héros et vos villageois passent, pas les ennemis : ils doivent la casser. Moins solide qu’un mur, elle attire leurs coups.';
+  if (b.type === 'tour') return b.lvl < 1 ? d.desc : 'Tire sur les ennemis à ' + String(d.tw.range[k]).replace('.', ',') + ' cases : ' + d.tw.dmg[k] + ' de dégâts toutes les 1,2 seconde.';
+  if (b.type === 'piege') return 'Caché : ' + d.trap.dmg[k] + ' de dégâts à chaque ennemi qui marche dessus, ' + d.trap.uses[k] + ' fois par raid. Vos héros et vos villageois passent dessus sans risque.';
+  if (b.type === 'filet') return 'Caché : immobilise ' + String(d.trap.root[k]).replace('.', ',') + ' secondes l’ennemi qui marche dessus, ' + d.trap.uses[k] + ' fois par raid (les trolls s’en défont deux fois plus vite).';
+  return d.desc;
+}
+const lootTxt = o => Object.keys(o || {}).map(k => o[k] + ' ' + RES_LABEL[k].toLowerCase()).join(', ');
+const lootChips = (o, plus) => Object.keys(o || {}).map(k => `<span class="chip${plus ? ' plus' : ' short'}">${ico(k)}${plus ? '+' : '−'}${fmtN(o[k])}</span>`).join('');
+function raidTitle(r) { return Object.keys(r.lost || {}).length ? (r.e >= r.f ? 'Les gobelins ont pillé le village' : 'Raid des gobelins') : 'Raid repoussé !'; }
+function raidReportHTML(v, lr, btn) {
+  const r = lr.res, names = id => { const H = lr.H.find(x => x[0] === id); return H ? H[1] : ''; };
+  const heroes = lr.H.map(x => x[1]).filter(Boolean);
+  let h = `<div class="sum">
+    <div class="row split"><span>Ennemis vaincus</span><b>${r.k} sur ${r.f}</b></div>
+    ${r.e ? `<div class="row split"><span>Enfuis par le portail</span><b>${r.e}</b></div>` : ''}
+    ${Object.keys(r.lost).length ? `<div class="row split"><span>Volé</span><span class="chips2">${lootChips(r.lost)}</span></div>` : '<div class="row split"><span>Volé</span><b>rien du tout</b></div>'}
+    ${Object.keys(r.back).length ? `<div class="row split"><span>Butin repris</span><span class="chips2">${lootChips(r.back, true)}</span></div>` : ''}
+    ${r.g ? `<div class="row split"><span>Bourse commune</span><span class="chip plus">${ico('or')}+${fmtN(r.g)}</span></div>` : ''}
+    ${r.xp && heroes.length ? `<div class="row split"><span>Expérience des défenseurs</span><b>+${fmtN(r.xp)} chacun</b></div>` : ''}
+    ${r.br ? `<div class="row split"><span>Défenses détruites</span><b>${r.br} (à réparer)</b></div>` : ''}
+    ${r.ko.length ? `<div class="row split"><span>À terre pendant le combat</span><b>${esc(r.ko.map(names).join(', '))}</b></div>` : ''}
+  </div>`;
+  if (r.h) h += '<p class="why">Ils ont pillé la halle, le cœur du village : le moral baisse pendant un jour.</p>';
+  if (!heroes.length) h += '<p class="note">Aucun héros pour défendre la halle : créez votre héros, il défendra le village.</p>';
+  if (btn) h += `<div class="row"><button class="btn small primary" data-act="raidReplay">${djIco('eye')}Revoir le raid</button></div>`;
+  return h;
+}
+
+/* ---------- le menu Défense ---------- */
+function sheetDefense() {
+  const v = me, t = now(), info = raidInfo(v, t), hl = hallLvl(v), lr = v.lastRaid, hh = activeHero(v, uid);
+  let h = '';
+  if (info.st === 'calm') {
+    h += `<div class="item"><div class="head"><b class="row">${djIco('shield')}La vallée est calme</b><small>${info.next > t ? 'prochain portail dans ' + fmtDur(info.next - t) : 'un portail va s’ouvrir'}</small></div>
+      <p>Un portail démoniaque s’ouvrira au bord de la vallée. Il se charge pendant 3 heures : vous verrez de quel côté viendront les gobelins.</p></div>`;
+  } else {
+    const open = info.p.filter(p => !p.cl), pk = partnerId(v), ph = pk ? activeHero(v, pk) : null, on = pk && isOnline(pk), L = raidLevel(v);
+    h += `<div class="item feature"><div class="head"><b class="row">${djIco('flame')}${open.length > 1 ? open.length + ' portails démoniaques' : 'Un portail démoniaque'}</b><small>${info.st === 'charge' ? 'chargé dans ' + fmtDur(info.ready - t) : 'chargé !'}</small></div>
+      <div class="bar"><i style="width:${(info.frac * 100).toFixed(0)}%"></i></div>
+      <p>${info.st === 'charge' ? 'Une fois chargé, le raid partira dès que vous serez absents tous les deux depuis 2 heures.' : 'Les gobelins attaqueront dès que vous serez absents tous les deux depuis 2 heures.'} Préparez vos défenses de ce côté, ou refermez-le avec votre héros (un petit donjon et son gardien, niveau ${L}).</p>
+      ${info.p.map(p => `<div class="row split portrow"><b>Portail ${RAID_OF[p.side]}</b>${p.cl ? '<span class="chip plus">refermé</span>' : hh ? `<span class="row"><button class="btn small primary" data-act="djGo" data-th="portail" data-k="${L}" data-pi="${p.i}">${djIco('sword')}Le refermer</button>${pk && ph ? `<button class="btn small${on ? '' : ' off'}" data-act="djInvite" data-th="portail" data-k="${L}" data-pi="${p.i}"${on ? '' : ' disabled'}>À deux</button>` : ''}</span>` : '<span class="note">crée ton héros</span>'}</div>`).join('')}
+      <div class="row"><button class="btn small" data-act="portalLook">Voir le portail</button></div></div>`;
+  }
+  if (lr) h += `<div class="sec"><h4>Dernier raid · ${fmtAgo(lr.t)}</h4><div class="item"><div class="head"><b>${esc(raidTitle(lr.res))}</b><small>${lr.F.length} assaillants · niveau ${lr.L}</small></div>${raidReportHTML(v, lr, true)}</div></div>`;
+  /* les défenses du village */
+  const of = type => v.b.filter(b => b.type === type), cnt = type => of(type).length + ' sur ' + limitOf(type, hl);
+  const dmg = v.b.filter(b => repairCostOf(b)), rc = {}; for (const b of dmg) { const c = repairCostOf(b); for (const k in c) rc[k] = (rc[k] || 0) + c[k]; }
+  h += '<div class="sec"><h4>Défenses</h4>';
+  if (dmg.length) h += `<div class="item feature"><div class="head"><b class="row">${ico('hammer', 'c-tro')}${dmg.length} défense${dmg.length > 1 ? 's abîmées' : ' abîmée'}</b><small>${dmg.filter(b => b.hp === 0).length ? dmg.filter(b => b.hp === 0).length + ' en ruine' : 'à réparer'}</small></div>
+    <div class="foot"><span class="chips2">${chipsRes(rc, v.r)}</span><button class="btn small primary" data-act="repair">Tout réparer</button></div></div>`;
+  const upRows = type => {
+    const d = BLD[type], out = [];
+    for (let L = 1; L < d.max; L++) {
+      const n = of(type).filter(b => b.lvl === L).length; if (!n) continue;
+      const to = L + 1, c = costOf(type, to);
+      if (to > maxLvlOf(type, hl)) { out.push(`<p class="note">${esc(d.lvlNames ? d.lvlNames[L] : d.name + ' niveau ' + to)} : agrandissez d’abord la halle.</p>`); continue; }
+      out.push(`<div class="foot"><span class="note">${n} × ${esc((d.lvlNames ? d.lvlNames[L - 1] : 'niveau ' + L).toLowerCase())} → ${esc(d.lvlNames ? d.lvlNames[L].toLowerCase() : 'niveau ' + to)}</span><span class="row"><span class="chips2">${chipsRes(c, v.r)}<span class="note">chacun</span></span><button class="btn small${missingTxt(v, c) ? ' off' : ''}" data-act="upwalls" data-t="${type}" data-l="${L}">Améliorer</button></span></div>`);
+    }
+    return out.join('');
+  };
+  const card = (type, title, body, btn) => `<div class="item"><div class="head"><b>${esc(title)}</b><small>${cnt(type)}</small></div><p>${esc(body)}</p>${btn}${upRows(type)}</div>`;
+  const placeBtn = (type, label) => { const full = of(type).length >= limitOf(type, hl), c = costOf(type, 1), miss = missingTxt(v, c);
+    return `<div class="foot"><span class="chips2">${chipsRes(c, v.r)}${BLD[type].inst ? '<span class="note">chacun</span>' : ''}</span><button class="btn small${full || miss ? ' off' : ' primary'}" data-act="place" data-type="${type}">${full ? 'Maximum' : label}</button></div>`; };
+  h += card('rempart', 'Palissades', 'Elles bloquent les ennemis : ils doivent les contourner ou les casser. Posez-les en ligne (droite ou en diagonale) ; un village bien fermé force les gobelins à casser.', placeBtn('rempart', 'Poser des palissades'));
+  h += card('porte', 'Portes', 'Dans une palissade : vos héros et vos villageois passent, pas les ennemis. Moins solides qu’un mur, elles attirent leurs coups. Pour en faire une, touchez une palissade du village.', placeBtn('porte', 'Poser une porte'));
+  h += card('tour', 'Tours d’archers', BLD.tour.desc + ' Elles se construisent comme les autres bâtiments.', placeBtn('tour', 'Construire'));
+  h += card('piege', 'Pièges à pointes', BLD.piege.desc, placeBtn('piege', 'Poser'));
+  h += card('filet', 'Filets', BLD.filet.desc, placeBtn('filet', 'Poser'));
+  h += '</div>';
+  h += `<div class="sec"><h4>Comment ça marche</h4><ul class="help">
+    <li>À partir du 3e jour, un portail démoniaque s’ouvre au bord de la vallée (au plus un raid par jour ; 2 portails avec la halle niveau 3, 3 au niveau 5). Il se charge pendant 3 heures.</li>
+    <li>Le raid ne part que si vous êtes absents tous les deux depuis 2 heures. Il se joue tout seul ; à votre retour, vous pouvez le revoir.</li>
+    <li>Les gobelins foncent sur la halle pour la piller, les voleurs filent vers l’entrepôt, les trolls cassent ce qui bloque. Tous prennent le chemin le plus court, en comptant ce qu’il faudrait casser : une porte est souvent leur cible.</li>
+    <li>Ce qu’ils emportent est perdu s’ils regagnent le portail ; abattus avant, ils lâchent tout. Jamais plus de 30 % d’une ressource par raid.</li>
+    <li>Vos héros défendent la halle (et gagnent de l’expérience), les tours tirent sur ce qui passe à portée, les pièges cachés blessent ou immobilisent. Chaque ennemi abattu rapporte de l’or.</li>
+    <li>Si la halle est pillée, le moral baisse pendant un jour. Après un raid, réparez ce qui est abîmé.</li>
+    <li>Refermer un portail avec son héros (seul ou à deux) : un petit donjon et son gardien. Tous les portails refermés : pas de raid cette fois.</li></ul></div>`;
+  return h;
+}
+
+/* ---------- panneau d'une défense du village (touchée sur la carte) ---------- */
+function defPanel(v, b) {
+  const d = BLD[b.type], hl = hallLvl(v), mx = hpMaxOf(b), hp = hpOf(b), broken = isBroken(b), t = now();
+  let h = `<div class="glass card"><h3><span>${esc(b.type === 'tour' ? d.name : lvlName(b))}</span><span class="row"><small>${b.lvl > 0 ? 'niveau ' + b.lvl : 'chantier'}</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>`;
+  if (b.up) {
+    const f = Math.min(1, b.up.done / b.up.need), sr = siteRate(v, t), open = sr.open.some(x => x.id === b.id);
+    const eta = open && sr.perSite > 0 ? fmtDur((b.up.need - b.up.done) / sr.perSite * 3600000) : null;
+    h += `<div class="bar"><i style="width:${Math.max(2, f * 100).toFixed(1)}%"></i></div><div class="row split note"><span>${b.lvl > 0 ? 'Agrandissement vers le niveau ' + b.up.to : 'Construction'} · ${Math.floor(f * 100)} %</span><b>${open ? (eta ? 'encore ' + eta : '') : 'en attente d’un bâtisseur libre'}</b></div>`;
+  }
+  if (mx && b.lvl > 0) {
+    const rc = repairCostOf(b);
+    h += `<div class="bar hp"><i style="width:${(hp / mx * 100).toFixed(0)}%"></i></div><div class="row split"><span class="note">${broken ? 'En ruine : elle ne bloque plus rien' : 'Solidité ' + fmtN(hp) + ' sur ' + fmtN(mx)}</span>${rc ? `<span class="row"><span class="chips2">${chipsRes(rc, v.r)}</span><button class="btn small primary" data-act="repair">Réparer</button></span>` : ''}</div>`;
+  }
+  h += `<p class="note">${esc(defLine(b))}</p>`;
+  if (!b.up && b.lvl > 0) {
+    const to = b.lvl + 1;
+    if (to <= d.max) {
+      if (to > maxLvlOf(b.type, hl)) h += '<p class="note">Agrandissez d’abord la halle du village pour aller plus loin.</p>';
+      else {
+        const c = costOf(b.type, to), miss = missingTxt(v, c), same = v.b.filter(x => x.type === b.type && x.lvl === b.lvl).length;
+        h += `<div class="row split"><span class="chips2">${chipsRes(c, v.r)}</span><span class="row">${d.inst && same > 1 ? `<button class="btn small" data-act="upwalls" data-t="${b.type}" data-l="${b.lvl}">Les ${same}</button>` : ''}<button class="btn${miss ? ' off' : ' primary'}" data-act="upgrade" data-id="${b.id}">${d.lvlNames ? esc(d.lvlNames[to - 1]) : 'Niveau ' + to}</button></span></div>`;
+      }
+    } else h += '<p class="note">Niveau maximum atteint.</p>';
+  }
+  h += `<div class="row">${b.type === 'rempart' ? `<button class="btn small" data-act="gate" data-id="${b.id}">En faire une porte <span class="sub">${chipsRes(costOf('porte', 1))}</span></button>` : ''}<button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button><button class="btn small" data-act="demolish" data-id="${b.id}">${d.inst ? 'Retirer' : 'Démolir'}</button><button class="btn small" data-act="sheet" data-s="defense">${djIco('shield')}Défense</button></div>`;
+  return h + '</div>';
+}
+
+/* ---------- pose des palissades : une case par toucher, ou toute une ligne ---------- */
+function startWallMode() {
+  if (!me) return;
+  const hl = hallLvl(me);
+  if (countOf(me, 'rempart') >= limitOf('rempart', hl)) { toast('Plus de palissade possible : agrandissez la halle.'); return; }
+  const m = missingTxt(me, costOf('rempart', 1)); if (m) { toast(m); return; }
+  place = { kind: 'wall', type: 'rempart', gx: -99, gz: -99, last: null };
+  sel = null; selP = null; closeSheet(true);
+  refreshScene(); renderAll();
+  toast('Touche une case, puis une autre sur la même ligne : toute la ligne se remplit.');
+}
+const wallOn = (x, z) => me.b.some(b => (b.type === 'rempart' || b.type === 'porte') && b.gx === x && b.gz === z);
+function wallTap(cx, cy) {
+  const g = V3.pickGround(cx, cy); if (!g) return;
+  const gx = Math.floor(g[0]), gz = Math.floor(g[1]);
+  if (gx < EDGE || gz < EDGE || gx >= GRID - EDGE || gz >= GRID - EDGE) { toast('Trop près du bord de la vallée.'); return; }
+  if (wallOn(gx, gz)) { place.last = [gx, gz]; place.gx = gx; place.gz = gz; toast('Départ de ligne : touche une autre case sur la même ligne.'); refreshScene(); renderAll(); return; }
+  let tiles = [[gx, gz]];
+  const L = place.last, dx0 = L ? gx - L[0] : 0, dz0 = L ? gz - L[1] : 0;
+  if (L && (dx0 === 0 || dz0 === 0 || Math.abs(dx0) === Math.abs(dz0)) && Math.max(Math.abs(dx0), Math.abs(dz0)) > 1) {
+    tiles = []; const dx = Math.sign(dx0), dz = Math.sign(dz0);
+    for (let x = L[0] + dx, z = L[1] + dz; ; x += dx, z += dz) { if (!wallOn(x, z)) tiles.push([x, z]); if (x === gx && z === gz) break; }
+  }
+  place.gx = gx; place.gz = gz;
+  const r = act({ type: 'walls', tiles });
+  if (r) { place.last = [gx, gz]; if (r.why && r.n < tiles.length) toast(r.n + ' posée' + (r.n > 1 ? 's' : '') + '. ' + r.why); }
+  refreshScene(); renderAll();
+}
+function wallBarHTML() {
+  const n = countOf(me, 'rempart'), lim = limitOf('rempart', hallLvl(me));
+  return `<div class="glass card"><div class="row split"><b class="row">${djIco('shield')}Palissades · ${n} sur ${lim}</b><span class="chips2">${chipsRes(costOf('rempart', 1), me.r)}<span class="note">chacune</span></span><button class="btn small primary" data-act="placeCancel">Terminé</button></div>
+    <p class="note">Touche une case, puis une autre sur la même ligne (droite ou diagonale) : toute la ligne se remplit. Toucher une palissade = départ de ligne.</p></div>`;
+}
+
+/* ---------- bilan à l'ouverture (une fois par raid sur ce téléphone) ---------- */
+function raidCheck() {
+  if (!me || mode !== 'home' || modal || sheet || place) return;
+  const lr = me.lastRaid; if (!lr) return;
+  const key = 'mk2.raid.' + vid;
+  if (LS.get(key) === lr.t) return;
+  LS.set(key, lr.t);
+  if (now() - lr.t > 3 * DAY) return;            // trop vieux : on ne dérange pas
+  modal = { kind: 'raid' }; SND.sfx(Object.keys(lr.res.lost).length ? 'alarm' : 'star');
+}
+function raidModalHTML() {
+  const lr = me.lastRaid; if (!lr) return '';
+  return `<p class="eyebrow">Pendant votre absence · ${fmtAgo(lr.t)}</p><h2>${esc(raidTitle(lr.res))}</h2>
+    <p>${lr.F.length} assaillants sont sortis ${lr.P.filter(p => !p[3]).length > 1 ? 'des portails' : 'du portail ' + RAID_OF[(lr.P.find(p => !p[3]) || lr.P[0])[2]]}.</p>
+    ${raidReportHTML(me, lr, false)}
+    <div class="row"><button class="btn grow" data-act="closeModal">Fermer</button><button class="btn primary grow" data-act="raidReplay">${djIco('eye')}Revoir le raid</button></div>`;
+}
+
+/* ---------- rediffusion : le même combat, rejoué dans le village de ce jour-là ---------- */
+function raidItems(st) {
+  const col = safeColor(me ? me.c : COLORS[0]);
+  const out = st.S.filter(S => S.id).map(S => ({ key: 'r' + S.id, id: S.id, type: S.type, lvl: S.lvl, gx: S.x0, gz: S.y0, up: S.lvl < 1 ? { frac: 0 } : null, col, dead: S.dead }));
+  for (const T of st.traps) out.push({ key: 'rt' + T.id, id: T.id, type: T.type, lvl: T.lvl, gx: T.x, gz: T.y, up: null, col });
+  return out;
+}
+function raidReplayStart() {
+  const lr = me && me.lastRaid;
+  if (!lr || dj || rp) return;
+  if (!gl) { toast('La rediffusion a besoin de la 3D, indisponible sur cet appareil.'); return; }
+  const st = raidReplay(lr);
+  rp = { st, lr, speed: 1, acc: 0, sig: '', ended: false };
+  closeSheet(true); modal = null; sel = null; selP = null; place = null;
+  mode = 'raid';
+  V3.raid.enter(st); V3.clearBuildings(); V3.setBuildings(raidItems(st));   // repartir de zéro : pas d'animation de construction partout
+  rpHudBuild(); SND.music('battle', 1); SND.sfx('alarm');
+  renderAll();
+}
+function raidReplayExit() {
+  if (!rp) return;
+  V3.raid.exit(); rp = null; V3.clearBuildings();
+  const el = $('#rpHud'); if (el) el.hidden = true;
+  mode = 'home'; SND.music('village', 1);
+  refreshScene(); renderAll();
+}
+function rpHudBuild() {
+  let el = $('#rpHud');
+  if (!el) { el = document.createElement('div'); el.id = 'rpHud'; el.className = 'djhud rphud'; $('#app').appendChild(el); }
+  el.innerHTML = `<div class="djtop"><div class="glass djinfo" id="rpInfo"></div><button class="glass chipb" data-act="rpSpeed" id="rpSpd">Vitesse ×1</button><button class="glass chipb djflee" data-act="rpQuit">Quitter</button></div>
+    <div class="glass rpend" id="rpEnd" hidden></div>`;
+  el.hidden = false;
+}
+function rpHudUpdate() {
+  const st = rp.st, info = $('#rpInfo'); if (!info) return;
+  const left = st.foes.filter(u => !u.dead && !u.out).length, s = Math.floor(st.t), lost = {};
+  for (const k in st.lost) lost[k] = Math.round(st.lost[k]);
+  const txt = 'Rediffusion · ' + Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' · ' + (st.over ? 'terminé' : left + ' ennemi' + (left > 1 ? 's' : '') + ' en jeu') + (st.kills ? ' · ' + st.kills + ' vaincu' + (st.kills > 1 ? 's' : '') : '') + (Object.keys(lost).length ? ' · volé : ' + lootTxt(lost) : '');
+  if (info._t !== txt) { info._t = txt; info.textContent = txt; }
+  const sp = $('#rpSpd'); if (sp && sp._s !== rp.speed) { sp._s = rp.speed; sp.textContent = 'Vitesse ×' + rp.speed; }
+}
+function rpShowEnd() {
+  const el = $('#rpEnd'); if (!el || !rp) return;
+  el.innerHTML = `<h3>${esc(raidTitle(rp.lr.res))}</h3>${raidReportHTML(me, rp.lr, false)}<div class="row"><button class="btn grow" data-act="rpAgain">Revoir</button><button class="btn primary grow" data-act="rpQuit">Retour au village</button></div>`;
+  el.hidden = false;
+}
+function rpEvents(st) {
+  for (const e of st.ev) {
+    V3.raid.fx(e, st);
+    const pan = e.x != null ? { pan: V3.panOf(e.x, e.y) } : undefined;
+    switch (e.k) {
+      case 'tshot': SND.sfx('shoot', pan); break;
+      case 'hhit': SND.sfx(e.sh === 'rodeur' ? 'shoot' : e.sh ? 'bolt' : 'chop'); break;
+      case 'die': SND.sfx(e.big ? 'collapse' : 'death', pan); break;
+      case 'break': SND.sfx('wallbreak', pan); break;
+      case 'trap': SND.sfx('wallhit', pan); break;
+      case 'loot': SND.sfx('coin'); break;
+      case 'drop': SND.sfx('star', pan); break;
+      case 'heart': SND.sfx('alarm'); break;
+      case 'ko': SND.sfx('death'); break;
+    }
+  }
+  st.ev.length = 0;
+}
+/* À chaque image : la simulation avance par pas de 1/10 s (plus vite en accéléré), puis l'affichage suit. */
+function rpFrame(dt, tNow) {
+  if (!rp) return;
+  const st = rp.st;
+  if (!st.over) {
+    rp.acc = Math.min(rp.acc + dt * rp.speed, 0.6);
+    for (let n = 0; rp.acc >= RAID_DT && !st.over && n < 40; n++) { raidStep(st); rp.acc -= RAID_DT; rpEvents(st); }
+  }
+  let sig = ''; for (const S of st.S) sig += S.dead ? '1' : '0';
+  if (sig !== rp.sig) { rp.sig = sig; V3.setBuildings(raidItems(st)); }
+  V3.raid.sync(st, st.over ? 1 : Math.min(1, rp.acc / RAID_DT), dt, tNow);
+  rpHudUpdate();
+  if (st.over && !rp.ended) { rp.ended = true; setTimeout(() => { if (rp && rp.ended) { SND.sfx(Object.keys(rp.lr.res.lost).length ? 'defeat' : 'victory'); rpShowEnd(); } }, 1400); }
+}
+V3.onFrame((dt, tNow) => { djFrame(dt, tNow); rpFrame(dt, tNow); });
+
+/* ---------- actions (réunies dans ACT par l'application) ---------- */
+const ACT_RAID = {
+  repair: () => { const r = act({ type: 'repair' }); if (r) toast(r.n + ' défense' + (r.n > 1 ? 's réparées' : ' réparée') + (r.left ? ' (il en reste ' + r.left + ' : ' + r.why.toLowerCase() + ')' : '.')); },
+  upwalls: b => { const r = act({ type: 'upwalls', t: b.dataset.t, lvl: +b.dataset.l }); if (r) toast(r.n + ' amélioré' + (r.n > 1 ? 's' : '') + '.'); },
+  gate: b => { if (act({ type: 'gate', id: +b.dataset.id })) toast('La palissade devient une porte : vos héros et vos villageois passent, pas les ennemis.'); },
+  raidReplay: () => raidReplayStart(),
+  rpQuit: () => raidReplayExit(),
+  rpAgain: () => { if (!rp) return; V3.raid.exit(); rp = null; raidReplayStart(); },
+  rpSpeed: () => { if (rp) rp.speed = rp.speed >= 4 ? 1 : rp.speed * 2; },
+  portalLook: () => { const info = raidInfo(me, now()), p = info.p.find(q => !q.cl); if (!p) return; closeSheet(); if (gl) V3.focus(p.x + 0.5, p.y + 0.5); },
+};
+
 /* ===================== APPLICATION (village commun) ===================== */
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -5900,6 +7005,8 @@ Object.assign(IC, {
   s_anvil: '<svg viewBox="0 0 24 24"><path d="M3 7h13c0 3 2 4.5 5 5v1h-6l-1 3h3v3H7v-3h3l-1-3H8C5 13 3 11 3 7z" fill="currentColor"/></svg>',
   s_paw: '<svg viewBox="0 0 24 24"><g fill="currentColor"><ellipse cx="12" cy="16" rx="5" ry="4.2"/><ellipse cx="6" cy="10" rx="2" ry="2.6"/><ellipse cx="18" cy="10" rx="2" ry="2.6"/><ellipse cx="9.3" cy="6.3" rx="2" ry="2.6"/><ellipse cx="14.7" cy="6.3" rx="2" ry="2.6"/></g></svg>',
 });
+/* Raids : bouclier, flamme (les mêmes que dans les donjons) */
+Object.assign(IC, { shield: DJ_IC.shield, flame: DJ_IC.flame, sword: DJ_IC.sword });
 const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k] || ''}</span>`;
 const RES_SHOW = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere', 'fer', 'or'];
 function chipsRes(c, have, cls) { return RES.filter(k => c[k]).map(k => `<span class="chip${have && (have[k] || 0) < c[k] ? ' short' : ''}${cls ? ' ' + cls : ''}">${ico(k)}${fmtN(c[k])}</span>`).join(''); }
@@ -5944,7 +7051,8 @@ function act(a, opts) {
   pending.push(a); recompute(); renderAll(); refreshScene();
   scheduleCommit(150);
   const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click', skill: 'star', spec: 'hero',
-    equip: 'upgrade', unequip: 'click', sell: 'coin', melt: 'wallhit', craft: 'upgrade', improve: 'upgrade', socket: 'built', unsocket: 'click', fuse: 'star', buy: 'coin', pet: 'click' }[a.type];
+    equip: 'upgrade', unequip: 'click', sell: 'coin', melt: 'wallhit', craft: 'upgrade', improve: 'upgrade', socket: 'built', unsocket: 'click', fuse: 'star', buy: 'coin', pet: 'click',
+    walls: 'place', gate: 'place', upwalls: 'upgrade', repair: 'built' }[a.type];
   if (fx && !(opts && opts.quiet)) SND.sfx(fx);
   return test;
 }
@@ -5994,8 +7102,8 @@ function onVillage(snap) {
   if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
-const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge']);
-const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch']);
+const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def']);
+const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch', 'portal']);
 /* Nouvelles du journal pendant qu'on joue : une bulle pour la plus récente. */
 function newsCheck() {
   if (!me || !me.log.length) return;
@@ -6006,7 +7114,7 @@ function newsCheck() {
   if (!show.length) return;
   const l = show[show.length - 1];
   toast(l.m);
-  if (l.k === 'built') SND.sfx('built'); else if (l.k === 'cand') SND.sfx('invite'); else if (l.k === 'leave') SND.sfx('error'); else if (l.k === 'season') SND.sfx('star');
+  if (l.k === 'built') SND.sfx('built'); else if (l.k === 'cand') SND.sfx('invite'); else if (l.k === 'leave') SND.sfx('error'); else if (l.k === 'season') SND.sfx('star'); else if (l.k === 'portal') SND.sfx('alarm');
 }
 
 /* ---------- scène 3D ---------- */
@@ -6014,7 +7122,7 @@ function items(v, editable) {
   const out = v.b.map(b => {
     let gx = b.gx, gz = b.gz;
     if (editable && place && place.kind === 'move' && place.id === b.id) { gx = place.gx; gz = place.gz; }
-    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined };
+    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined, dead: isBroken(b) };
   });
   if (editable && place && place.kind === 'new') out.push({ key: 'ghost', id: 0, type: place.type, lvl: 1, gx: place.gx, gz: place.gz, up: null, col: safeColor(v.c) });
   /* Le marchand ambulant : sa charrette, près de la halle, les jours où il est là */
@@ -6039,15 +7147,21 @@ function peopleOf(v) {
 }
 const placeValid = () => place && fits(me, place.type, place.gx, place.gz, place.kind === 'move' ? place.id : undefined);
 function refreshScene() {
-  if (!gl || mode === 'donjon') return;
+  if (!gl || mode === 'donjon' || mode === 'raid') return;
   V3.setMood('warm');
-  const v = me || demoVillage, editable = !!me && mode === 'home';
-  V3.setSeason(seasonIdx(v, me ? now() : v.born));
+  const v = me || demoVillage, editable = !!me && mode === 'home', t = me ? now() : v.born;
+  V3.setSeason(seasonIdx(v, t));
   V3.setBuildings(items(v, editable));
+  /* solidité des défenses abîmées (une barre au-dessus) */
+  for (const b of v.b) if (BLD[b.type].hps && b.lvl > 0) V3.setBldHp('m' + b.id, isBroken(b) ? 0 : hpOf(b) / hpMaxOf(b), true);
   const b = editable && sel != null && !place ? v.b.find(x => x.id === sel) : null;
   V3.select(b || null);
-  if (editable && place) V3.ghost(place.type, place.gx, place.gz, placeValid()); else V3.ghost(null);
+  if (editable && place && place.kind === 'wall') V3.ghost('rempart', place.gx, place.gz, true);
+  else if (editable && place) V3.ghost(place.type, place.gx, place.gz, placeValid()); else V3.ghost(null);
   V3.setPeople(peopleOf(v));
+  /* portails démoniaques : visibles pendant la charge */
+  const ri = me ? raidInfo(v, t) : { p: [] };
+  V3.setPortals(ri.p.map(p => Object.assign({ frac: ri.frac, ready: ri.st === 'ready' }, p)));
 }
 function setMode(m) {
   mode = m;
@@ -6060,6 +7174,7 @@ function setMode(m) {
 function onTap(cx, cy) {
   if (modal || mode !== 'home' || !me) return;
   if (sheet) { closeSheet(); return; }
+  if (place && place.kind === 'wall') { wallTap(cx, cy); return; }
   if (place) {
     const g = V3.pickGround(cx, cy); if (!g) return;
     const s = BLD[place.type].size;
@@ -6072,11 +7187,13 @@ function onTap(cx, cy) {
   const pk = V3.pickPerson(cx, cy, 16) || (k ? null : V3.pickPerson(cx, cy, 30));
   if (pk) { selP = pk; sel = null; SND.sfx('click'); refreshScene(); renderAll(); return; }
   if (k === 'merch') { sel = null; selP = null; SND.sfx('click'); openSheet('merch'); return; }
+  if (k && k.indexOf('portal') === 0) { sel = null; selP = null; SND.sfx('click'); openSheet('defense'); return; }
   sel = k && k[0] === 'm' ? +k.slice(1) : null; selP = null;
   refreshScene(); renderAll();
 }
 function startPlace(type) {
   if (!me) return;
+  if (type === 'rempart') { startWallMode(); return; }
   const d = BLD[type], hl = hallLvl(me);
   if ((d.hall || 1) > hl) { toast('Il faut une halle du village de niveau ' + d.hall + '.'); return; }
   if (countOf(me, type) >= limitOf(type, hl)) { toast('Nombre maximum atteint : agrandissez la halle.'); return; }
@@ -6096,7 +7213,7 @@ function confirmPlace() {
   if (!placeValid()) { toast('Emplacement occupé ou trop près du bord.'); return; }
   const p = place;
   const r = p.kind === 'new' ? act({ type: 'build', b: p.type, gx: p.gx, gz: p.gz }) : act({ type: 'move', id: p.id, gx: p.gx, gz: p.gz });
-  if (r) { place = null; if (p.kind === 'new') { toast('Chantier lancé : les bâtisseurs s’y mettent.'); sel = r.id || null; } refreshScene(); renderAll(); }
+  if (r) { place = null; if (p.kind === 'new') { toast(r.inst ? BLD[p.type].name + ' en place.' : 'Chantier lancé : les bâtisseurs s’y mettent.'); sel = r.inst ? null : r.id || null; } refreshScene(); renderAll(); }
 }
 
 /* ---------- HUD du haut ---------- */
@@ -6112,6 +7229,8 @@ function topHTML() {
   else chips += `<button class="glass chipb" data-act="sheet" data-s="village">${ico('link', 'c-tro')}Inviter</button>`;
   if (v.feast > t) chips += `<span class="glass chipb">${ico('mug', 'c-tro')}Fête · ${fmtDur(v.feast - t)}</span>`;
   if (merchHere(v, t)) chips += `<button class="glass chipb live" data-act="sheet" data-s="merch">${ico('or')}Marchand · ${fmtDur(merchLeaves(v, t) - t)}</button>`;
+  const ri = raidInfo(v, t);
+  if (ri.st !== 'calm') chips += `<button class="glass chipb${ri.st === 'ready' ? ' alert' : ''}" data-act="sheet" data-s="defense">${ico('flame', '')}${ri.st === 'ready' ? 'Portail chargé !' : 'Portail · ' + fmtDur(ri.ready - t)}</button>`;
   const head = `<div class="idrow"><button class="glass me" data-act="sheet" data-s="village"><span class="crest" style="background:${safeColor(v.c)}">${esc(initial(v.name))}</span>
     <span class="idtxt"><b>${esc(v.name)}</b><small>${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</small></span></button>
     <div class="chips">${chips}</div></div>`;
@@ -6174,6 +7293,7 @@ function bldLine(v, b, t) {
 }
 function bldPanel() {
   const v = me, b = v.b.find(x => x.id === sel); if (!b) return '';
+  if (isDef(b)) return defPanel(v, b);
   const d = BLD[b.type], t = now(), hl = hallLvl(v);
   let h = `<div class="glass card"><h3><span>${esc(d.name)}</span><span class="row"><small>${b.lvl > 0 ? 'niveau ' + b.lvl : 'chantier'}</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>`;
   if (b.up) {
@@ -6220,7 +7340,7 @@ function personPanel() {
 }
 function navBar() {
   const v = me;
-  const idle = v.vil.some(p => p.job == null), canBuild = SHOP.some(k => (BLD[k].hall || 1) <= hallLvl(v) && countOf(v, k) < limitOf(k, hallLvl(v)) && !missingTxt(v, costOf(k, 1)));
+  const idle = v.vil.some(p => p.job == null), canBuild = SHOP.some(k => !BLD[k].inst && (BLD[k].hall || 1) <= hallLvl(v) && countOf(v, k) < limitOf(k, hallLvl(v)) && !missingTxt(v, costOf(k, 1)));
   const unseen = v.log.some(l => l.t > (LS.get('mk2.read.' + vid) || 0) && AWAY_KINDS.has(l.k));
   const myHero = activeHero(v, uid);
   return `<nav class="glass nav" aria-label="Menus">
@@ -6228,13 +7348,15 @@ function navBar() {
     <button data-act="sheet" data-s="people">${ico('people', '')}Villageois${v.cands.length || idle ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="hero">${ico('crown', '')}${myHero ? esc(myHero.name) : 'Héros'}${myHero && myHero.sp ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="donjon">${djIco('sword')}Donjon</button>
+    <button data-act="sheet" data-s="defense">${djIco('shield')}Défense${raidInfo(v, now()).st !== 'calm' || v.b.some(b => repairCostOf(b)) ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="journal">${ico('scroll', '')}Journal${unseen ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="village">${ico('house', '')}Village</button></nav>`;
 }
 function renderBottom() {
   let h = '';
   if (mode === 'home' && me) {
-    if (place) {
+    if (place && place.kind === 'wall') h = wallBarHTML();
+    else if (place) {
       const valid = placeValid(), d = BLD[place.type];
       h = `<div class="glass card"><div class="row split"><b>${place.kind === 'new' ? 'Placer' : 'Déplacer'} : ${esc(d.name)}</b><span class="note">Touchez le terrain pour choisir.</span></div>
         ${valid ? '' : '<p class="why">Emplacement occupé ou trop près du bord.</p>'}
@@ -6274,7 +7396,7 @@ function sheetBuild() {
       const d = BLD[k], n = countOf(v, k), lim = limitOf(k, hl), c = costOf(k, 1), locked = (d.hall || 1) > hl;
       const miss = missingTxt(v, c), full = n >= lim;
       h += `<div class="item"><div class="head"><b>${esc(d.name)}</b><small>${locked ? 'halle niveau ' + d.hall : n + ' sur ' + lim}</small></div><p>${esc(d.desc)}</p>
-        <div class="foot"><span class="chips2">${chipsRes(c, v.r)}<span class="dur">${ico('hammer', '')}${fmtDur(workOf(k, 1) / Math.max(1, sr.perSite) * 3600000)}</span></span>
+        <div class="foot"><span class="chips2">${chipsRes(c, v.r)}<span class="dur">${ico('hammer', '')}${d.inst ? 'tout de suite' + (k === 'rempart' ? ', en ligne' : '') : fmtDur(workOf(k, 1) / Math.max(1, sr.perSite) * 3600000)}</span></span>
         <button class="btn small${locked || full || miss ? ' off' : ' primary'}" data-act="place" data-type="${k}">${locked ? 'Verrouillé' : full ? 'Maximum' : 'Construire'}</button></div></div>`;
     }
     h += '</div>';
@@ -6395,7 +7517,7 @@ function sheetHero() {
   if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
-const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil' };
+const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield' };
 function sheetJournal() {
   const v = me;
   if (!v.log.length) return '<p class="note">Rien pour l’instant.</p>';
@@ -6444,14 +7566,15 @@ function sheetHelp() {
     + sec('Construire', ['Les bâtisseurs font avancer les chantiers, plus vite s’ils sont doués en construction. Sans bâtisseur, ça avance quand même un peu.', 'Agrandir la halle débloque des bâtiments, plus de bâtisseurs et plus de chantiers à la fois.'])
     + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence (menu Héros, bouton +1) ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10.'])
     + sec('L’équipement', ['Chaque héros porte une arme, un casque, une armure, des bottes et, dès le niveau 8, un bijou (menu Héros). Chaque classe manie sa famille d’armes : lames, arcs ou bâtons.', 'Les objets ont 5 raretés : commun (gris), peu commun (vert), rare (bleu), épique (violet), légendaire (orange, avec un pouvoir). Les objets d’ensemble (turquoise) donnent un bonus à 2 et à 4 pièces portées.', 'On les trouve en donjon : dans les coffres, sur les boss, parfois sur un monstre ; mieux dans les donjons plus hauts. À deux, chacun trouve ses propres objets.', 'Dans le sac, les flèches comparent avec l’objet porté : ▲ mieux, ▼ moins bien. Vendre un objet rapporte de l’or (la bourse commune) ; le fondre à la forge rend du fer.', 'La forge (avec le fer de la mine) fabrique un objet au choix, l’améliore jusqu’à +5 et sertit les pierres précieuses : trois pierres pareilles se fusionnent en une plus belle.', 'Un jour sur deux, un marchand ambulant s’installe près de la halle avec quelques objets à vendre.', 'Au niveau 6, un familier accompagne le héros : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.'])
+    + sec('Les raids et la défense', ['À partir du 3e jour, un portail démoniaque s’ouvre au bord de la vallée (au plus un raid par jour). Il se charge pendant 3 heures : vous voyez de quel côté viendront les gobelins.', 'Le raid ne part que quand vous êtes absents tous les deux depuis 2 heures. Il se joue tout seul ; à votre retour, un bilan s’affiche et vous pouvez revoir le combat.', 'Les gobelins foncent piller la halle, les voleurs filent vers l’entrepôt, les trolls cassent ce qui bloque (bien plus fort sur les palissades et les portes). Tous prennent le chemin le plus court, en comptant ce qu’il faudrait casser.', 'Ce qu’ils emportent est perdu s’ils regagnent le portail ; abattus avant, ils lâchent tout. Si la halle est pillée, le moral baisse pendant un jour.', 'Menu Défense : palissades (posées en ligne), portes (vos héros et villageois passent), tours d’archers, pièges à pointes et filets cachés. Vos héros défendent la halle et gagnent de l’expérience ; chaque ennemi abattu rapporte de l’or.', 'Refermez un portail avec votre héros (seul ou à deux) : un petit donjon et son gardien. Tous les portails refermés : pas de raid cette fois.', 'Après un raid, réparez les défenses abîmées (menu Défense).'])
     + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de l’or, de la pierre et du bois pour le village, des objets et des pierres précieuses dans ton sac, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié (on garde les meilleurs objets).', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant' };
+  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch }[sheet];
+  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense }[sheet];
   setHTML(els.sheetBody, f ? f() : '');
   if (sheet === 'village' && sheetArg === 'feast' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#feastSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
@@ -6524,6 +7647,7 @@ function renderModal() {
   else if (M && M.kind === 'info') h = `<h2>${esc(M.title)}</h2><p>${esc(M.text)}</p><button class="btn primary" data-act="closeModal">Compris</button>`;
   else if (M && M.kind === 'newhero' && me) h = heroHTML(true);
   else if (M && M.kind === 'djres' && dj) h = djResHTML();
+  else if (M && M.kind === 'raid' && me) h = raidModalHTML();
   else if (M && M.kind === 'djfloor' && dj && dj.run) h = djFloorHTML();
   else if (M && M.kind === 'djfloorwait' && dj && dj.run && dj.duo) h = djFloorWaitHTML();
   else if (M && M.kind === 'djinv' && me) h = djInvHTML();
@@ -6578,6 +7702,7 @@ document.addEventListener('pointerup', release, true);
 document.addEventListener('pointercancel', release, true);
 const ACT = {
   ...ACT_EQ,
+  ...ACT_RAID,
   noop() {},
   orient: b => { orient = b.dataset.o; LS.set('mk2.orient', orient); applyOrientation(); renderAll(); },
   sheet: b => { renderSheet.scrolled = false; openSheet(b.dataset.s, b.dataset.k); },
@@ -6603,7 +7728,7 @@ const ACT = {
   heroForm: () => { closeSheet(true); setMode('hero'); },
   feast: () => { if (act({ type: 'feast' })) toast('C’est la fête à la taverne !'); },
   claim: b => act({ type: 'claim', id: b.dataset.id }),
-  djGo: b => djBegin(+b.dataset.k || 1, b.dataset.th),
+  djGo: b => djBegin(+b.dataset.k || 1, b.dataset.th, +b.dataset.pi || 0),
   djBack: () => djBack(),
   djFlee: () => {
     if (!dj || dj.st.over) return;
@@ -6615,7 +7740,7 @@ const ACT = {
   djUp: () => djAscend(),
   djDown: () => djDescend(),
   djLeaveFloor: () => { if (dj && dj.duo && dj.duo.role === 'guest' && dj.st.over === 'floor' && !dj.ended && confirm('Rentrer au village ? Tu gardes toute l’expérience gagnée ; ' + (dj.duo.mateName || 'ton partenaire') + ' pourra continuer seul·e.')) djGuestQuit(false); },
-  djInvite: b => djInvite(+b.dataset.k || 1, b.dataset.th),
+  djInvite: b => djInvite(+b.dataset.k || 1, b.dataset.th, +b.dataset.pi || 0),
   djYes: () => djAnswer(true),
   djNo: () => djAnswer(false),
   djCancel: () => djCancelInvite(),
@@ -6633,7 +7758,7 @@ const ACT = {
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
 const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill', 'djInvite', 'djYes', 'djDown',
-  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet']);
+  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet', 'repair', 'upwalls', 'gate', 'raidReplay']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (!QUIET.has(b.dataset.act)) SND.sfx('click');
@@ -6676,7 +7801,7 @@ function tick() {
   if (vsim) {
     simulateVillage(vsim, now()); recompute(); if (mode !== 'donjon') newsCheck(); goalCheck();
     if (!pending.length && !committing && vraw && now() - Math.max(vraw.t, lastSync) > 20 * 60000) { pending.push({ type: 'sync' }); scheduleCommit(50); }
-    candCheck();
+    candCheck(); raidCheck();
   }
   renderAll(); refreshScene();
 }
@@ -6779,7 +7904,7 @@ async function joinVillage(pname) {
   } catch (e) { formErr('#jErr', e && e.code === 'not_granted' ? 'Impossible de rejoindre : ce village a peut-être déjà ses deux habitants.' : 'Ça n’a pas marché. Réessaie.'); }
   busy = false; renderAll();
 }
-if (window.MK_TEST) window.__mk = { get me() { return me; }, get mode() { return mode; }, get vid() { return vid; }, toScreen: (x, z) => gl ? V3.toScreen(x, z) : null, act: (a, o) => act(a, o), fx: () => gl ? V3._fx() : null, simAt: T => vraw ? JSON.stringify(simulateVillage(clone(vraw), T)) : null, now: () => now(), get busy() { return pending.length + (committing ? 1 : 0); }, get dj() { return dj; }, djBegin: (l, th) => djBegin(l, th) };
+if (window.MK_TEST) window.__mk = { get me() { return me; }, get mode() { return mode; }, get vid() { return vid; }, toScreen: (x, z) => gl ? V3.toScreen(x, z) : null, act: (a, o) => act(a, o), fx: () => gl ? V3._fx() : null, simAt: T => vraw ? JSON.stringify(simulateVillage(clone(vraw), T)) : null, now: () => now(), get busy() { return pending.length + (committing ? 1 : 0); }, get dj() { return dj; }, djBegin: (l, th, pi) => djBegin(l, th, pi), get rp() { return rp; }, raidReplay: () => raidReplayStart() };
 async function boot() {
   const cv = $('#gl');
   gl = typeof THREE !== 'undefined' && V3.init(cv);

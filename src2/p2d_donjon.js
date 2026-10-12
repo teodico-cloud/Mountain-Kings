@@ -22,14 +22,21 @@ const DJ_MONSTERS = {
   spectre: { name: 'Spectre', hp: 32, dmg: 6, speed: 2.6, range: 5.5, rate: 2.4, xp: 6, w: 1, ranged: true, evade: 0.3, shot: 'ghost' },
   necromant: { name: 'Nécromant', hp: 34, dmg: 4, speed: 2.1, range: 5, rate: 2.8, xp: 7, w: 1, raises: true },
   golem: { name: 'Golem d’os', hp: 140, dmg: 15, speed: 1.5, range: 1.4, rate: 2.5, xp: 13, w: 1, big: true },
+  /* le portail démoniaque (étape 4) : des diablotins, et les gobelins et trolls qui attendent d'en sortir */
+  diablotin: { name: 'Diablotin', hp: 30, dmg: 5, speed: 3.6, range: 1.0, rate: 1.1, xp: 4, w: 4 },
+  lanceflamme: { name: 'Diablotin cracheur de feu', hp: 26, dmg: 7, speed: 2.4, range: 5.5, rate: 2.4, xp: 5, w: 2, ranged: true, shot: 'fire' },
 };
 const DJ_BOSSES = {
   chefTroll: { name: 'Chef troll', hp: 520, dmg: 16, speed: 1.8, range: 1.6, rate: 2.1, xp: 80, big: true, boss: true },
   roiSquelette: { name: 'Roi squelette', hp: 560, dmg: 15, speed: 1.9, range: 1.7, rate: 2.0, xp: 85, big: true, boss: true },
+  gardien: { name: 'Gardien du portail', hp: 540, dmg: 15, speed: 1.9, range: 1.7, rate: 2.0, xp: 85, big: true, boss: true },
 };
+/* Renforts des boss qui appellent à l'aide (tempête d'os ou pluie de feu) */
+const DJ_BOSS_ADDS = { roiSquelette: ['squelette', 'squelette', 'squelette', 'archerSq'], gardien: ['diablotin', 'diablotin', 'diablotin', 'lanceflamme'] };
 const DJ_THEMES = {
   mine: { name: 'Mine des gobelins', the: 'la mine des gobelins', monsters: ['gobelin', 'archer', 'chaman', 'troll'], boss: 'chefTroll' },
   crypte: { name: 'Crypte des rois', the: 'la crypte des rois', monsters: ['squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem'], boss: 'roiSquelette' },
+  portail: { name: 'Portail démoniaque', the: 'le portail démoniaque', monsters: ['diablotin', 'lanceflamme', 'gobelin', 'troll'], boss: 'gardien', rooms: 3 },
 };
 const DJ_PRISONER_CHANCE = lvl => Math.min(0.10, 0.03 + 0.007 * lvl);   // rare : de 4 % (niveau 1) à 10 %
 
@@ -56,7 +63,7 @@ const djCenter = r => [r.x + (r.w >> 1), r.y + (r.h >> 1)];
    opts (étages des Profondeurs) : { rooms: nombre de salles de combat, boss: false pour un étage sans boss }. */
 function genDungeon(seed, lvl, theme, opts) {
   const o = opts || {}, R = mulberry32((seed ^ 0x9e3779b9) >>> 0), pick = a => a[Math.floor(R() * a.length)];
-  const T = DJ_THEMES[theme] || DJ_THEMES.mine, coin = R() < 0.5 ? 1 : 0, nFight = o.rooms || 5 + coin, withBoss = o.boss !== false;
+  const T = DJ_THEMES[theme] || DJ_THEMES.mine, coin = R() < 0.5 ? 1 : 0, nFight = o.rooms || T.rooms || 5 + coin, withBoss = o.boss !== false;
   let rooms = null;
   for (let attempt = 0; attempt < 50 && !rooms; attempt++) {
     const list = [{ k: 'entree', w: 8, h: 8, shape: 'rect', kind: 'start', x: 0, y: 0 }];
@@ -793,8 +800,9 @@ function djMobStep(st, m) {
   m.mv = false; m.fx = dx / dd; m.fy = dy / dd;
   if (m.atkT <= 0) start('melee', t.id, m.big ? 0.55 : 0.35, 'melee');
 }
-function djBossStep(st, m) { return m.type === 'roiSquelette' ? djBossRoi(st, m) : djBossTroll(st, m); }
-/* Le roi squelette : tempête d'os (des cercles s'allument sous les héros puis explosent), renforts à 70 % et 40 %, rage sous 30 %. */
+function djBossStep(st, m) { return m.type === 'roiSquelette' || m.type === 'gardien' ? djBossRoi(st, m) : djBossTroll(st, m); }
+/* Le roi squelette : tempête d'os (des cercles s'allument sous les héros puis explosent), renforts à 70 % et 40 %, rage sous 30 %.
+   Le gardien du portail fait de même, avec une pluie de feu et des diablotins. */
 function djBossRoi(st, m) {
   const S = m.sp, dt = DJ_DT;
   if (S.storm == null) S.storm = 5;
@@ -802,7 +810,7 @@ function djBossRoi(st, m) {
   if ((S.phase === 0 && m.hp < m.hpMax * 0.7) || (S.phase === 1 && m.hp < m.hpMax * 0.4)) {
     S.phase++;
     const c = djCenter(st.d.rooms[m.room]);
-    ['squelette', 'squelette', 'squelette', 'archerSq'].forEach((type, k) => {
+    (DJ_BOSS_ADDS[m.type] || DJ_BOSS_ADDS.roiSquelette).forEach((type, k) => {
       const a = k / 4 * 6.2832 + S.phase, x = m.x + Math.cos(a) * 2.6, y = m.y + Math.sin(a) * 2.6, ok = djFree(st, x, y, 0.38);
       const n = djMob(st, type, ok ? x : c[0] + 0.5, ok ? y : c[1] + 0.5, m.room, false); n.awake = true; st.mobs.push(n);
       st.ev.push({ k: 'spawn', id: n.id, x: n.x, y: n.y });
@@ -814,7 +822,7 @@ function djBossRoi(st, m) {
     S.actT -= dt; m.mv = false;
     if (S.actT <= 0) {
       for (const p of S.pts) for (const t of djFoes(st)) if (Math.hypot(t.x - p[0], t.y - p[1]) <= 1.6 + t.r) djHit(st, t, m.dmg * 1.4);
-      st.ev.push({ k: 'storm', id: m.id, pts: S.pts, r: 1.6 }); S.act = null; S.storm = 7.5;
+      st.ev.push({ k: 'storm', id: m.id, pts: S.pts, r: 1.6, c: m.type === 'gardien' ? 'fire' : 'bone' }); S.act = null; S.storm = 7.5;
     }
     return true;
   }
@@ -1053,9 +1061,9 @@ function djProgress(st) {
 /* ===================== DONJONS À DEUX : l'hôte simule, l'invitée affiche =====================
    Le téléphone de l'hôte fait tourner le combat et envoie l'état ~7 fois par seconde ; celui de l'invitée l'affiche
    (en lissant), déplace lui-même son héros (pour qu'il réponde tout de suite) et envoie sa position et ses boutons. */
-const DJ_PV = 3;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent
+const DJ_PV = 4;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent (4 : donjon du portail)
 const DJ_PETS = ['loup', 'faucon', 'sanglier', 'chouette'];
-const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette'];
+const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette', 'diablotin', 'lanceflamme', 'gardien'];
 const DJ_ST = { idle: 'i', lock: 'l', clear: 'c', open: 'o', fight: 'f' }, DJ_STR = { i: 'idle', l: 'lock', c: 'clear', o: 'open', f: 'fight' };
 const djR1 = x => Math.round(x * 10) / 10, djR2 = x => Math.round(x * 100) / 100;
 /* Instantané envoyé par l'hôte (nombres arrondis, listes courtes). evs : événements depuis le précédent (pour les effets). */

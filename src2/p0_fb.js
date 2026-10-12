@@ -46,6 +46,18 @@ function normVillage(v) {
   v.bag = B;
   if (v.merch && typeof v.merch === 'object') v.merch = { d: v.merch.d | 0, it: fbArr(v.merch.it).map(fbItem).filter(Boolean), gm: fbArr(v.merch.gm), sold: String(v.merch.sold || '') };
   else delete v.merch;
+  /* Raids (étape 4) : portails ouverts, dernier raid (gardé pour la rediffusion) */
+  if (v.raid && typeof v.raid === 'object') {
+    if (v.raid.p) { v.raid.p = fbArr(v.raid.p).map(fbArr); v.raid.cl = fbArr(v.raid.cl); while (v.raid.cl.length < v.raid.p.length) v.raid.cl.push(0); }
+  } else delete v.raid;
+  if (v.lastRaid && typeof v.lastRaid === 'object') {
+    const L = v.lastRaid;
+    for (const k of ['P', 'B', 'H', 'F']) L[k] = fbArr(L[k]).map(fbArr);
+    L.R = Object.assign({}, fbObj(L.R));
+    L.res = Object.assign({ k: 0, e: 0, f: 0, h: 0, g: 0, xp: 0, br: 0, s: 0 }, fbObj(L.res));
+    L.res.lost = Object.assign({}, fbObj(L.res.lost)); L.res.back = Object.assign({}, fbObj(L.res.back));
+    L.res.ko = fbArr(L.res.ko); L.res.dmg = fbArr(L.res.dmg).map(fbArr);
+  } else delete v.lastRaid;
   return v;
 }
 const fbItem = x => x && typeof x === 'object' && x.sl ? Object.assign({}, x, { gm: Object.assign({}, fbObj(x.gm)) }) : null;
