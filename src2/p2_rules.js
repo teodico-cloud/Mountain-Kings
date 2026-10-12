@@ -134,6 +134,8 @@ const BLD = {
   /* Garnison (étape 4b, p2g_garnison.js) : la caserne loge les soldats (3 par niveau) ; chaque poste de garde (1 par niveau de caserne)
      garde un cercle (zone : rayon en cases selon son niveau). On marche à travers un poste (ennemis compris). */
   caserne: { name: 'Caserne', size: 2, max: 4, cost: { bois: 140, pierre: 100 }, mul: 2, work: 100, hall: 2, cat: 'def', desc: 'Loge les soldats de la garnison : 3 par niveau (12 au plus), et un poste de garde de plus par niveau. On y recrute des soldats contre de l’or.' },
+  /* L'histoire (lot A) : offerte au retour de la mission « La Source du Mal », pas dans la liste des constructions */
+  chambre: { name: 'Chambre de Lilou', size: 2, max: 1, cost: {}, work: 1, inst: 1, cat: 'vie', story: 1, desc: 'Le berceau de Lilou, avec Sukhoï qui dort à côté. On y voit son humeur et ses caprices.' },
   poste: { name: 'Poste de garde', size: 1, max: 3, costs: [{ bois: 30, pierre: 10 }, { bois: 30, pierre: 40 }, { pierre: 60, fer: 15 }], inst: 1, def: 'post', zone: [3, 4, 5], lvlNames: ['Poste de garde', 'Poste fortifié', 'Bastion'], cat: 'def', desc: 'Ses soldats (6 au plus) gardent un cercle autour de lui pendant les raids, sans jamais en sortir. L’améliorer agrandit le cercle.' },
   marchand:{ name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
 };
@@ -145,7 +147,7 @@ const LIMITS = {
   moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], brasserie: [0, 1, 1, 1, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
   taverne: [0, 1, 1, 1, 1], mine: [0, 1, 1, 2, 2], forge: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
   rempart: [24, 40, 56, 72, 90], porte: [2, 3, 4, 5, 6], tour: [1, 2, 3, 4, 5], piege: [2, 4, 6, 8, 10], filet: [1, 2, 3, 4, 5],
-  caserne: [0, 1, 1, 1, 1], poste: [4, 4, 4, 4, 4],     // postes : en fait 1 par niveau de caserne (limitV)
+  caserne: [0, 1, 1, 1, 1], poste: [4, 4, 4, 4, 4], chambre: [1, 1, 1, 1, 1],     // postes : en fait 1 par niveau de caserne (limitV)
 };
 const DECO_MAX = 15;             // le moral apporté par les décorations est plafonné
 const FEAST = { cost: { pain: 30, viande: 30, biere: 20 }, mor: 15, len: DAY, cd: 3 * DAY };
@@ -247,6 +249,7 @@ function moraleParts(v, t) {
   if (tr) out.push(['Caractères', tr]);
   if (v.feast > t) out.push(['Fête à la taverne', FEAST.mor]);
   if (v.raidMor > t) out.push(['Halle pillée par les gobelins', -10]);
+  if (v.lilou && v.lilou.party > t) out.push(['Fête pour Lilou', LILOU.party]);
   return out;
 }
 const moraleOf = (v, t) => Math.max(0, Math.min(100, 50 + moraleParts(v, t).reduce((a, p) => a + p[1], 0)));
@@ -308,7 +311,7 @@ const heroesAt = (v, target) => Object.values(v.heroes || {}).filter(h => h && h
 /* Rang d'une compétence (0 = pas encore ouverte, puis 1 à 5) ; points dépensés dans hero.sk = { s0, s1, s2 }. */
 const skillRank = (h, i) => h.lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, (h.sk && h.sk['s' + i]) | 0)) : 0;
 const DJ_XP_CAP = lvl => Math.round(1500 * (1 + 0.25 * (lvl - 1)));      // garde-fou : expérience maximale d'un donjon
-const DJ_END_THEMES = ['mine', 'crypte', 'prof', 'portail'];               // donjons reconnus au retour (portail : fermer un portail démoniaque)
+const DJ_END_THEMES = ['mine', 'crypte', 'prof', 'portail', 'source'];     // donjons reconnus au retour (portail : fermer un portail démoniaque ; source : la mission d'intro)
 /* Expérience gagnée (donjon ou défense du village) : niveaux et points de compétence. Renvoie le nombre de niveaux gagnés. */
 function heroAddXp(hh, xp) {
   const lv0 = hh.lvl;
@@ -386,6 +389,8 @@ function stepVillage(v) {
   const add = (k, n) => { v.r[k] = NO_CAP.has(k) ? (v.r[k] || 0) + n : Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
   /* Portails démoniaques et raids (p2r_raid.js) : le portail s'ouvre, se charge, puis le raid vient quand les deux joueurs sont absents. */
   raidTick(v);
+  /* Lilou (l'histoire, p2s_histoire.js) : un caprice par jour, un gros par semaine */
+  lilouTick(v);
   /* Le marchand ambulant : un jour sur deux, il s'installe sur la place avec quelques objets */
   const md = merchDay(v, t);
   if (md % 2 === 1 && (!v.merch || v.merch.d !== md)) { v.merch = genMerch(v, md); addLog(v, t, 'Un marchand ambulant s’installe sur la place du village, jusqu’à demain.', 'merch'); }
@@ -559,6 +564,7 @@ function applyV(v, a, who) {
     }
     case 'build': {
       const d = BLD[a.b]; if (!d || a.b === 'halle') return fail('Bâtiment inconnu.');
+      if (d.story && !v.lilou) return fail('Lilou n’est pas encore au village.');
       if ((d.hall || 1) > hl) return fail('Il faut une halle du village de niveau ' + d.hall + '.');
       if (countOf(v, a.b) >= limitV(v, a.b)) return fail(limitWhy(v, a.b));
       if (!fits(v, a.b, a.gx, a.gz)) return fail('Emplacement occupé ou trop près du bord.');
@@ -639,6 +645,7 @@ function applyV(v, a, who) {
     case 'demolish': {
       const b = v.b.find(x => x.id === a.id); if (!b) return fail('Bâtiment introuvable.');
       if (b.type === 'halle') return fail('On ne démolit pas la halle.');
+      if (b.type === 'chambre') return fail('On ne démolit pas la chambre de Lilou (on peut la déplacer).');
       if (houseOf(b) && housingOf(v) - houseOf(b) < v.vil.length) return fail('Des villageois y logent : il n’y aurait plus assez de place.');
       if (b.type === 'caserne' && solList(v).length) return fail('Des soldats y logent : renvoyez-les d’abord.');
       v.b = v.b.filter(x => x !== b);
@@ -742,7 +749,7 @@ function applyV(v, a, who) {
       if (gold + autoGold) v.r.or = (v.r.or || 0) + gold + autoGold;
       if (gold) got.or = gold;
       const fl = deep ? deep + ' étage' + (deep > 1 ? 's terminés' : ' terminé') : 'aucun étage terminé';
-      const what = th === 'prof' ? (win ? ' remonte des Profondeurs (' : ' a dû fuir les Profondeurs (') + fl + ')'
+      const what = th === 'source' ? (win ? ' a percé le mystère de la Source du Mal' : ' a dû quitter la Source du Mal') : th === 'prof' ? (win ? ' remonte des Profondeurs (' : ' a dû fuir les Profondeurs (') + fl + ')'
         : th === 'portail' ? (win ? ' a vaincu le gardien du portail démoniaque' : ' a dû fuir le portail démoniaque') + ' (niveau ' + L + ')'
         : win ? ' revient vainqueur ' + (th === 'crypte' ? 'de la crypte des rois' : 'de la mine des gobelins') + ' (niveau ' + L + ')' : ' a dû fuir ' + (th === 'crypte' ? 'la crypte des rois' : 'la mine des gobelins') + ' (niveau ' + L + ')';
       addLog(v, t, hh.name + what + ' : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + (nItems ? ', ' + nItems + ' objet' + (nItems > 1 ? 's' : '') : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : '') + (autoSold ? ' Sac plein : ' + autoSold + ' objet' + (autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + autoGold + ' or.' : ''), 'dj');
@@ -750,9 +757,11 @@ function applyV(v, a, who) {
       /* Portail démoniaque vaincu : il se referme (s'il est encore ouvert) ; tous refermés = pas de raid cette fois. */
       const closed = th === 'portail' && win ? raidClosePortal(v, t, a.pi | 0, hh.name) : null;
       /* Pour la garnison (réserve commune) : orbes et bannières ; à deux, seulement chez l'hôte (gar: 0 chez l'invitée) */
-      const gar = win && a.gar !== 0 ? garLoot(v, th, L, deep) : { orbs: [], ban: null };
+      const gar = win && a.gar !== 0 && th !== 'source' ? garLoot(v, th, L, deep) : { orbs: [], ban: null };
+      /* La mission d'intro gagnée : Lilou arrive au village (une seule fois) */
+      const story = th === 'source' && win ? lilouArrive(v, t, hh) : null;
       if (gar.orbs.length || gar.ban) addLog(v, t, 'Pour la garnison : ' + gar.orbs.map(orbLabel).concat(gar.ban ? [banLabel(gar.ban) + (gar.ban.sold ? ' (réserve pleine : vendue)' : '')] : []).join(', ') + '.', 'sol');
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed, orbs: gar.orbs, ban: gar.ban };
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed, orbs: gar.orbs, ban: gar.ban, lilou: story };
     }
     /* ---------- équipement (étape 3) ---------- */
     case 'equip': {
@@ -888,6 +897,8 @@ function applyV(v, a, who) {
   }
   /* La garnison (p2g_garnison.js) : recruter, promouvoir, affecter aux postes, équiper, orbes et bannières. */
   const g = applyGar(v, a, nm, t); if (g) return g;
+  /* L'histoire (p2s_histoire.js) : les caprices de Lilou. */
+  const sy = applyStory(v, a, nm, t); if (sy) return sy;
   return fail('Action inconnue.');
 }
 

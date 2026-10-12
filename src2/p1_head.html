@@ -90,7 +90,10 @@ h1,h2,h3,p{margin:0}
 .card h3 small{font-size:12px;font-weight:700;color:var(--muted)}
 .card.tip{gap:8px;border-left:4px solid var(--lantern);padding:10px 12px}
 .card.tip .tiptxt{display:flex;gap:8px;align-items:flex-start;text-align:left;font-size:13.5px;line-height:1.38;margin:0}
-.card.tip .tiptxt .ic{flex:none;margin-top:1px}
+.card.tip .tiptxt .sukface{width:34px;height:34px;border-width:1.5px}
+.card.tip .tiptxt .sukface svg{width:31px;height:31px}
+.card.tip .tiptxt b{color:var(--lantern);margin-right:2px}
+.chipb .lilface{width:20px;height:20px;margin-right:2px}
 .muted{color:var(--muted)}
 .note{font-size:13px;color:var(--muted)}
 .chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px 2px 5px;border-radius:999px;background:var(--surface-2);font-weight:800;font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -292,6 +295,33 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 .djsk small{position:absolute;left:50%;bottom:-15px;transform:translateX(-50%);font-size:10px;font-weight:800;color:#fff;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.9)}
 .djsk .djcd{position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(0,0,0,.62) var(--cd,0deg),transparent 0);pointer-events:none}
 .djsk.lock{opacity:.45;filter:grayscale(1)}
+.djsk.hint{animation:djHint 1s ease-in-out infinite}
+@keyframes djHint{0%,100%{box-shadow:0 4px 14px rgba(0,0,0,.45),0 0 0 0 rgba(255,210,122,0)}50%{box-shadow:0 4px 14px rgba(0,0,0,.45),0 0 0 7px rgba(255,210,122,.6)}}
+/* la bulle de Sukhoï : entre la zone du pouce et les boutons (qui prennent ≈ 230 px à droite) */
+.djtuto{position:absolute;left:calc(env(safe-area-inset-left,0px) + 236px);right:calc(env(safe-area-inset-right,0px) + 240px);bottom:calc(env(safe-area-inset-bottom,0px) + 12px);max-width:430px;margin:0 auto;background:rgba(26,22,34,.9);color:#f3eee5;border-radius:16px;padding:9px 12px;border:1px solid rgba(201,179,255,.45);box-shadow:0 8px 24px rgba(0,0,0,.4);pointer-events:none !important}
+.djtuto .sukbub p{font-size:13.5px}
+@media (max-width:760px){.djtuto{left:calc(env(safe-area-inset-left,0px) + 12px)}.djtuto:not([hidden]) ~ .djjoy .djhint{display:none}.djtuto .sukbub p{font-size:12.5px}}
+/* L'histoire : Sukhoï et Lilou */
+.sukbub{display:flex;gap:10px;align-items:flex-start;text-align:left}
+.sukbub > div{flex:1;min-width:0}
+.sukbub b{font-size:12.5px;color:var(--lantern);display:block;letter-spacing:.02em}
+.sukbub p{margin:2px 0 0;font-size:14px;line-height:1.4}
+.sukbub .btn{margin-top:8px}
+.sukface{flex:none;width:44px;height:44px;border-radius:50%;background:#2c2a33;display:grid;place-items:center;overflow:hidden;border:2px solid var(--lantern)}
+.sukface svg{width:40px;height:40px}
+.sukface.big{width:70px;height:70px}
+.sukface.big svg{width:64px;height:64px}
+.lilface{flex:none;width:44px;height:44px;display:inline-grid;place-items:center}
+.lilface svg{width:100%;height:100%}
+.lilmood{display:flex !important;gap:12px;align-items:center}
+.lilmood > div{flex:1;min-width:0}
+.bar.mood i{background:linear-gradient(90deg,#d9604a,#e8a64a 30%,#e8d24a 50%,#8fcf6a 70%,#5cc27a)}
+.lilhead{display:flex;gap:12px;align-items:center;margin:0 0 8px}
+.lilhead h2{margin:0}
+.lilhead .lilface{width:56px;height:56px}
+.lilword{display:flex;gap:10px;align-items:center;margin:6px 0}
+.lilword .lilface{width:36px;height:36px}
+.item.story{display:grid;gap:8px}
 .djsk.press{transform:scale(.92)}
 .djsk.pot{width:56px;height:56px;background:radial-gradient(circle at 50% 35%,#7a3a46,#3a1820);color:#ffb0b8}
 .djsk .djn{position:absolute;right:-4px;top:-4px;min-width:22px;height:22px;border-radius:11px;background:#fff;color:#222;font-size:12.5px;font-weight:800;display:grid;place-items:center;padding:0 5px}

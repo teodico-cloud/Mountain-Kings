@@ -76,6 +76,13 @@ function normVillage(v) {
   const BN = {};
   for (const [k, b0] of Object.entries(fbObj(v.bans))) if (b0 && typeof b0 === 'object' && b0.k) BN[b0.id || k] = Object.assign({}, b0, { id: b0.id || k });
   if (Object.keys(BN).length) v.bans = BN; else delete v.bans;
+  /* L'histoire (lot A) : Lilou, son humeur et ses caprices */
+  if (v.lilou && typeof v.lilou === 'object') {
+    const L = v.lilou, cap = c => c && typeof c === 'object' && c.k ? { n: c.n | 0, k: String(c.k), ok: c.ok ? 1 : 0 } : null;
+    v.lilou = { at: +L.at || 0, by: String(L.by || ''), mood: Math.max(0, Math.min(100, L.mood == null ? 60 : +L.mood || 0)), party: +L.party || 0, nd: L.nd | 0, nw: L.nw | 0 };
+    if (cap(L.d)) v.lilou.d = cap(L.d);
+    if (cap(L.w)) v.lilou.w = cap(L.w);
+  } else delete v.lilou;
   return v;
 }
 const fbItem = x => x && typeof x === 'object' && x.sl ? Object.assign({}, x, { gm: Object.assign({}, fbObj(x.gm)) }) : null;
@@ -303,6 +310,8 @@ const BLD = {
   /* Garnison (étape 4b, p2g_garnison.js) : la caserne loge les soldats (3 par niveau) ; chaque poste de garde (1 par niveau de caserne)
      garde un cercle (zone : rayon en cases selon son niveau). On marche à travers un poste (ennemis compris). */
   caserne: { name: 'Caserne', size: 2, max: 4, cost: { bois: 140, pierre: 100 }, mul: 2, work: 100, hall: 2, cat: 'def', desc: 'Loge les soldats de la garnison : 3 par niveau (12 au plus), et un poste de garde de plus par niveau. On y recrute des soldats contre de l’or.' },
+  /* L'histoire (lot A) : offerte au retour de la mission « La Source du Mal », pas dans la liste des constructions */
+  chambre: { name: 'Chambre de Lilou', size: 2, max: 1, cost: {}, work: 1, inst: 1, cat: 'vie', story: 1, desc: 'Le berceau de Lilou, avec Sukhoï qui dort à côté. On y voit son humeur et ses caprices.' },
   poste: { name: 'Poste de garde', size: 1, max: 3, costs: [{ bois: 30, pierre: 10 }, { bois: 30, pierre: 40 }, { pierre: 60, fer: 15 }], inst: 1, def: 'post', zone: [3, 4, 5], lvlNames: ['Poste de garde', 'Poste fortifié', 'Bastion'], cat: 'def', desc: 'Ses soldats (6 au plus) gardent un cercle autour de lui pendant les raids, sans jamais en sortir. L’améliorer agrandit le cercle.' },
   marchand:{ name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
 };
@@ -314,7 +323,7 @@ const LIMITS = {
   moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], brasserie: [0, 1, 1, 1, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
   taverne: [0, 1, 1, 1, 1], mine: [0, 1, 1, 2, 2], forge: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
   rempart: [24, 40, 56, 72, 90], porte: [2, 3, 4, 5, 6], tour: [1, 2, 3, 4, 5], piege: [2, 4, 6, 8, 10], filet: [1, 2, 3, 4, 5],
-  caserne: [0, 1, 1, 1, 1], poste: [4, 4, 4, 4, 4],     // postes : en fait 1 par niveau de caserne (limitV)
+  caserne: [0, 1, 1, 1, 1], poste: [4, 4, 4, 4, 4], chambre: [1, 1, 1, 1, 1],     // postes : en fait 1 par niveau de caserne (limitV)
 };
 const DECO_MAX = 15;             // le moral apporté par les décorations est plafonné
 const FEAST = { cost: { pain: 30, viande: 30, biere: 20 }, mor: 15, len: DAY, cd: 3 * DAY };
@@ -416,6 +425,7 @@ function moraleParts(v, t) {
   if (tr) out.push(['Caractères', tr]);
   if (v.feast > t) out.push(['Fête à la taverne', FEAST.mor]);
   if (v.raidMor > t) out.push(['Halle pillée par les gobelins', -10]);
+  if (v.lilou && v.lilou.party > t) out.push(['Fête pour Lilou', LILOU.party]);
   return out;
 }
 const moraleOf = (v, t) => Math.max(0, Math.min(100, 50 + moraleParts(v, t).reduce((a, p) => a + p[1], 0)));
@@ -477,7 +487,7 @@ const heroesAt = (v, target) => Object.values(v.heroes || {}).filter(h => h && h
 /* Rang d'une compétence (0 = pas encore ouverte, puis 1 à 5) ; points dépensés dans hero.sk = { s0, s1, s2 }. */
 const skillRank = (h, i) => h.lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, (h.sk && h.sk['s' + i]) | 0)) : 0;
 const DJ_XP_CAP = lvl => Math.round(1500 * (1 + 0.25 * (lvl - 1)));      // garde-fou : expérience maximale d'un donjon
-const DJ_END_THEMES = ['mine', 'crypte', 'prof', 'portail'];               // donjons reconnus au retour (portail : fermer un portail démoniaque)
+const DJ_END_THEMES = ['mine', 'crypte', 'prof', 'portail', 'source'];     // donjons reconnus au retour (portail : fermer un portail démoniaque ; source : la mission d'intro)
 /* Expérience gagnée (donjon ou défense du village) : niveaux et points de compétence. Renvoie le nombre de niveaux gagnés. */
 function heroAddXp(hh, xp) {
   const lv0 = hh.lvl;
@@ -555,6 +565,8 @@ function stepVillage(v) {
   const add = (k, n) => { v.r[k] = NO_CAP.has(k) ? (v.r[k] || 0) + n : Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
   /* Portails démoniaques et raids (p2r_raid.js) : le portail s'ouvre, se charge, puis le raid vient quand les deux joueurs sont absents. */
   raidTick(v);
+  /* Lilou (l'histoire, p2s_histoire.js) : un caprice par jour, un gros par semaine */
+  lilouTick(v);
   /* Le marchand ambulant : un jour sur deux, il s'installe sur la place avec quelques objets */
   const md = merchDay(v, t);
   if (md % 2 === 1 && (!v.merch || v.merch.d !== md)) { v.merch = genMerch(v, md); addLog(v, t, 'Un marchand ambulant s’installe sur la place du village, jusqu’à demain.', 'merch'); }
@@ -728,6 +740,7 @@ function applyV(v, a, who) {
     }
     case 'build': {
       const d = BLD[a.b]; if (!d || a.b === 'halle') return fail('Bâtiment inconnu.');
+      if (d.story && !v.lilou) return fail('Lilou n’est pas encore au village.');
       if ((d.hall || 1) > hl) return fail('Il faut une halle du village de niveau ' + d.hall + '.');
       if (countOf(v, a.b) >= limitV(v, a.b)) return fail(limitWhy(v, a.b));
       if (!fits(v, a.b, a.gx, a.gz)) return fail('Emplacement occupé ou trop près du bord.');
@@ -808,6 +821,7 @@ function applyV(v, a, who) {
     case 'demolish': {
       const b = v.b.find(x => x.id === a.id); if (!b) return fail('Bâtiment introuvable.');
       if (b.type === 'halle') return fail('On ne démolit pas la halle.');
+      if (b.type === 'chambre') return fail('On ne démolit pas la chambre de Lilou (on peut la déplacer).');
       if (houseOf(b) && housingOf(v) - houseOf(b) < v.vil.length) return fail('Des villageois y logent : il n’y aurait plus assez de place.');
       if (b.type === 'caserne' && solList(v).length) return fail('Des soldats y logent : renvoyez-les d’abord.');
       v.b = v.b.filter(x => x !== b);
@@ -911,7 +925,7 @@ function applyV(v, a, who) {
       if (gold + autoGold) v.r.or = (v.r.or || 0) + gold + autoGold;
       if (gold) got.or = gold;
       const fl = deep ? deep + ' étage' + (deep > 1 ? 's terminés' : ' terminé') : 'aucun étage terminé';
-      const what = th === 'prof' ? (win ? ' remonte des Profondeurs (' : ' a dû fuir les Profondeurs (') + fl + ')'
+      const what = th === 'source' ? (win ? ' a percé le mystère de la Source du Mal' : ' a dû quitter la Source du Mal') : th === 'prof' ? (win ? ' remonte des Profondeurs (' : ' a dû fuir les Profondeurs (') + fl + ')'
         : th === 'portail' ? (win ? ' a vaincu le gardien du portail démoniaque' : ' a dû fuir le portail démoniaque') + ' (niveau ' + L + ')'
         : win ? ' revient vainqueur ' + (th === 'crypte' ? 'de la crypte des rois' : 'de la mine des gobelins') + ' (niveau ' + L + ')' : ' a dû fuir ' + (th === 'crypte' ? 'la crypte des rois' : 'la mine des gobelins') + ' (niveau ' + L + ')';
       addLog(v, t, hh.name + what + ' : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + (nItems ? ', ' + nItems + ' objet' + (nItems > 1 ? 's' : '') : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : '') + (autoSold ? ' Sac plein : ' + autoSold + ' objet' + (autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + autoGold + ' or.' : ''), 'dj');
@@ -919,9 +933,11 @@ function applyV(v, a, who) {
       /* Portail démoniaque vaincu : il se referme (s'il est encore ouvert) ; tous refermés = pas de raid cette fois. */
       const closed = th === 'portail' && win ? raidClosePortal(v, t, a.pi | 0, hh.name) : null;
       /* Pour la garnison (réserve commune) : orbes et bannières ; à deux, seulement chez l'hôte (gar: 0 chez l'invitée) */
-      const gar = win && a.gar !== 0 ? garLoot(v, th, L, deep) : { orbs: [], ban: null };
+      const gar = win && a.gar !== 0 && th !== 'source' ? garLoot(v, th, L, deep) : { orbs: [], ban: null };
+      /* La mission d'intro gagnée : Lilou arrive au village (une seule fois) */
+      const story = th === 'source' && win ? lilouArrive(v, t, hh) : null;
       if (gar.orbs.length || gar.ban) addLog(v, t, 'Pour la garnison : ' + gar.orbs.map(orbLabel).concat(gar.ban ? [banLabel(gar.ban) + (gar.ban.sold ? ' (réserve pleine : vendue)' : '')] : []).join(', ') + '.', 'sol');
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed, orbs: gar.orbs, ban: gar.ban };
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed, orbs: gar.orbs, ban: gar.ban, lilou: story };
     }
     /* ---------- équipement (étape 3) ---------- */
     case 'equip': {
@@ -1057,6 +1073,8 @@ function applyV(v, a, who) {
   }
   /* La garnison (p2g_garnison.js) : recruter, promouvoir, affecter aux postes, équiper, orbes et bannières. */
   const g = applyGar(v, a, nm, t); if (g) return g;
+  /* L'histoire (p2s_histoire.js) : les caprices de Lilou. */
+  const sy = applyStory(v, a, nm, t); if (sy) return sy;
   return fail('Action inconnue.');
 }
 
@@ -1725,6 +1743,8 @@ function raidInput(v, t) {
   const stock = {}; for (const k of RAID_LOOT.concat(['or'])) stock[k] = Math.floor(v.r[k] || 0);
   const inp = { t, n: R.n | 0, sd: R.sd, L: raidLevel(v), P: R.p.map((p, i) => [p[0], p[1], p[2], R.cl[i] ? 1 : 0]), B, H, F: raidForce(v, R, open), R: stock };
   const G = raidGuards(v, t); if (G.length) inp.G = G;
+  /* L'humeur de Lilou (l'histoire) : les gobelins frappent plus ou moins fort */
+  const M = lilouMul(v); if (M !== 1) inp.M = M;
   return inp;
 }
 
@@ -1733,7 +1753,7 @@ function raidMark(st, S, val) { for (let y = S.y0; y < S.y0 + S.s; y++) for (let
 function raidStart(inp) {
   const N = GRID * GRID, L = Math.max(1, inp.L | 0);
   const st = {
-    inp, t: 0, n: 0, rs: (inp.sd ^ 0x2545f491) >>> 0, over: false, ev: [],
+    inp, t: 0, n: 0, rs: (inp.sd ^ 0x2545f491) >>> 0, over: false, ev: [], mood: +inp.M || 1,
     S: [], occ: new Int16Array(N), trapAt: new Int16Array(N), traps: [], towers: [], foes: [], heroes: [], posts: [], guards: [],
     ff: {}, hf: new Map(), gen: 0, hall: -1, stores: [],
     stock: Object.assign({}, inp.R), taken: {}, lost: {}, back: {}, kills: 0, esc: 0, gold: 0, xp: 0, heart: 0, broke: 0,
@@ -1786,7 +1806,7 @@ function raidStart(inp) {
   inp.F.forEach((f, i) => {
     const type = RAID_FOES[f[0]] ? f[0] : 'gobelin', D = RAID_FOES[type], k = st.mul;
     st.foes.push({ id: 100 + i, type, kind: 'mob', pi: Math.max(0, Math.min(inp.P.length - 1, f[1] | 0)), delay: +f[2] || 0, on: false, dead: false, out: false,
-      r: D.r, big: type === 'troll', hp: r1(D.hp * k), hpMax: r1(D.hp * k), dmg: r1(D.dmg * k), sdmg: r1(D.sdmg * k), rate: D.rate, reach: D.reach, speed: D.speed,
+      r: D.r, big: type === 'troll', hp: r1(D.hp * k), hpMax: r1(D.hp * k), dmg: r1(D.dmg * k * st.mood), sdmg: r1(D.sdmg * k * st.mood), rate: D.rate, reach: D.reach, speed: D.speed,
       carry: D.carry, wall: D.wall, fight: !!D.fight, thief: !!D.thief, x: 0, y: 0, px: 0, py: 0, fx: 0, fy: 1, mv: false, atkT: 0.5, atkN: 0, goal: 't', tk: 'h', pl: 0, loot: null, root: 0 });
   });
   return st;
@@ -2217,12 +2237,127 @@ function raidApply(v, t, inp, res) {
   if (orbs.length) addLog(v, t, 'Défense réussie : ' + orbs.map(orbLabel).join(', ') + ' pour la garnison.', 'sol');
   v.lastRaid = { t, n: inp.n, sd: inp.sd, L: inp.L, P: inp.P, B: inp.B, H: inp.H, F: inp.F, R: inp.R, res };
   if (inp.G) v.lastRaid.G = inp.G;
+  if (inp.M) v.lastRaid.M = inp.M;
   if (orbs.length) v.lastRaid.orbs = orbs;
   const rnd = mulberry32((inp.sd ^ 0x63d83595) >>> 0);
   v.raid = { n: (inp.n | 0) + 1, next: t + RAID_GAP + Math.floor(rnd() * (RAID_GAP_RND / MIN)) * MIN, closed: (v.raid && v.raid.closed) | 0 };
 }
 /* Rediffusion : le même combat, rejoué à partir de ce que le village a gardé. */
-const raidReplay = lr => raidStart({ t: lr.t, n: lr.n, sd: lr.sd, L: lr.L, P: lr.P, B: lr.B, H: lr.H, F: lr.F, R: lr.R, G: lr.G });
+const raidReplay = lr => raidStart({ t: lr.t, n: lr.n, sd: lr.sd, L: lr.L, P: lr.P, B: lr.B, H: lr.H, F: lr.F, R: lr.R, G: lr.G, M: lr.M });
+
+/* ===================== L'HISTOIRE (lot A) : Lilou, son humeur et ses caprices =====================
+   Lilou arrive au village au bout de la mission « La Source du Mal » (donjon guidé, thème 'source' de p2d_donjon.js).
+   v.lilou = { at (arrivée), by (héros qui l'a ramenée), mood (0 à 100), d: caprice du jour { n, k, ok }, w: gros caprice de la semaine { n, k, ok },
+               party (fin de la fête pour Lilou : +10 de moral), nd, nw (caprices satisfaits) }.
+   Tout se calcule pareil sur les deux téléphones : jours comptés depuis l'arrivée de Lilou, caprices tirés avec la graine du village. */
+const LILOU = { start: 60, day: 12, dayMiss: 12, week: 25, weekMiss: 20, party: 10 };
+/* Son humeur : du plus bas au plus haut (seuil, nom, effet sur les dégâts des monstres, en donjon comme en raid). */
+const LILOU_MOODS = [
+  { min: 0, k: 'colere', name: 'en colère', mul: 1.1 },
+  { min: 20, k: 'grognon', name: 'grognon', mul: 1.05 },
+  { min: 40, k: 'calme', name: 'calme', mul: 1 },
+  { min: 60, k: 'contente', name: 'contente', mul: 0.95 },
+  { min: 80, k: 'ravie', name: 'ravie', mul: 0.9 },
+];
+/* Un caprice par jour, à fabriquer avec les ressources du village. */
+const CAPRICES = {
+  hochet: { name: 'un hochet', cost: { bois: 30, pierre: 10 }, txt: 'Un hochet en bois, avec des cailloux dedans qui font un bruit épouvantable.' },
+  cubes: { name: 'des cubes', cost: { bois: 40 }, txt: 'Des cubes de bois à empiler, puis à jeter sur le chat.' },
+  cheval: { name: 'un cheval à bascule', cost: { bois: 70, pierre: 20 }, txt: 'Un cheval à bascule, pour charger les gobelins imaginaires.' },
+  bouillie: { name: 'une bouillie', cost: { ble: 30 }, txt: 'Une bouillie de blé bien chaude (dont la moitié finira par terre).' },
+  biscuits: { name: 'des biscuits', cost: { pain: 25 }, txt: 'Des biscuits à mâchouiller, pour ses premières dents.' },
+};
+/* Un gros caprice par semaine : plus cher, et toute la vallée en profite (+10 de moral pendant un jour). */
+const BIG_CAPRICES = {
+  anniv: { name: 'un anniversaire à la taverne', cost: { pain: 60, viande: 60, biere: 20 }, txt: 'Tout le village à la taverne, des chansons, un gâteau, et Lilou au milieu.', need: v => hasTavern(v) && built(v, 'brasserie') > 0, needTxt: 'Il faut une taverne et une brasserie.' },
+  manege: { name: 'un manège', cost: { bois: 220, pierre: 100 }, txt: 'Un manège de chevaux de bois sur la place du village.' },
+  cabane: { name: 'une cabane', cost: { bois: 260 }, txt: 'Une cabane dans un arbre, avec un drapeau (rose).' },
+  feux: { name: 'des feux d’artifice', cost: { or: 150 }, txt: 'Des feux d’artifice achetés au marchand, pour illuminer la vallée.' },
+};
+/* « de » + nom : d’un manège, d’une cabane, de feux d’artifice */
+const deOf = s => s.indexOf('des ') === 0 ? 'de ' + s.slice(4) : 'd’' + s;
+/* après une négation : de hochet, d’anniversaire… */
+const negOf = s => { const w = s.replace(/^(un|une|des) /, ''); return (/^[aeiouyhéèêâ]/i.test(w) ? 'd’' : 'de ') + w; };
+const lilouDay = (L, t) => Math.floor(Math.max(0, t - L.at) / DAY);
+const lilouWeek = (L, t) => Math.floor(Math.max(0, t - L.at) / (7 * DAY));
+const lilouNextDay = L => L.at + (L.d ? L.d.n + 1 : 1) * DAY;
+const lilouNextWeek = L => L.at + (L.w ? L.w.n + 1 : 1) * 7 * DAY;
+const lilouMood = L => LILOU_MOODS.reduce((a, m) => ((L ? L.mood : LILOU.start) >= m.min ? m : a), LILOU_MOODS[0]);
+/* Effet sur les dégâts des monstres (1 tant que Lilou n'est pas au village). */
+const lilouMul = v => (v && v.lilou ? lilouMood(v.lilou).mul : 1);
+/* Les prix grandissent un peu avec le village (halle 1 : prix de base ; halle 5 : deux fois plus). */
+function capCost(v, k, big) {
+  const C = (big ? BIG_CAPRICES : CAPRICES)[k]; if (!C) return {};
+  const f = 1 + 0.25 * (hallLvl(v) - 1), out = {};
+  for (const r in C.cost) out[r] = Math.round(C.cost[r] * f / 5) * 5;
+  return out;
+}
+function lilouAdd(L, n) { L.mood = Math.max(0, Math.min(100, Math.round((L.mood == null ? LILOU.start : L.mood) + n))); }
+/* Tirage d'un caprice (jamais deux fois le même de suite). */
+function lilouPick(v, keys, n, salt, avoid) {
+  const R = mulberry32(hash((v.seed ^ Math.imul(n + 1, salt)) >>> 0));
+  let k = keys[Math.floor(R() * keys.length)];
+  if (k === avoid && keys.length > 1) k = keys[(keys.indexOf(k) + 1 + Math.floor(R() * (keys.length - 1))) % keys.length];
+  return k;
+}
+/* Un caprice oublié : son humeur baisse (« Elle est maintenant grognon. », ou « Elle reste ravie… pour l’instant. ») */
+function lilouSulk(L, n) {
+  const before = lilouMood(L).name; lilouAdd(L, -n);
+  const now = lilouMood(L).name;
+  return now !== before ? 'Elle est maintenant ' + now + '.' : 'Elle reste ' + now + '… pour l’instant.';
+}
+/* Appelé à chaque minute par stepVillage : nouveau jour, nouvelle semaine (un caprice oublié la rend grognon). */
+function lilouTick(v) {
+  const L = v.lilou; if (!L) return;
+  const t = v.t, dn = lilouDay(L, t), wn = lilouWeek(L, t);
+  if (!L.d || L.d.n !== dn) {
+    if (L.d && !L.d.ok) addLog(v, t, 'Lilou boude : personne ne lui a fabriqué ' + negOf(CAPRICES[L.d.k].name) + '. ' + lilouSulk(L, LILOU.dayMiss), 'lilou');
+    const k = lilouPick(v, Object.keys(CAPRICES), dn, 2654435761, L.d && L.d.k);
+    L.d = { n: dn, k, ok: 0 };
+    addLog(v, t, 'Caprice du jour : Lilou veut ' + CAPRICES[k].name + '.', 'lilou');
+  }
+  if (!L.w || L.w.n !== wn) {
+    if (L.w && !L.w.ok) addLog(v, t, 'Lilou n’a pas eu ' + negOf(BIG_CAPRICES[L.w.k].name) + ' : quelle déception ! ' + lilouSulk(L, LILOU.weekMiss), 'lilou');
+    const keys = Object.keys(BIG_CAPRICES).filter(k => !BIG_CAPRICES[k].need || BIG_CAPRICES[k].need(v));
+    const k = lilouPick(v, keys, wn, 40503, L.w && L.w.k);
+    L.w = { n: wn, k, ok: 0 };
+    addLog(v, t, 'Gros caprice de la semaine : Lilou rêve ' + deOf(BIG_CAPRICES[k].name) + '.', 'lilou');
+  }
+}
+/* Fin de la mission « La Source du Mal » : Lilou arrive, avec sa chambre près de la halle (une seule fois par village). */
+function lilouArrive(v, t, hh) {
+  if (v.lilou) return null;
+  const hall = v.b.find(b => b.type === 'halle');
+  const sp = freeSpot(v, 'chambre', hall ? hall.gx + 1 : 11, hall ? hall.gz + 1 : 11);
+  if (sp) v.b.push({ id: v.nid++, type: 'chambre', lvl: 1, gx: sp[0], gz: sp[1], up: null });
+  v.lilou = { at: t, by: hh ? hh.id : '', mood: LILOU.start, party: 0, nd: 0, nw: 0 };
+  addLog(v, t, (hh ? hh.name : 'Un héros') + ' revient de la Source du Mal avec… un bébé ! Lilou s’installe au village' + (sp ? ', dans sa chambre près de la halle.' : '.'), 'lilou');
+  lilouTick(v);
+  return { chambre: !!sp };
+}
+/* Les actions de l'histoire (appelées par applyV). */
+function applyStory(v, a, nm, t) {
+  const fail = err => ({ ok: false, err });
+  switch (a.type) {
+    case 'lilouCap': {
+      /* Satisfaire le caprice du jour (w: 0) ou le gros caprice de la semaine (w: 1). */
+      const L = v.lilou; if (!L) return fail('Lilou n’est pas encore au village.');
+      lilouTick(v);
+      const big = !!a.w, cap = big ? L.w : L.d, C = cap && (big ? BIG_CAPRICES : CAPRICES)[cap.k];
+      if (!C) return fail('Pas de caprice en ce moment.');
+      if (cap.ok) return fail(big ? 'Le gros caprice de la semaine est déjà offert.' : 'Le caprice du jour est déjà fait : revenez demain.');
+      if (big && C.need && !C.need(v)) return fail(C.needTxt || 'Pas possible pour l’instant.');
+      const c = capCost(v, cap.k, big), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); cap.ok = 1;
+      const before = lilouMood(L).k;
+      lilouAdd(L, big ? LILOU.week : LILOU.day);
+      if (big) { L.party = t + DAY; L.nw = (L.nw | 0) + 1; } else L.nd = (L.nd | 0) + 1;
+      addLog(v, t, big ? nm + ' offre ' + C.name + ' à Lilou : toute la vallée fait la fête !' : nm + ' fabrique ' + C.name + ' pour Lilou : elle gazouille de joie.', 'lilou');
+      return { ok: true, k: cap.k, big, mood: lilouMood(L).k, up: before !== lilouMood(L).k };
+    }
+  }
+  return null;
+}
 
 /* ===================== DONJONS : fabrication à partir d'une graine (pur, sans DOM) =====================
    Même graine + même niveau = même donjon, sur les deux téléphones. Une case = 1 unité (≈ un personnage). */
@@ -2256,6 +2391,8 @@ const DJ_BOSSES = {
   chefTroll: { name: 'Chef troll', hp: 520, dmg: 16, speed: 1.8, range: 1.6, rate: 2.1, xp: 80, big: true, boss: true },
   roiSquelette: { name: 'Roi squelette', hp: 560, dmg: 15, speed: 1.9, range: 1.7, rate: 2.0, xp: 85, big: true, boss: true },
   gardien: { name: 'Gardien du portail', hp: 540, dmg: 15, speed: 1.9, range: 1.7, rate: 2.0, xp: 85, big: true, boss: true },
+  /* l'histoire (lot A) : le gardien de la Source du Mal, un gros troll qui annonce son coup (de quoi apprendre la roulade) */
+  gardeSource: { name: 'Gardien de la Source', hp: 230, dmg: 8, speed: 1.6, range: 1.6, rate: 2.2, xp: 40, big: true, boss: true },
 };
 /* Renforts des boss qui appellent à l'aide (tempête d'os ou pluie de feu) */
 const DJ_BOSS_ADDS = { roiSquelette: ['squelette', 'squelette', 'squelette', 'archerSq'], gardien: ['diablotin', 'diablotin', 'diablotin', 'lanceflamme'] };
@@ -2263,6 +2400,8 @@ const DJ_THEMES = {
   mine: { name: 'Mine des gobelins', the: 'la mine des gobelins', monsters: ['gobelin', 'archer', 'chaman', 'troll'], boss: 'chefTroll' },
   crypte: { name: 'Crypte des rois', the: 'la crypte des rois', monsters: ['squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem'], boss: 'roiSquelette' },
   portail: { name: 'Portail démoniaque', the: 'le portail démoniaque', monsters: ['diablotin', 'lanceflamme', 'gobelin', 'troll'], boss: 'gardien', rooms: 3 },
+  /* la mission d'intro (l'histoire) : un petit donjon fait main, guidé par Sukhoï (genSource) */
+  source: { name: 'La Source du Mal', the: 'la Source du Mal', monsters: ['gobelin', 'archer', 'chaman'], boss: 'gardeSource', rooms: 3 },
 };
 const DJ_PRISONER_CHANCE = lvl => Math.min(0.10, 0.03 + 0.007 * lvl);   // rare : de 4 % (niveau 1) à 10 %
 
@@ -2288,6 +2427,7 @@ const djCenter = r => [r.x + (r.w >> 1), r.y + (r.h >> 1)];
 /* Fabrique un donjon : 5 à 6 salles de combat (2 ou 3 vagues de monstres chacune) + l'arène du boss, une salle annexe (trésor ou prisonnier).
    opts (étages des Profondeurs) : { rooms: nombre de salles de combat, boss: false pour un étage sans boss }. */
 function genDungeon(seed, lvl, theme, opts) {
+  if (theme === 'source') return genSource(seed);
   const o = opts || {}, R = mulberry32((seed ^ 0x9e3779b9) >>> 0), pick = a => a[Math.floor(R() * a.length)];
   const T = DJ_THEMES[theme] || DJ_THEMES.mine, coin = R() < 0.5 ? 1 : 0, nFight = o.rooms || T.rooms || 5 + coin, withBoss = o.boss !== false;
   let rooms = null;
@@ -2358,6 +2498,30 @@ function genDungeon(seed, lvl, theme, opts) {
   const pris = rooms.find(r => r.kind === 'prisoner');
   return { seed, lvl, theme: DJ_THEMES[theme] ? theme : 'mine', W, H, grid, rooms, start: djCenter(rooms[0]), monsters, traps, chests, altar,
     prisoner: pris ? djCenter(pris) : null, exitRoom: rooms.indexOf(chain[chain.length - 1]), floor: o.floor || 0 };
+}
+/* La Source du Mal (mission d'intro) : toujours le même petit donjon, fait main. Entrée, 3 salles d'une seule vague
+   (2 gobelins ; 3 gobelins, un archer et un coffre ; 2 gobelins et un chaman), puis la salle de la Source : le gardien,
+   et au fond le berceau (la sortie). Personne n'y meurt : Sukhoï relève le héros (st.noDeath). */
+function genSource(seed) {
+  const rooms = [
+    { k: 'entree', w: 8, h: 8, shape: 'rect', kind: 'start', x: 2, y: 5 },
+    { k: 'carree', w: 9, h: 9, shape: 'rect', kind: 'fight', x: 15, y: 4 },
+    { k: 'longue', w: 11, h: 9, shape: 'rect', kind: 'fight', x: 30, y: 4 },
+    { k: 'carree', w: 9, h: 9, shape: 'pillars', kind: 'fight', x: 47, y: 4 },
+    { k: 'source', w: 13, h: 13, shape: 'arena', kind: 'boss', x: 62, y: 2 },
+  ];
+  const W = 77, H = 17, grid = new Uint8Array(W * H);
+  for (const r of rooms) r.cells = djCarve(grid, W, r.x, r.y, r.w, r.h, r.shape);
+  for (let i = 1; i < rooms.length; i++) djCorridor(grid, W, djCenter(rooms[i - 1]), djCenter(rooms[i]));
+  let mid = 1; const monsters = [];
+  const put = (ri, type, dx, dy, boss) => { const r = rooms[ri]; monsters.push({ id: mid++, room: ri, type, x: r.x + dx + 0.5, y: r.y + dy + 0.5, wave: 0, boss: !!boss }); };
+  put(1, 'gobelin', 5, 3); put(1, 'gobelin', 6, 6);
+  put(2, 'gobelin', 4, 2); put(2, 'gobelin', 6, 6); put(2, 'gobelin', 8, 4); put(2, 'archer', 9, 2);
+  put(3, 'gobelin', 4, 3); put(3, 'gobelin', 5, 6); put(3, 'chaman', 7, 4);
+  put(4, 'gardeSource', 6, 6, true);
+  const B = rooms[4];
+  return { seed, lvl: 1, theme: 'source', W, H, grid, rooms, start: djCenter(rooms[0]), monsters, traps: [], chests: [{ room: 2, x: rooms[2].x + 9.5, y: rooms[2].y + 7.5 }], altar: null,
+    prisoner: null, exitRoom: 4, floor: 0, cradle: [B.x + B.w - 3, B.y + (B.h >> 1)], tuto: true };
 }
 /* Cases atteignables depuis l'entrée (pour vérifier qu'aucune salle n'est coupée du reste). */
 function djReach(d) {
@@ -2542,6 +2706,7 @@ function djStart(d, heroes, opts) {
     traps: d.traps.map((t, i) => ({ x: t.x, y: t.y, ph: (i * 0.37) % 2.4, on: false, hit: {} })),
     exit: null, bless: null, xp: 0, loot: {}, kills: 0, flow: null, flowN: -99, boss: 0, calmT: 0, gold: 0, items: {}, gems: {},
     pk: 1 + 0.7 * (heroes.length - 1),
+    noDeath: !!d.tuto, tuto: d.tuto ? { on: '', done: {}, x0: d.start[0] + 0.5, y0: d.start[1] + 0.5, pot0: 0, slam: 0 } : null,
   };
   for (const h of st.heroes) if (o.remote && h.id === o.remote) h.remote = true;
   d.rooms.forEach((r, ri) => { for (const [x, y] of r.cells) st.roomAt[y * W + x] = ri; });
@@ -2550,6 +2715,7 @@ function djStart(d, heroes, opts) {
   for (const m of d.monsters) {
     const mob = djMob(st, m.type, m.x, m.y, m.room, !!m.boss); mob.wave = m.wave || 0; mob.hidden = mob.wave > 0; st.mobs.push(mob);
     if (mob.boss) st.boss = mob.id;
+    if (mob.type === 'gardeSource') mob.sp.slam = 2.5;
     st.rooms[m.room].waves = Math.max(st.rooms[m.room].waves, mob.wave + 1);
   }
   if (st.heroes.some(h => h.cls === 'pretre' && h.lvl >= 4)) for (const h of st.heroes) { h.hpBase *= 1.1; h.hpMax = h.hp = h.hpBase; }   // Bénédiction
@@ -2564,6 +2730,7 @@ function djStart(d, heroes, opts) {
   for (const h of st.heroes) if (h.pet) st.allies.push({ id: st.nid++, kind: 'pet', pt: h.pet, own: h.id, x: h.x - 0.8, y: h.y + 0.8, px: h.x - 0.8, py: h.y + 0.8, r: 0.25, hp: 1, hpMax: 1,
     dmg: h.dmg * 0.35 * (h.cls === 'rodeur' && h.spec === 1 ? 3 : 1) * (h.pet === 'loup' ? 1.3 : h.pet === 'faucon' ? 0.8 : 1), range: 1.1, rate: 1.2, speed: 5.5, atkT: 0, t: 1e9, inv: true, tgt: 0, mv: false, atkN: 0 });
   st.goldMul = 1 + st.heroes.reduce((a, h) => a + (h.gold || 0), 0);
+  if (st.tuto && st.heroes[0]) st.tuto.pot0 = st.heroes[0].pot;
   return st;
 }
 
@@ -2644,7 +2811,8 @@ function djDamageHero(st, h, v) {
   if (h.dead || !(v > 0)) return 0;
   h.hp -= v; st.ev.push({ k: 'hurt', id: h.id, v: Math.round(v) });
   if (h.hp <= 0) {
-    if (h.pw && h.pw.sursis && !h.sursis) { h.sursis = true; h.hp = 1; h.b.inv = 2; st.ev.push({ k: 'sursis', id: h.id }); }   // Dernier Rempart (légendaire)
+    if (st.noDeath) { h.hp = Math.max(1, h.hpMax * 0.35); h.b.inv = 2; st.ev.push({ k: 'saved', id: h.id }); }       // la mission d'intro : Sukhoï le relève
+    else if (h.pw && h.pw.sursis && !h.sursis) { h.sursis = true; h.hp = 1; h.b.inv = 2; st.ev.push({ k: 'sursis', id: h.id }); }   // Dernier Rempart (légendaire)
     else if (h.race === 'mortvivant' && !h.revived) { h.revived = true; h.hp = h.hpMax * 0.4; h.b.inv = 1.5; st.ev.push({ k: 'revive', id: h.id }); }
     else { h.hp = 0; h.dead = true; h.form = null; h.mv = false; st.ev.push({ k: 'down', id: h.id }); }
   }
@@ -3081,9 +3249,9 @@ function djBossRoi(st, m) {
 }
 /* Le chef troll : coup de massue en cercle, charge, renforts à 66 % et 33 % de vie, rage sous 25 %. */
 function djBossTroll(st, m) {
-  const S = m.sp, dt = DJ_DT;
+  const S = m.sp, dt = DJ_DT, tuto = m.type === 'gardeSource';
   S.slam -= dt; S.charge -= dt;
-  if ((S.phase === 0 && m.hp < m.hpMax * 0.66) || (S.phase === 1 && m.hp < m.hpMax * 0.33)) {
+  if (!tuto && ((S.phase === 0 && m.hp < m.hpMax * 0.66) || (S.phase === 1 && m.hp < m.hpMax * 0.33))) {
     S.phase++;
     const R = st.d.rooms[m.room], c = djCenter(R);
     ['gobelin', 'gobelin', 'archer'].forEach((type, k) => {
@@ -3092,10 +3260,10 @@ function djBossTroll(st, m) {
     });
     st.ev.push({ k: 'summon', id: m.id, x: m.x, y: m.y, boss: true });
   }
-  if (!S.enr && m.hp < m.hpMax * 0.25) { S.enr = true; m.rate *= 0.7; m.speed *= 1.2; st.ev.push({ k: 'enrage', id: m.id }); }
+  if (!tuto && !S.enr && m.hp < m.hpMax * 0.25) { S.enr = true; m.rate *= 0.7; m.speed *= 1.2; st.ev.push({ k: 'enrage', id: m.id }); }
   if (S.act === 'slam') {
     S.actT -= dt; m.mv = false;
-    if (S.actT <= 0) { for (const t of djFoes(st)) if (djDist(m, t) <= 3 + t.r) djHit(st, t, m.dmg * 1.6); st.ev.push({ k: 'slam', id: m.id, x: m.x, y: m.y, r: 3 }); S.act = null; S.slam = 7; }
+    if (S.actT <= 0) { for (const t of djFoes(st)) if (djDist(m, t) <= 3 + t.r) djHit(st, t, m.dmg * 1.6); st.ev.push({ k: 'slam', id: m.id, x: m.x, y: m.y, r: 3 }); S.act = null; S.slam = tuto ? 6 : 7; }
     return true;
   }
   if (S.act === 'chargeW') { S.actT -= dt; m.mv = false; if (S.actT <= 0) { S.act = 'charge'; S.actT = 0.85; S.hit = []; st.ev.push({ k: 'charge', id: m.id }); } return true; }
@@ -3113,8 +3281,8 @@ function djBossTroll(st, m) {
   if (m.wind > 0) return false;
   const t = djMobTarget(st, m); if (!t) return false;
   const dd = djDist(m, t);
-  if (S.slam <= 0 && dd <= 3.5) { S.act = 'slam'; S.actT = 1.0; st.ev.push({ k: 'tele', id: m.id, a: 'slam', x: m.x, y: m.y, r: 3, t: 1.0 }); return true; }
-  if (S.charge <= 0 && dd >= 3 && dd <= 10 && djLos(st, m.x, m.y, t.x, t.y)) {
+  if (S.slam <= 0 && dd <= 3.5) { const tt = tuto ? 1.4 : 1.0; S.act = 'slam'; S.actT = tt; st.ev.push({ k: 'tele', id: m.id, a: 'slam', x: m.x, y: m.y, r: 3, t: tt }); if (st.tuto) st.tuto.slam = 1; return true; }
+  if (!tuto && S.charge <= 0 && dd >= 3 && dd <= 10 && djLos(st, m.x, m.y, t.x, t.y)) {
     S.dx = (t.x - m.x) / dd; S.dy = (t.y - m.y) / dd; S.act = 'chargeW'; S.actT = 0.8;
     st.ev.push({ k: 'tele', id: m.id, a: 'charge', x: m.x, y: m.y, dx: S.dx, dy: S.dy, len: 9, t: 0.8 }); return true;
   }
@@ -3187,7 +3355,7 @@ function djWorld(st) {
       R.st = 'clear'; for (const k of st.doors[ri]) st.door[k] = 0;
       const boss = d.rooms[ri].kind === 'boss';
       const left = st.rooms.some((R2, i) => (d.rooms[i].kind === 'fight' || d.rooms[i].kind === 'boss') && R2.st !== 'clear');
-      if (!left && !st.exit) { const c = djCenter(d.rooms[d.exitRoom != null ? d.exitRoom : ri]); st.exit = { x: c[0] + 0.5, y: c[1] + 0.5 }; }
+      if (!left && !st.exit) { const c = d.cradle || djCenter(d.rooms[d.exitRoom != null ? d.exitRoom : ri]); st.exit = { x: c[0] + 0.5, y: c[1] + 0.5 }; }
       st.ev.push({ k: 'clear', room: ri, boss });
       for (const h of st.heroes) if (h.dead && !h.gone) djRaise(st, h, 0.3, 0);      // salle nettoyée : l'allié tombé se relève
       return;
@@ -3264,12 +3432,34 @@ function djStep(st, inputs) {
   for (const s of st.shots) djShotStep(st, s);
   for (const z of st.zones) djZoneStep(st, z);
   djWorld(st);
+  if (st.tuto) djTuto(st);
   st.mobs = st.mobs.filter(m => m.hp > 0);
   st.allies = st.allies.filter(a => a.inv || a.hp > 0);
   st.shots = st.shots.filter(s => !s.dead);
   st.zones = st.zones.filter(z => !z.dead);
   st.corpses = st.corpses.filter(c => st.t - c.t < 10);
   return st;
+}
+/* La mission d'intro, guidée par Sukhoï : chaque étape s'annonce ({ k: 'tuto', s }) quand elle devient utile et se valide
+   ({ k: 'tutoOk', s }) quand le joueur l'a faite ; une seule bulle à la fois (la première étape en cours, dans l'ordre). */
+const DJ_TUTO = [
+  { s: 'move', on: () => true, ok: (st, h, T) => Math.hypot(h.x - T.x0, h.y - T.y0) > 3 },
+  { s: 'fight', on: st => st.mobs.some(m => m.awake && m.hp > 0), ok: st => st.kills > 0 },
+  { s: 'roll', on: (st, h, T) => !!T.slam, ok: (st, h) => (h.rollN | 0) > 0, end: st => !!st.exit },
+  { s: 'potion', on: (st, h) => h.hp < h.hpMax * 0.6 && h.pot > 0, ok: (st, h, T) => h.pot < T.pot0, end: (st, h) => h.hp >= h.hpMax * 0.95 || h.pot <= 0 },
+  { s: 'skill', on: (st, h) => st.kills > 0 && h.rank[0] > 0 && st.mobs.some(m => m.awake && m.hp > 0), ok: (st, h) => h.castN > 0, end: st => !!st.exit },
+  { s: 'chest', on: st => st.chests.some(c => !c.open && st.rooms[c.room].st === 'clear'), ok: st => st.chests.every(c => c.open), end: st => st.rooms.some((R, i) => st.d.rooms[i].kind === 'boss' && R.st !== 'idle') },
+  { s: 'cradle', on: st => !!st.exit, ok: st => st.over === 'win' },
+];
+function djTuto(st) {
+  const T = st.tuto, h = st.heroes[0]; if (!h) return;
+  for (const S of DJ_TUTO) {
+    if (T.done[S.s]) continue;
+    if (S.ok(st, h, T)) { T.done[S.s] = 1; st.ev.push({ k: 'tutoOk', s: S.s }); if (T.on === S.s) T.on = ''; continue; }
+    if (S.end && S.end(st, h, T)) { T.done[S.s] = 1; if (T.on === S.s) T.on = ''; continue; }
+  }
+  const next = DJ_TUTO.find(S => !T.done[S.s] && S.on(st, h, T));
+  if (next && T.on !== next.s) { T.on = next.s; st.ev.push({ k: 'tuto', s: next.s }); }
 }
 function djFlee(st) { if (!st.over) { st.fled = true; st.over = 'lose'; st.ev.push({ k: 'lose', fled: true }); } }
 /* Bilan : victoire = tout ; défaite ou fuite = moitié de l'expérience et du butin. Le prisonnier délivré est sauvé dans tous les cas. */
@@ -3303,9 +3493,9 @@ function djProgress(st) {
 /* ===================== DONJONS À DEUX : l'hôte simule, l'invitée affiche =====================
    Le téléphone de l'hôte fait tourner le combat et envoie l'état ~7 fois par seconde ; celui de l'invitée l'affiche
    (en lissant), déplace lui-même son héros (pour qu'il réponde tout de suite) et envoie sa position et ses boutons. */
-const DJ_PV = 5;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent (4 : donjon du portail, 5 : roulade)
+const DJ_PV = 6;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent (4 : donjon du portail, 5 : roulade, 6 : humeur de Lilou)
 const DJ_PETS = ['loup', 'faucon', 'sanglier', 'chouette'];
-const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette', 'diablotin', 'lanceflamme', 'gardien'];
+const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette', 'diablotin', 'lanceflamme', 'gardien', 'gardeSource'];
 const DJ_ST = { idle: 'i', lock: 'l', clear: 'c', open: 'o', fight: 'f' }, DJ_STR = { i: 'idle', l: 'lock', c: 'clear', o: 'open', f: 'fight' };
 const djR1 = x => Math.round(x * 10) / 10, djR2 = x => Math.round(x * 100) / 100;
 /* Instantané envoyé par l'hôte (nombres arrondis, listes courtes). evs : événements depuis le précédent (pour les effets). */
@@ -4521,7 +4711,47 @@ const V3 = (() => {
     if (lv >= 2) g.add(P('cone6', 0xc9d0d6, 0.12, 0.18, 0.12, 0, y + 0.14 + H, 0, 0, true));
     return { g, info: { top: y + H + 0.45, muzzle: 1, emit: [] } };
   }
-  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG, caserne: caserneG, poste: posteG };
+  /* L'histoire (lot A) : le berceau de Lilou et Sukhoï, dessinés par le code en attendant leurs modèles Meshy. */
+  function cradleG() {
+    const g = new THREE.Group(), wood = 0x9a6a3e;
+    for (const x of [-0.3, 0.3]) g.add(P('box', 0x7a5230, 0.06, 0.06, 0.5, x, 0, 0, 0, true));                 // les patins (berceau à bascule)
+    g.add(P('box', wood, 0.66, 0.08, 0.42, 0, 0.08, 0));
+    for (const x of [-0.3, -0.15, 0, 0.15, 0.3]) for (const z of [-0.19, 0.19]) g.add(P('cyl6', 0xb07a48, 0.03, 0.26, 0.03, x, 0.16, z, 0, true));
+    for (const z of [-0.19, 0.19]) g.add(P('box', wood, 0.68, 0.04, 0.04, 0, 0.42, z, 0, true));
+    for (const x of [-0.32, 0.32]) g.add(P('box', wood, 0.04, 0.34, 0.42, x, 0.12, 0, 0, true));
+    g.add(P('box', 0xf2b8c6, 0.5, 0.1, 0.34, 0.04, 0.16, 0, 0, true));                                           // la couverture rose
+    g.add(P('sph', 0xf3d3bd, 0.17, 0.16, 0.17, -0.2, 0.2, 0, 0, true));                                         // Lilou : la tête…
+    g.add(P('sph', 0xf2d27a, 0.12, 0.07, 0.12, -0.21, 0.34, 0, 0, true));                                       // … et sa houppette blonde
+    for (const z of [-0.035, 0.035]) g.add(P('sph', 0x4a7ad8, 0.03, 0.03, 0.03, -0.12, 0.27, z, 0, true));      // ses yeux bleus
+    return g;
+  }
+  function catG() {
+    /* Sukhoï endormie : une chatte grise roulée en boule, la tache blanche sur la poitrine, la queue autour d'elle */
+    const g = new THREE.Group(), grey = 0x8b9097, dark = 0x6d7178;
+    g.add(P('sph', grey, 0.42, 0.2, 0.3, 0, 0, 0));
+    g.add(P('sph', grey, 0.2, 0.17, 0.19, 0.17, 0.04, 0.07));
+    g.add(P('sph', 0xf4f1ea, 0.1, 0.08, 0.08, 0.2, 0.02, 0.15, 0, true));
+    for (const z of [0.0, 0.12]) g.add(P('cone4', dark, 0.06, 0.08, 0.05, 0.2, 0.18, z, 0, true));
+    g.add(piv(-0.16, 0.03, 0.12, [P('cyl6', dark, 0.05, 0.36, 0.05, 0, 0, 0, 0, true)], Math.PI / 2, 0.9, 0));
+    return g;
+  }
+  /* La chambre de Lilou : une petite maison douillette, le berceau devant la porte et Sukhoï qui dort à côté. */
+  function chambreG(it) {
+    const g = new THREE.Group(), y0 = 0.1, col = it.col || COLORS[0];
+    g.add(P('box', 0xa89a84, 1.7, y0, 1.6, 0, 0, 0));
+    g.add(P('box', 0xf1e3c8, 1.3, 0.72, 0.8, 0, y0, -0.36));
+    g.add(P('prism', 0xd4848e, 1.48, 0.55, 1.0, 0, y0 + 0.72, -0.36));
+    g.add(P('box', 0x7a5230, 0.26, 0.46, 0.04, 0.3, y0, 0.05, 0, true));
+    g.add(P('cyl12', winMat, 0.22, 0.03, 0.22, -0.32, y0 + 0.46, 0.05, 0, true));
+    g.add(P('box', 0x7a5230, 0.36, 0.06, 0.08, -0.32, y0 + 0.22, 0.08, 0, true));
+    for (const x of [-0.42, -0.32, -0.22]) g.add(P('sph', [0xf28fb0, 0xf6d36a, 0x9ad0f2][Math.round((x + 0.42) * 10)], 0.07, 0.07, 0.07, x, y0 + 0.28, 0.09, 0, true));
+    g.add(P('box', 0xe8d9b8, 1.5, 0.02, 0.62, 0, y0, 0.45, 0, true));
+    const c = cradleG(); c.position.set(-0.38, y0, 0.48); c.rotation.y = 0.2; g.add(c);
+    const k = catG(); k.position.set(0.32, y0 + 0.02, 0.56); k.rotation.y = -0.5; g.add(k);
+    g.add(flag(0.72, y0, -0.7, col, 1.0));
+    return { g, info: { top: y0 + 1.35, muzzle: 1, emit: [[-0.4, y0 + 1.2, -0.5]] } };
+  }
+  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG, caserne: caserneG, poste: posteG, chambre: chambreG };
   function build(it) {
     const s = BLD[it.type].size, g = new THREE.Group();
     let info = { top: 1.2, muzzle: 1, emit: [] };
@@ -5330,12 +5560,15 @@ const V3 = (() => {
     diablotin: { m: 'rogue', tex: 'orc_rogue', tint: 0xff8a6a, show: ['Knife'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.72, w: 0.95 },
     lanceflamme: { m: 'rogue', tex: 'orc_rogue', tint: 0xffb07a, show: ['Throwable'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.8, w: 0.95 },
     gardien: { m: 'barbarian', tex: 'troll', tint: 0xff7a5a, show: ['2H_Axe', 'Barbarian_Hat'], atk: '2H_Melee_Attack_Chop', h: 2.5, w: 1.45 },
+    /* la Source du Mal (mission d'intro) */
+    gardeSource: { m: 'barbarian', tex: 'troll', tint: 0xb89cff, show: ['2H_Axe'], atk: '2H_Melee_Attack_Chop', h: 2.2, w: 1.4 },
   };
   /* Couleurs du décor selon le donjon. */
   const DJ_LOOK = {
     mine: { room: [0x6b645a, 0x625b52, 0x736b5f], hall: [0x4f4a44, 0x57514a], wall: [0x5d564d, 0x534d45], torch: 0xffa040, light: 0xffb066 },
     crypte: { room: [0x5e626b, 0x565a63, 0x666a73], hall: [0x44474e, 0x4b4e55], wall: [0x4d5159, 0x454951], torch: 0x5fe0c8, light: 0xa8d8ff },
     portail: { room: [0x5a4442, 0x52403e, 0x63494a], hall: [0x40302f, 0x473534], wall: [0x4a3634, 0x412f2e], torch: 0xff5a2a, light: 0xff8a5a },
+    source: { room: [0x625c66, 0x5a5560, 0x6a636e], hall: [0x4a454f, 0x514b56], wall: [0x57515d, 0x4e4854], torch: 0xb98aff, light: 0xd2b0ff },
   };
   const DJ_HERO_ATK = { guerrier: '1H_Melee_Attack_Chop', paladin: '1H_Melee_Attack_Chop', rodeur: '2H_Ranged_Shoot', voleur: '1H_Melee_Attack_Slice_Diagonal' };
   const DJ_CAST_ANIM = { tourbillon: 'spin', cri: 'cheer', bouclier: 'cheer', consecration: 'cheer', poison: 'cheer', fumee: 'cheer', lumiere: 'cheer', priere: 'cheer', ours: 'cheer', loup: 'cheer', racines: 'cheer', squelettes: 'cheer', nova: 'cheer' };
@@ -5531,6 +5764,13 @@ const V3 = (() => {
       const mark = makeGlow(0xfff0a0, 0.9, 1.9); g.add(mark);
       djGroup.add(g); DJ.pris = { g, chains, mark, t: 0 };
     }
+    /* La Source du Mal : le berceau au fond de la dernière salle, dans une lueur inquiétante */
+    if (d.cradle) {
+      const g = new THREE.Group(); g.position.set(d.cradle[0] + 0.5 - half, 0, d.cradle[1] + 0.5 - half); g.rotation.y = -Math.PI / 4;
+      const c = cradleG(); c.scale.setScalar(1.3); g.add(c);
+      const glow = makeGlow(0xb98aff, 2.6, 0.6); g.add(glow); const ring = djRing(0xb98aff, 2.2, 0.45); g.add(ring);
+      djGroup.add(g); DJ.cradle = { g, c, glow, ring };
+    }
     /* Lumière chaude qui suit le héros. */
     DJ.light = new THREE.PointLight(LK.light, 1.5, 13, 1.6); djGroup.add(DJ.light);
     setMood('donjon');
@@ -5634,6 +5874,7 @@ const V3 = (() => {
       case 'clear': { const c = djCenter(st.d.rooms[e.room]); wave(c[0] + 0.5, c[1] + 0.5, 0xffd27a, 4, 0.9); break; }
       case 'trap': spark(e.x, 0.4, e.y, 0xff5a3c); break;
       case 'revive': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xb8ffcf, 2, 0.8); djNum(p[0], p[1], 'se relève !', '#b8ffcf', true); } break; }
+      case 'saved': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xc9b3ff, 2, 0.8); djNum(p[0], p[1], 'Sukhoï te relève !', '#d8c8ff', true); } break; }
       case 'raise': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xffe08a, 1.8, 0.8); for (let i = 0; i < 8; i++) spark(p[0] + (Math.random() - 0.5) * 0.8, 0.4 + i * 0.25, p[1] + (Math.random() - 0.5) * 0.8, 0xffe08a); djNum(p[0], p[1], 'relevé !', '#ffe08a', true); } break; }
       case 'cast': { const r = DJ.ents.get(e.id); if (r) { r.castT = performance.now() / 1000; const an = DJ_CAST_ANIM[e.s] || 'atk'; if (r.g.userData.A && r.g.userData.A[an]) djPlay(r, an, an === 'spin' ? 1.4 : 1.2, true); } break; }
     }
@@ -5641,7 +5882,7 @@ const V3 = (() => {
   /* Mise à jour de l'affichage d'après l'état du combat (appelée à chaque image ; alpha = entre deux pas). */
   function djSync(st, alpha, dt, tNow) {
     if (!DJ) return;
-    DJ.frame++; DJ.t += dt; DJ.dt = dt;
+    DJ.frame++; DJ.t += dt; DJ.dt = dt; DJ.st = st;
     const fr = DJ.frame, Q = camera.quaternion;
     const upd = (map, e, make) => { let r = map.get(e.id); if (!r) { r = make(e); map.set(e.id, r); djGroup.add(r.g); } r.seen = fr; return r; };
     for (const h of st.heroes) {
@@ -5768,6 +6009,13 @@ const V3 = (() => {
     }
     DJ.dying = DJ.dying.filter(d => !d.done);
     for (const t of DJ.torches) { const f = 0.85 + 0.1 * Math.sin(tNow * 13 + t.ph) + 0.06 * Math.sin(tNow * 31 + t.ph); t.s.material.opacity = 0.42 * f; t.f.scale.y = 0.26 * f; }
+    /* le berceau de la Source : il se balance tout seul, la lueur bat (et vire au doré quand la voie est libre) */
+    if (DJ.cradle) {
+      const C = DJ.cradle, free = !!DJ.st.exit;
+      C.c.rotation.z = Math.sin(tNow * 2.2) * 0.08;
+      C.glow.material.opacity = 0.35 + 0.2 * Math.sin(tNow * 3.1);
+      if (free !== C.free) { C.free = free; const col = lin(free ? 0xffd27a : 0xb98aff); C.glow.material.color.copy(col); C.ring.material.color.copy(col); }
+    }
     const sp = P_MOOD.sunPos;
     sun.position.set(cam.tx + sp[0], sp[1], cam.tz + sp[2]); sun.target.position.set(cam.tx, 0, cam.tz); sun.target.updateMatrixWorld();
   }
@@ -6419,6 +6667,13 @@ const SND = (() => {
     star: (d, t, p, i) => chime(d, [1046 * Math.pow(1.26, i || 0)], t, 0, 0.12),
     invite: (d, t) => { horn(d, [57, 62], t, 0.2, 0.08); horn(d, [57, 62], t + 0.55, 0.2, 0.07); },
     tip: (d, t) => chime(d, [1318, 1760], t, 0.1, 0.045),
+    /* l'histoire : la berceuse de Brahms (domaine public) en boîte à musique, le rire de Lilou, le ronron de Sukhoï */
+    berceuse: (d, t) => {
+      const N = [[76, .5], [76, .5], [79, 2], [76, .5], [76, .5], [79, 2], [76, .5], [79, .5], [84, 1], [83, 1.5], [81, .5], [81, 1], [79, 1], [74, .5], [76, .5], [77, 1], [74, 1], [74, .5], [76, .5], [77, 2]];
+      let x = t; for (const [m, b] of N) { const f = mtof(m); tone(d, 'sine', f, f, x, 0.004, 0.04, 0.9); tone(d, 'sine', f * 2.76, f * 2.76, x, 0.002, 0.012, 0.3); x += b * 0.32; }
+    },
+    giggle: (d, t) => { for (let i = 0; i < 5; i++) { const f = 820 + i * 60 + Math.random() * 80; tone(d, 'triangle', f, f * 1.35, t + i * 0.09, 0.008, 0.05, 0.06); } },
+    purr: (d, t) => { for (let i = 0; i < 6; i++) { hiss(d, 'lowpass', 240, 0.8, t + i * 0.2, 0.04, 0.09, 0.14); tone(d, 'sine', 48, 42, t + i * 0.2, 0.03, 0.05, 0.14); } },
     whoosh: (d, t, p) => { hiss(d, 'bandpass', 500, 1.4, t, 0.03, 0.14, 0.24, p, 2200); },
     recruit: (d, t) => { drum(d, t, 0.26, 'tom'); drum(d, t + 0.18, 0.2, 'tap'); horn(d, [55, 62], t + 0.3, 0.18, 0.08); },
     promote: (d, t) => { horn(d, [57, 61, 64], t, 0.12, 0.09); chime(d, [1318, 1760], t + 0.36, 0.06, 0.07); },
@@ -6517,6 +6772,7 @@ function sheetDonjon() {
   let h = `<div class="item feature"><div class="head"><b class="row">${ico('crown', 'c-tro')}${esc(hh.name)}</b><small>${esc(heroLine(hh))}</small></div>
     <p>${heroesOf(v, uid).length > 1 ? 'C’est ton héros actif. Pour en envoyer un autre, choisis-le dans le menu Héros.' : 'C’est lui qui part à l’aventure.'}${hh.sp ? ` <b>${hh.sp} point${hh.sp > 1 ? 's' : ''} de compétence à dépenser</b> (menu Héros).` : ''}</p>
     ${pk && ph ? `<p class="note">${on ? 'À deux avec ' + esc(pname) + ' (' + esc(ph.name) + ') : les monstres sont plus solides, chacun gagne toute l’expérience, et vos combos font mal.' : 'Pour partir à deux, ' + esc(pname) + ' doit avoir le jeu ouvert en même temps que toi.'}</p>` : ''}</div>`;
+  h += sourceEntryHTML();
   h += `<div class="sec"><h4>Niveau des donjons</h4><div class="row djlv">${lvls.map(l => `<button class="btn small${l === pick ? ' primary' : ''}" data-act="sheet" data-s="donjon" data-k="${l}" aria-pressed="${l === pick}">Niveau ${l}</button>`).join('')}</div>
     <p class="note">Niveau ${pick} : conseillé pour un héros de niveau ${pick}${hh.lvl < pick ? ' (le tien est plus faible : prudence)' : ''}. Chaque victoire ouvre le niveau suivant.</p></div>`;
   h += `<div class="sec"><h4>La mine des gobelins</h4><div class="item"><p>Gobelins, archers, chamans qui soignent et trolls, avec le chef troll au fond. Récompenses : expérience, or, pierre, bois et objets (le chef troll laisse parfois une pièce de sa tenue).</p>${btns('mine', pick, ' (niveau ' + pick + ')')}</div></div>`;
@@ -6559,7 +6815,7 @@ function onLiveRoom(r) {
   if (dj && dj.duo && dj.duo.role === 'guest' && !r && (!dj.st.over || dj.st.over === 'floor')) djLost();
   renderAll();
 }
-const djTheme = th => th === 'crypte' || th === 'prof' || th === 'portail' ? th : 'mine';
+const djTheme = th => th === 'crypte' || th === 'prof' || th === 'portail' || th === 'source' ? th : 'mine';
 async function djInvite(lvl, th, pi) {
   if (!me || dj || djLobby) return;
   th = djTheme(th); pi = pi | 0;
@@ -6620,10 +6876,17 @@ function djBegin(lvl, th, pi) {
   const hh = activeHero(me, uid); if (!hh) { toast('Crée d’abord ton héros.'); return; }
   th = djTheme(th); pi = pi | 0;
   if ((hh.dj || 1) < (DJ_OPEN[th] || 1)) { toast('Pas encore ouvert.'); return; }
+  if (th === 'source') {
+    if (me.lilou) { toast('Lilou est déjà au village : la Source du Mal est tarie.'); return; }
+    const seed = hash((Math.floor(now()) ^ hashStr(hh.id + 'source')) >>> 0) || 1, d = genDungeon(seed, 1, 'source');
+    djRun(djStart(d, [hh], { seed }), 1, seed, hh.id, null);
+    return;
+  }
+  const dmgMul = lilouMul(me);         // l'humeur de Lilou : les monstres frappent plus ou moins fort
   if (th === 'portail') {
     if (!djPortalOpen(pi)) { toast('Ce portail est déjà refermé.'); return; }
     const L = raidLevel(me), seed = hash((Math.floor(now()) ^ hashStr(hh.id + 'portail')) >>> 0) || 1, d = genDungeon(seed, L, 'portail');
-    djRun(djStart(d, [hh], { seed }), L, seed, hh.id, null);
+    djRun(djStart(d, [hh], { seed, dmgMul }), L, seed, hh.id, null);
     dj.pi = pi;
     toast('Le portail démoniaque, niveau ' + L + '. Au fond, son gardien : bats-le et le portail se refermera.');
     return;
@@ -6631,14 +6894,14 @@ function djBegin(lvl, th, pi) {
   const seed = hash((Math.floor(now()) ^ hashStr(hh.id)) >>> 0) || 1;
   if (th === 'prof') {
     const start = hh.lvl, d = djFloor(seed, 1, start);
-    djRun(djStart(d, [hh], { seed: d.seed }), start, seed, hh.id, null, djNewRun(start));
+    djRun(djStart(d, [hh], { seed: d.seed, dmgMul }), start, seed, hh.id, null, djNewRun(start));
     toast('Les Profondeurs, étage 1. Descends aussi loin que tu l’oses !');
     return;
   }
   lvl = Math.max(1, Math.min(hh.dj || 1, lvl | 0 || 1));
   const d = genDungeon(seed, lvl, th);
-  djRun(djStart(d, [hh], { seed }), lvl, seed, hh.id, null);
-  toast(DJ_THEMES[th].name + ', niveau ' + lvl + '. Pose le pouce à gauche pour bouger : ' + hh.name + ' attaque tout seul.');
+  djRun(djStart(d, [hh], { seed, dmgMul }), lvl, seed, hh.id, null);
+  toast(DJ_THEMES[th].name + ', niveau ' + lvl + '. ' + (me.lilou ? 'Lilou est ' + lilouMood(me.lilou).name + ' : ' + lilouEffect(lilouMood(me.lilou)) + '.' : 'Pose le pouce à gauche pour bouger : ' + hh.name + ' attaque tout seul.'));
 }
 const djNewRun = start => ({ start, floor: 1, done: 0, xp: 0, loot: {}, kills: 0, secs: 0, combos: 0, pris: false });
 /* À deux : chacun fabrique la même mine (même graine) ; l'hôte fait le combat, l'invitée affiche et envoie ses commandes. */
@@ -6648,7 +6911,7 @@ function djBeginDuo(role, r) {
   if (!hH || !gH) { toast('Héros introuvable : réessayez.'); if (role === 'host') liveRef().delete().catch(() => {}); return; }
   const th = djTheme(r.th), mine = role === 'host' ? r.hhid : r.ghid;
   const d = th === 'prof' ? djFloor(r.seed, 1, r.lvl) : genDungeon(r.seed, r.lvl, th);
-  const st = djStart(d, [hH, gH], { seed: d.seed, remote: role === 'host' ? r.ghid : null });
+  const st = djStart(d, [hH, gH], { seed: d.seed, remote: role === 'host' ? r.ghid : null, dmgMul: lilouMul(me) });
   const duo = { role, mateHid: role === 'host' ? r.ghid : r.hhid, mateName: role === 'host' ? (me.members[r.guest] || {}).name : r.hname, unsub: [],
     snapN: 0, evBuf: [], inLast: null, inAt: performance.now(), done: 0, q: [], qSeq: 0, sendAt: 0, lastSnapAt: performance.now(), snapDt: 150, waitShown: false, gone: false, since: now() - 5000 };
   if (role === 'host') {
@@ -6695,6 +6958,7 @@ function djBack() {
   const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris, theme: r.theme || dj.st.d.theme, deep: r.deep || 0,
     or: guest ? 0 : r.gold || 0, items, gems, pi: dj.pi | 0, gar: guest ? 0 : 1 }, { quiet: true });
   djLeave();
+  if (res && res.lilou) { modal = { kind: 'lilou' }; SND.sfx('giggle'); renderAll(); return; }
   if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
   else if (res && res.closed) toast((res.closed.all ? 'Le portail est refermé : pas de raid cette fois !' : 'Le portail est refermé. Il en reste d’autres ouverts (menu Défense).') + garGainTxt(res));
   else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
@@ -6756,8 +7020,9 @@ function djResHTML() {
   while (hh && lv < HERO_MAX_LVL && xp >= heroXpNeed(lv)) { xp -= heroXpNeed(lv); lv++; up++; }
   const mm = Math.floor(r.secs / 60), ss = String(r.secs % 60).padStart(2, '0'), loot = r.loot || {}, lootAll = Object.assign({}, loot, r.gold ? { or: r.gold } : {});
   const myItems = (r.items && r.items[dj.hid]) || [], myGems = (r.gems && r.gems[dj.hid]) || {};
-  const where = r.prof ? 'Les Profondeurs · départ niveau ' + r.lvl : (DJ_THEMES[r.theme] || DJ_THEMES.mine).name + ' · niveau ' + r.lvl;
-  return `<p class="eyebrow">${where}${duo ? ' · à deux' : ''}</p><h2>${title}</h2><p>${esc(lead)}</p>
+  const where = r.prof ? 'Les Profondeurs · départ niveau ' + r.lvl : (DJ_THEMES[r.theme] || DJ_THEMES.mine).name + (r.theme === 'source' ? '' : ' · niveau ' + r.lvl);
+  const story = r.theme === 'source' && r.win, word = me && me.lilou && r.theme !== 'source' ? '<p class="lilword">' + lilouFace(lilouMood(me.lilou).k) + '<span><b>Lilou</b> ' + esc(LILOU_WORDS[lilouMood(me.lilou).k]) + '</span></p>' : '';
+  return `<p class="eyebrow">${where}${duo ? ' · à deux' : ''}</p><h2>${story ? 'La Source du Mal… ?!' : title}</h2>${story ? sukBubble(SUK.found) : '<p>' + esc(lead) + '</p>'}${word}
     <div class="item"><div class="row split"><b>Expérience</b><span class="chip plus">+${fmtN(xpH)}</span></div>
       ${up ? `<p><b>${esc(hh.name)} passe au niveau ${lv} !</b> ${up > 1 ? up + ' niveaux d’un coup.' : ''} De nouveaux points de compétence l’attendent.</p>` : hh ? `<div class="bar"><i style="width:${Math.min(100, xp / heroXpNeed(lv) * 100).toFixed(0)}%"></i></div>` : ''}
       ${r.own ? '<p class="note">Le butin reste avec ' + esc(mate) + ', qui le rapportera au village.</p>' : `<div class="row split"><b>Butin pour le village</b><span class="chips2">${Object.keys(lootAll).length ? rewChips(lootAll) : '<span class="note">rien</span>'}</span></div>
@@ -6765,8 +7030,8 @@ function djResHTML() {
       ${myItems.length ? `<div class="row split"><b>Objets pour ton sac</b><small class="note">${myItems.length}${!r.win ? ' (les meilleurs)' : ''}</small></div>${itemListHTML(myItems, hh)}` : ''}
       ${Object.keys(myGems).length ? `<div class="row split"><b>Pierres précieuses</b><span class="chips2">${Object.keys(myGems).map(k => gemChip(k, myGems[k])).join('')}</span></div>` : ''}
       ${r.pris && !r.own ? '<p><b>Un prisonnier délivré</b> : il vous attendra au village, prêt à s’installer.</p>' : ''}
-      <p class="note">${r.kills} monstres vaincus${duo && r.combos ? ' · ' + r.combos + ' combo' + (r.combos > 1 ? 's' : '') : ''} · ${mm} min ${ss}${r.win && (r.theme === 'mine' || r.theme === 'crypte') ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
-    <button class="btn primary" data-act="djBack">Retour au village</button>`;
+      <p class="note">${r.kills} ${r.kills > 1 ? 'monstres vaincus' : 'monstre vaincu'}${duo && r.combos ? ' · ' + r.combos + ' combo' + (r.combos > 1 ? 's' : '') : ''} · ${mm} min ${ss}${r.win && (r.theme === 'mine' || r.theme === 'crypte') ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
+    <button class="btn primary" data-act="djBack">${story ? 'Ramener Lilou au village' : 'Retour au village'}</button>`;
 }
 /* ---------- les Profondeurs : fin d'étage, descendre ou remonter ---------- */
 /* Chez l'hôte (ou en solo) : l'étage est fini, son bilan rejoint le cumul de la descente, puis on choisit. */
@@ -6810,7 +7075,7 @@ function djDescend() {
   if (duo && duo.gone) { for (const u of duo.unsub) u(); liveRef().delete().catch(() => {}); dj.duo = duo = null; }   // l'autre est rentrée : la suite en solo
   const ids = duo ? st.heroes.map(h => h.id) : [dj.hid], heroes = ids.map(id => me.heroes[id]).filter(Boolean);
   if (heroes.length !== ids.length) { toast('Héros introuvable.'); return; }
-  const d = djFloor(dj.seed, n, run.start), ns = djStart(d, heroes, { seed: d.seed, remote: duo ? duo.mateHid : null, carry });
+  const d = djFloor(dj.seed, n, run.start), ns = djStart(d, heroes, { seed: d.seed, remote: duo ? duo.mateHid : null, carry, dmgMul: lilouMul(me) });
   dj.st = ns; dj.d = d; dj.acc = 0; dj.floorShown = false; modal = null; run.floor = n;
   if (duo) { duo.sentFinal = false; duo.inLast = null; duo.inAt = performance.now(); duo.evBuf = []; }
   V3.dj.enter(ns, dj.hid); djHudBuild(); renderAll();
@@ -6834,7 +7099,7 @@ function djGuestFloorGo(sn) {
   if (d.seed !== sn.sd) return false;
   const heroes = dj.st.heroes.map(h => me.heroes[h.id]).filter(Boolean);
   if (heroes.length !== dj.st.heroes.length) return false;
-  const ns = djStart(d, heroes, { seed: d.seed });
+  const ns = djStart(d, heroes, { seed: d.seed, dmgMul: lilouMul(me) });
   dj.st = ns; dj.d = d; dj.floorShown = false; dj.run.floor = sn.fl;
   if (modal && modal.kind === 'djfloorwait') modal = null;
   V3.dj.enter(ns, dj.hid); djHudBuild(); renderAll();
@@ -6855,6 +7120,7 @@ function djHudBuild() {
       <button class="glass chipb djflee" data-act="djFlee">Fuir</button></div>
     ${dj.duo ? '<div class="glass djmate"><b id="djMateN"></b><div class="djhp mate"><i id="djMateHp"></i></div></div>' : ''}
     <div class="glass djboss" id="djBoss" hidden><b>${esc(dj.bossN)}</b><div class="djhp boss"><i id="djBossHp"></i></div></div>
+    ${dj.st.d.tuto ? '<div class="djtuto" id="djTuto" hidden></div>' : ''}
     <div class="djjoy" id="djJoy"><p class="djhint" id="djHint">Pose le pouce ici pour te déplacer</p></div>
     <div class="djbase" id="djBase" hidden><div class="djknob" id="djKnob"></div></div>
     <div class="djbtns">${[0, 1, 2].map(i => { const on = h.rank[i] > 0, name = C.skills[i][0]; return `<button class="djsk${on ? '' : ' lock'}" data-djsk="${i}" aria-label="${esc(name)}"${on ? '' : ' disabled'} style="grid-column:${i === 1 ? 3 : 2};grid-row:${i === 2 ? 2 : 1}">
@@ -6932,15 +7198,17 @@ function djHudUpdate() {
   const pr = djProgress(st), fl = st.d.floor ? 'Étage ' + st.d.floor + ' · ' : '', bn = 'le ' + (dj.bossN || 'boss').toLowerCase();
   set('djInfo', 't', fl + (st.exit ? (st.d.floor ? 'Passage ouvert : rejoins la lumière' : 'Sortie ouverte : rejoins la lumière') : pr.boss ? cap1(bn) : pr.fighting ? `Salle ${pr.done + 1} sur ${pr.total} · vague ${pr.wave} sur ${pr.waves}` : pr.done >= pr.total && dj.bossN ? 'Au fond : ' + bn : `Salles nettoyées : ${pr.done} sur ${pr.total}`));
   const bb = E('djBoss'); if (bb && bb.hidden === !!pr.boss) bb.hidden = !pr.boss;
+  if (st.d.tuto) djTutoRender();
   if (pr.boss) set('djBossHp', 'w', Math.max(0, pr.boss.hp / pr.boss.hpMax * 100).toFixed(1) + '%');
 }
 const DJ_SFX_ATK = { rodeur: 'shoot', mage: 'bolt', pretre: 'bolt', druide: 'shoot', necro: 'bolt' };
 function djEvents(st) {
   if (dj.duo && dj.duo.role === 'host') { for (const e of st.ev) dj.duo.evBuf.push(e); if (dj.duo.evBuf.length > 120) dj.duo.evBuf.splice(0, dj.duo.evBuf.length - 120); }
-  const crypt = st.d.theme === 'crypte', portal = st.d.theme === 'portail';
+  const crypt = st.d.theme === 'crypte', portal = st.d.theme === 'portail', source = st.d.theme === 'source';
   for (const e of st.ev) {
     if (gl) V3.dj.fx(e, st);
     const mine = e.id === dj.hid;
+    if (source && (e.k === 'tuto' || e.k === 'tutoOk' || e.k === 'saved')) djTutoEvent(e);
     switch (e.k) {
       case 'atk': if (mine) { const h = st.heroes.find(x => x.id === e.id); SND.sfx(h && DJ_SFX_ATK[h.cls] && !h.form ? DJ_SFX_ATK[h.cls] : 'chop'); } break;
       case 'die': SND.sfx(e.boss ? 'collapse' : 'death'); break;
@@ -6949,12 +7217,12 @@ function djEvents(st) {
       case 'potion': if (mine) SND.sfx('built'); break;
       case 'roll': if (mine && !(dj.duo && dj.duo.role === 'guest')) SND.sfx('whoosh'); break;
       case 'chest': SND.sfx('coin'); toast('Coffre : ' + rewTxt(e.got) + '.'); break;
-      case 'loot': toast((crypt ? 'Trésor du roi : ' : portal ? 'Trésor du gardien : ' : 'Butin du chef : ') + rewTxt(e.got) + '.'); break;
+      case 'loot': toast((crypt ? 'Trésor du roi : ' : portal || source ? 'Trésor du gardien : ' : 'Butin du chef : ') + rewTxt(e.got) + '.'); break;
       case 'altar': SND.sfx('star'); toast('Autel des anciens rois · ' + DJ_BLESS[e.b] + ', jusqu’à la sortie.'); break;
       case 'free': SND.sfx('invite'); toast('Prisonnier délivré ! Il vous attendra au village.'); break;
-      case 'lock': SND.sfx(e.boss ? 'alarm' : 'wallhit'); if (e.boss) toast(crypt ? 'Le roi squelette ! Quand des cercles rouges s’allument sous vos pieds, sortez-en vite.' : portal ? 'Le gardien du portail ! Une pluie de feu s’annonce par des cercles rouges : sortez-en vite.' : 'Le chef troll ! Sors du cercle rouge et écarte-toi de sa charge.'); break;
+      case 'lock': SND.sfx(e.boss ? 'alarm' : 'wallhit'); if (e.boss && !source) toast(crypt ? 'Le roi squelette ! Quand des cercles rouges s’allument sous vos pieds, sortez-en vite.' : portal ? 'Le gardien du portail ! Une pluie de feu s’annonce par des cercles rouges : sortez-en vite.' : 'Le chef troll ! Sors du cercle rouge et écarte-toi de sa charge.'); break;
       case 'wavecome': toast((crypt ? 'D’autres morts sortent de leurs tombeaux…' : portal ? 'D’autres diablotins jaillissent des flammes…' : 'D’autres monstres sortent des galeries…') + ' (vague ' + e.n + ' sur ' + e.of + ')'); break;
-      case 'clear': SND.sfx('star'); if (e.boss) toast(cap1('le ' + (dj.bossN || 'boss').toLowerCase()) + ' est vaincu ! ' + (st.d.floor ? 'Le passage est ouvert.' : 'La sortie est ouverte.')); break;
+      case 'clear': SND.sfx('star'); if (e.boss && !source) toast(cap1('le ' + (dj.bossN || 'boss').toLowerCase()) + ' est vaincu ! ' + (st.d.floor ? 'Le passage est ouvert.' : 'La sortie est ouverte.')); break;
       case 'slam': case 'boom': SND.sfx('boom'); break;
       case 'storm': SND.sfx('storm'); break;
       case 'summon': if (e.boss) SND.sfx('alarm'); break;
@@ -7793,58 +8061,63 @@ const tipBag = v => (v.bag && v.bag[uid] && v.bag[uid].it) || {};
 const tipAge = v => (v.t || 0) - (v.born || 0);
 /* Dans l'ordre : d'abord l'urgent, puis ce qu'il y a à faire, puis les découvertes. go = menu ouvert par le bouton. */
 const TIPS = [
+  { id: 'source', ic: 'star', go: 'donjon', btn: 'Donjon', when: v => !v.lilou && !!tipHero(v) && Date.now() - tipStart > 20000,
+    txt: 'Une lueur maléfique monte de la vieille mine… Allons voir ça : menu Donjon, « La Source du Mal ». C’est court, et je te guide.' },
   { id: 'faim', ic: 'pain', go: 'build', btn: 'Construire', when: v => v.vil.length > 0 && ((v.hunger || 0) > 0 || foodOf(v) < 1),
-    txt: 'Le village a faim ! Sans nourriture, le moral s’effondre, et au bout d’un jour quelqu’un s’en va. Champs, chasse, moulin et boulangerie : mettez des villageois au travail.' },
+    txt: 'Le village a faim ! Et un village qui a faim regarde le chat d’un drôle d’air. Champs, chasse, moulin, boulangerie : au travail.' },
   { id: 'portail', ic: 'flame', go: 'defense', btn: 'Défense', when: v => raidInfo(v, now()).p.some(p => !p.cl),
-    txt: 'Un portail démoniaque s’ouvre au bord de la vallée ! Une fois chargé, un raid viendra par là dès que personne n’aura joué depuis 2 heures. Prépare tes défenses, ou referme-le avec ton héros.' },
+    txt: 'Ça sent le soufre : un portail démoniaque s’ouvre au bord de la vallée ! Une fois chargé, des gobelins passeront dès que personne n’aura joué depuis 2 heures. Prépare tes défenses, ou va le refermer avec ton héros.' },
   { id: 'ruines', ic: 'shield', go: 'defense', btn: 'Défense', when: v => v.b.some(b => isDef(b) && repairCostOf(b)),
-    txt: 'Des défenses sont abîmées : répare-les toutes d’un coup dans le menu Défense (les ruines d’abord).' },
+    txt: 'Des défenses sont en miettes. Répare-les toutes d’un coup dans le menu Défense, les ruines d’abord.' },
+  { id: 'lilouBoude', ic: 'heart', go: 'lilou', btn: 'Sa chambre', when: v => !!v.lilou && lilouMood(v.lilou).mul > 1,
+    txt: 'Lilou boude… Un caprice oublié, je parie. Et quand elle boude, les monstres frappent plus fort. Passe dans sa chambre.' },
   { id: 'leger', ic: 'star', go: 'village', btn: 'Réglages', when: () => gl && !gfxLight() && Date.now() - tipStart > 30000 && V3.fps() < 18,
-    txt: 'Le jeu rame un peu sur ce téléphone ? Essaie les graphismes légers (menu Village, Affichage) : une image un peu moins fine et sans ombres, mais bien plus fluide.' },
+    txt: 'Le jeu rame sur ce téléphone ? Essaie les graphismes légers (menu Village, Affichage) : moins joli, sans ombres, mais bien plus fluide. Comme moi après la sieste.' },
   { id: 'points', ic: 'crown', go: 'hero', btn: 'Héros', when: v => { const h = tipHero(v); return !!h && h.sp > 0; },
-    txt: 'Ton héros a un point de compétence à dépenser : renforce la compétence de ton choix dans le menu Héros (bouton +1).' },
+    txt: 'Ton héros a un point de compétence à dépenser (menu Héros, bouton +1). À ta place, je ne le garderais pas sous le coussin.' },
+  { id: 'caprice', ic: 'heart', go: 'lilou', btn: 'Sa chambre', when: v => !!(v.lilou && v.lilou.d && !v.lilou.d.ok),
+    txt: 'Lilou a un caprice aujourd’hui. On le fabrique dans sa chambre, avec les ressources du village. Contente, les monstres frappent moins fort.' },
   { id: 'recrue', ic: 'flag', go: 'caserne', btn: 'Caserne', when: v => caserneLvl(v) > 0 && !solList(v).length,
-    txt: 'La caserne est prête : recrute tes premiers soldats contre de l’or. Fantassins et lanciers tiennent la ligne, archers et mages tirent de derrière.' },
+    txt: 'La caserne est prête : recrute tes premiers soldats contre de l’or. Fantassins et lanciers devant, archers et mages derrière. Moi, je garde le coussin.' },
   { id: 'poste', ic: 'flag', go: 'build', btn: 'Construire', when: v => solList(v).length > 0 && !postsOf(v).length,
     txt: 'Tes soldats attendent un poste de garde (Construire, rubrique Défense) : pendant un raid, ils défendent le cercle autour de lui.' },
   { id: 'sansposte', ic: 'flag', go: 'caserne', btn: 'Caserne', when: v => postsOf(v).length > 0 && solList(v).some(s => !s.post),
-    txt: 'Des soldats n’ont pas de poste : à la caserne, « Répartir » les place tous d’un coup.' },
+    txt: 'Des soldats se tournent les pouces, sans poste : à la caserne, « Répartir » les place tous d’un coup.' },
   { id: 'promo', ic: 'flag', go: 'caserne', btn: 'Caserne', when: v => solList(v).some(solCanPromote),
-    txt: 'Un soldat a assez d’expérience pour monter de niveau : promeus-le à la caserne. Il frappera plus fort et tiendra mieux.' },
+    txt: 'Un soldat a assez d’expérience pour monter de niveau : promeus-le à la caserne. Il frappera plus fort (et il sera insupportable de fierté).' },
   { id: 'mieux', ic: 's_bag', go: 'bag', btn: 'Mon sac', when: v => { const h = tipHero(v); return !!h && Object.values(tipBag(v)).some(it => compareItem(h, it) === 1); },
-    txt: 'Un objet de ton sac est meilleur que celui que porte ton héros (flèche verte ▲) : équipe-le.' },
+    txt: 'Un objet de ton sac est meilleur que ce que porte ton héros (flèche verte ▲). Équipe-le, voyons !' },
   { id: 'sac', ic: 's_bag', go: 'bag', btn: 'Mon sac', when: v => Object.keys(tipBag(v)).length >= bagMax(v) - 3,
-    txt: 'Ton sac est presque plein : vends ou fonds ce qui ne sert plus. Quand il est plein, les nouveaux objets sont vendus d’office.' },
+    txt: 'Ton sac déborde ! Vends ou fonds ce qui ne sert plus : quand il est plein, les nouveaux objets sont vendus d’office.' },
   { id: 'plein', ic: 'bois', go: 'build', btn: 'Construire', when: v => ['bois', 'pierre'].some(k => (v.r[k] || 0) >= capOf(v) - 1),
-    txt: 'Les réserves débordent : ce qui est produit en plus est perdu. Construis ou agrandis un entrepôt.' },
+    txt: 'Les réserves débordent : ce qui est produit en plus est perdu. Il faut un entrepôt, ou en agrandir un.' },
   { id: 'oisifs', ic: 'people', go: 'people', btn: 'Villageois', when: v => tipAge(v) > 20 * 60000 && v.vil.some(p => p.job == null),
-    txt: 'Un villageois n’a pas de métier : touche-le (ou ouvre le menu Villageois) pour lui en donner un.' },
-  { id: 'donjon1', ic: 'sword', go: 'donjon', btn: 'Donjon', when: v => { const h = tipHero(v); return !!h && !(h.xp > 0) && (h.lvl | 0) <= 1 && !(h.dj > 1) && Date.now() - tipStart > 90000; },
-    txt: 'Ton héros est prêt pour sa première aventure : menu Donjon, la mine des gobelins. Il attaque tout seul, toi tu le guides avec le pouce.' },
+    txt: 'Un villageois se tourne les pouces. Touche-le (ou ouvre le menu Villageois) pour lui donner un métier.' },
+  { id: 'donjon1', ic: 'sword', go: 'donjon', btn: 'Donjon', when: v => { const h = tipHero(v); return !!v.lilou && !!h && !(h.dj > 1) && (h.wins | 0) === 0 && Date.now() - tipStart > 90000; },
+    txt: 'La mine des gobelins t’attend (menu Donjon) : chaque victoire ouvre le niveau suivant. Ton héros attaque tout seul, toi tu le guides.' },
   { id: 'defense', ic: 'shield', go: 'defense', btn: 'Défense', when: v => !(v.raid && v.raid.n) && tipAge(v) > 36 * 3600000,
     txt: 'À partir du 3e jour, des gobelins peuvent attaquer pendant ton absence. Palissades, portes, tours et pièges : tout est dans le menu Défense.' },
   { id: 'forge', ic: 's_anvil', go: 'forge', btn: 'La forge', when: v => forgeLvlOf(v) > 0,
     txt: 'La forge est prête : fabrique de l’équipement, améliore-le jusqu’à +5, sertis des pierres, ou fonds ce qui ne sert plus pour récupérer du fer.' },
   { id: 'marchand', ic: 'or', go: 'merch', btn: 'Voir', when: v => merchHere(v, now()),
-    txt: 'Le marchand ambulant s’est installé près de la halle jusqu’à demain : quelques objets à vendre contre de l’or.' },
+    txt: 'Le marchand ambulant est sur la place jusqu’à demain, avec des objets à vendre contre de l’or. Il sent le poisson : je l’aime bien.' },
   { id: 'crypte', ic: 'sword', go: 'donjon', btn: 'Donjon', when: v => { const h = tipHero(v); return !!h && (h.dj || 1) >= DJ_OPEN.crypte; },
-    txt: 'La crypte des rois est ouverte : squelettes, spectres, nécromants qui relèvent les morts, et le roi squelette au fond.' },
+    txt: 'La crypte des rois est ouverte : squelettes, spectres, nécromants qui relèvent les morts, et le roi squelette au fond. Brrr.' },
   { id: 'prof', ic: 'sword', go: 'donjon', btn: 'Donjon', when: v => { const h = tipHero(v); return !!h && (h.dj || 1) >= DJ_OPEN.prof; },
-    txt: 'Les Profondeurs sont ouvertes : des étages sans fin, de plus en plus durs. À la fin de chaque étage, tu choisis : descendre, ou remonter avec tout le butin.' },
+    txt: 'Les Profondeurs sont ouvertes : des étages sans fin, de plus en plus durs. À chaque étage, tu choisis : descendre, ou remonter avec tout le butin.' },
   { id: 'familier', ic: 's_paw', go: 'hero', btn: 'Héros', when: v => { const h = tipHero(v); return !!h && h.lvl >= PET_LVL && !h.pet; },
-    txt: 'Ton héros peut maintenant adopter un familier (menu Héros) : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.' },
+    txt: 'Ton héros peut adopter un familier (menu Héros) : loup, faucon, sanglier ou chouette. Pas de chat ? Je suis déjà prise.' },
   { id: 'spec', ic: 'star', go: 'hero', btn: 'Héros', when: v => { const h = tipHero(v); return !!h && h.lvl >= SPEC_LVL && h.spec == null; },
-    txt: 'Niveau 10 : choisis la spécialisation de ton héros, une voie sur deux, pour de bon (menu Héros).' },
+    txt: 'Niveau 10 ! Choisis la spécialisation de ton héros, une voie sur deux, pour de bon (menu Héros).' },
   { id: 'heros2', ic: 'crown', go: 'hero', btn: 'Héros', when: v => { const n = heroesOf(v, uid).length; return n > 0 && n < heroSlots(v); },
     txt: 'La taverne peut loger un héros de plus : recrute-le dans le menu Héros. Pendant que l’un part en donjon, les autres travaillent au village.' },
   { id: 'automne', ic: 's2', go: 'stock', btn: 'Réserves', when: v => seasonIdx(v, now()) === 2,
     txt: 'L’automne est là : dans 2 jours, l’hiver arrêtera les champs. Faites des réserves de pain et de viande.' },
   { id: 'hiver', ic: 's3', when: v => seasonIdx(v, now()) === 3,
-    txt: 'C’est l’hiver : les champs dorment et la chasse rapporte moins. Le village vit sur ses réserves jusqu’au printemps.' },
+    txt: 'L’hiver. Les champs dorment, la chasse rapporte moins, et le village vit sur ses réserves. Moi, je dors aussi.' },
   { id: 'inviter', ic: 'link', go: 'village', btn: 'Inviter', when: v => !partnerId(v) && tipAge(v) > 24 * 3600000,
     txt: 'Envie de jouer à deux ? Envoie le lien d’invitation (menu Village) : ta partenaire arrivera dans ton village, avec tout ce que tu as construit.' },
 ];
-const tipIco = k => ico(k, ['pain', 'bois', 'or', 'people'].includes(k) ? undefined : 'c-tro');
 function tipTest(T) { try { return !!T.when(me); } catch (e) { return false; } }
 function tipClose(seen) { if (tipCur && seen) tipMark(tipCur.id); tipCur = null; tipNext = Date.now() + TIP_GAP; }
 /* Appelé à chaque seconde. */
@@ -7859,7 +8132,7 @@ function tipCheck() {
 }
 function tipHTML() {
   const T = tipCur; if (!T || !tipOn()) return '';
-  return `<div class="glass card tip" role="status" aria-label="Conseil"><p class="tiptxt">${tipIco(T.ic)}<span>${esc(T.txt)}</span></p>
+  return `<div class="glass card tip" role="status" aria-label="Conseil de Sukhoï"><p class="tiptxt">${sukFace()}<span><b>Sukhoï&nbsp;:</b> ${esc(T.txt)}</span></p>
     <div class="row">${T.go ? `<button class="btn small primary grow" data-act="tipGo">${esc(T.btn)}</button>` : ''}<button class="btn small grow" data-act="tipOk">Compris</button></div></div>`;
 }
 const ACT_TIP = {
@@ -7871,6 +8144,143 @@ const ACT_TIP = {
   },
   tipsToggle: () => { const on = !tipOn(); LS.set('mk2.tipsOff', on ? 0 : 1); if (!on) tipCur = null; else tipNext = Date.now() + 4000; renderAll(); },
   tipsReset: () => { LS.set('mk2.tips', []); LS.set('mk2.tipsOff', 0); tipCur = null; tipNext = Date.now() + 4000; toast('Les conseils reviendront, chacun au bon moment.'); renderAll(); },
+};
+
+/* ===================== L'HISTOIRE (lot A) : interface =====================
+   Sukhoï la narratrice (sa bulle et son portrait), la mission « La Source du Mal » (entrée, bulles du donjon guidé, bilan),
+   l'arrivée de Lilou, sa chambre (humeur, caprices, berceuse) et ses petits mots. Ce fichier ne fait que définir :
+   p4_app et p4d_donjon appellent ces fonctions. */
+/* Sukhoï : une chatte grise, la tache blanche sur la poitrine, une vieille cicatrice de guerre au-dessus de l'œil. */
+const SUK_SVG = '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 21 7 6l12 8M39 21l2-15-12 8" fill="#7d838b"/><path d="M10.5 18 9.6 9.5l6.4 4.4M37.5 18l.9-8.5-6.4 4.4" fill="#e9b7b9"/>'
+  + '<ellipse cx="24" cy="25" rx="16" ry="14" fill="#8b9097"/><path d="M15 36c3 7 15 7 18 0-5 2-13 2-18 0z" fill="#f4f1ea"/>'
+  + '<ellipse cx="17.5" cy="24" rx="3.2" ry="3.6" fill="#d6e36a"/><ellipse cx="30.5" cy="24" rx="3.2" ry="3.6" fill="#d6e36a"/>'
+  + '<ellipse cx="17.5" cy="24.4" rx="1.1" ry="3" fill="#2a2a2a"/><ellipse cx="30.5" cy="24.4" rx="1.1" ry="3" fill="#2a2a2a"/>'
+  + '<path d="M26.5 15.5 33 22" stroke="#5c5f64" stroke-width="1.4" stroke-linecap="round"/><path d="M22.4 29.2h3.2L24 31z" fill="#e58a95"/>'
+  + '<path d="M24 31v1.6M24 32.6c-1.2 1.4-3 1.4-4 .3M24 32.6c1.2 1.4 3 1.4 4 .3" stroke="#4a4d52" stroke-width="1" fill="none" stroke-linecap="round"/>'
+  + '<path d="M13 29.5 4.5 28M13 31.5 5 33M35 29.5l8.5-1.5M35 31.5l8 1.5" stroke="#e8e8e8" stroke-width=".8" stroke-linecap="round"/></svg>';
+const sukFace = cls => `<span class="sukface${cls ? ' ' + cls : ''}">${SUK_SVG}</span>`;
+const sukBubble = (txt, extra) => `<div class="sukbub">${sukFace()}<div><b>Sukhoï</b><p>${esc(txt)}</p>${extra || ''}</div></div>`;
+/* Les visages de Lilou selon son humeur (très simples) */
+const LILOU_FACE = { colere: ['#e98a7a', 'M17 31q7-5 14 0', 'M14 19l6 3M34 19l-6 3'], grognon: ['#f0b39a', 'M18 31q6-3 12 0', 'M15 20h5M28 20h5'], calme: ['#f3cdb6', 'M18 30h12', ''], contente: ['#f3cdb6', 'M17 28q7 5 14 0', ''], ravie: ['#f6c9b0', 'M16 27q8 8 16 0z', ''] };
+function lilouFace(k) {
+  const F = LILOU_FACE[k] || LILOU_FACE.calme;
+  return `<span class="lilface" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="26" r="16" fill="${F[0]}"/><path d="M14 16c2-9 18-11 21-2-4-3-6-1-8-4-3 3-8 1-13 6z" fill="#f2d27a"/>`
+    + `<circle cx="18" cy="24" r="2.2" fill="#3f6fd0"/><circle cx="30" cy="24" r="2.2" fill="#3f6fd0"/><path d="${F[1]}" stroke="#a5523f" stroke-width="2" fill="${k === 'ravie' ? '#a5523f' : 'none'}" stroke-linecap="round"/>`
+    + (F[2] ? `<path d="${F[2]}" stroke="#7a5a3a" stroke-width="1.8" stroke-linecap="round"/>` : '') + `</svg></span>`;
+}
+/* Les répliques de Sukhoï */
+const SUK = {
+  hello: 'Une lueur maléfique monte de la vieille mine, et des cris terribles en sortent chaque nuit. On m’appelait Sukhoï la Terrible, avant la Grande Bataille contre le Monstre de Fer… Va voir ce que c’est. Je te suis. De loin.',
+  start: 'La mine de la Source du Mal. Ça sent le gobelin mouillé. Suis mes conseils et tout ira bien (ou presque).',
+  tuto: {
+    move: 'Pose le pouce à gauche de l’écran et fais quelques pas. Doucement : il y a des toiles d’araignée partout.',
+    fight: 'Un gobelin ! Approche-toi : ton héros frappe tout seul. Moi, je surveille. De loin.',
+    roll: 'Le cercle rouge ! Il va frapper : ROULE ! (le bouton Roulade, ou la barre d’espace)',
+    potion: 'Ta vie baisse ! Bois une potion, le flacon rouge à droite.',
+    skill: 'Touche ta compétence, le gros bouton à droite. Elle se recharge après chaque usage.',
+    chest: 'Un coffre ! Marche dessus pour l’ouvrir. Si c’est du poisson, c’est pour moi.',
+    cradle: 'Il est vaincu… La lueur vient de ce berceau, au fond. Approche-toi. Doucement.',
+  },
+  ok: {
+    move: 'Voilà. Tu marches. Je suis fière de toi.',
+    fight: 'Pas mal, pour un débutant.',
+    roll: 'Joli saut ! J’en faisais des pareils, du temps de la Grande Bataille contre le Monstre de Fer.',
+    potion: 'Ça va mieux ? Ne prends pas l’habitude.',
+    skill: 'Ça, c’est de la magie… ou presque.',
+    chest: 'Pas de poisson ? Tant pis.',
+  },
+  saved: 'Debout ! On ne meurt pas le premier jour. Sukhoï l’interdit.',
+  found: 'Par mes moustaches… la Source du Mal… c’est un bébé ?! Elle s’appelle Lilou (c’est brodé sur sa couverture). Bon. On la ramène au village.',
+  arrive: 'Lilou a sa chambre près de la halle, et moi ma place près du berceau. Chaque jour, elle aura un caprice ; chaque semaine, un gros. Contente, les monstres tapent moins fort. En colère… je préfère ne pas y penser. Si elle pleure la nuit, c’est toi qui te lèves.',
+  mood: {
+    colere: ['Elle hurle. J’ai connu des trolls plus calmes.', 'Les gobelins l’entendent de la mine. Ils tapent plus fort, rien que pour se venger.'],
+    grognon: ['Elle boude. Un caprice oublié, je parie.', 'Elle me tire la queue. C’est mauvais signe.'],
+    calme: ['Elle observe tout, très sérieuse. Comme moi.', 'Elle mâchouille son orteil. Tout va bien.'],
+    contente: ['Elle gazouille. Même moi, j’ai envie de ronronner.', 'Elle rit quand je fais semblant de dormir. Je ne fais pas semblant.'],
+    ravie: ['Ravie ! Les monstres sentent qu’ils n’ont aucune chance.', 'Elle rit si fort que les gobelins en perdent leurs moyens.'],
+  },
+  pet: ['Rrrrrr… Là, derrière l’oreille. Oui. Là.', 'Doucement, c’est ma vieille blessure de guerre.', 'Je ne ronronne pas. C’est le vent.', 'Une caresse, c’est bien. Un poisson, c’est mieux.', 'Si tu me grattes, je garde le bébé. Marché conclu.', 'Le Monstre de Fer m’a renversée une fois. Une seule. Il ne recommencera pas.'],
+};
+/* Le mot de Lilou au bilan d'un donjon, selon son humeur (petit plus c) */
+const LILOU_WORDS = { colere: 'OUINNN ! (Elle n’a pas oublié son caprice.)', grognon: 'Mmmh… (Elle te tourne le dos.)', calme: 'Areuh. (Elle te regarde rentrer, très sérieuse.)', contente: 'Areuh ! (Elle te tend les bras.)', ravie: 'Hihihi ! (Elle t’accueille avec un immense sourire.)' };
+const lilouLine = v => { const L = v && v.lilou; if (!L) return ''; const m = lilouMood(L), list = SUK.mood[m.k]; return list[Math.floor((now() / 60000) % list.length)]; };
+const lilouEffect = m => m.mul === 1 ? 'les monstres frappent normalement' : 'les monstres frappent ' + Math.round(Math.abs(1 - m.mul) * 100) + ' % ' + (m.mul < 1 ? 'moins fort' : 'plus fort');
+
+/* ---------- la mission : entrée dans le menu Donjon ---------- */
+function sourceEntryHTML() {
+  if (!me || me.lilou) return '';
+  return `<div class="item feature story">${sukBubble('La lueur maléfique de la vieille mine… Il faut aller voir. C’est court, et je te guide.')}
+    <div class="row split"><b class="row">${djIco('star')}La Source du Mal</b><small class="note">mission · environ 5 min</small></div>
+    <button class="btn primary" data-act="djGo" data-th="source" data-k="1">${djIco('sword')}Partir à la Source du Mal</button></div>`;
+}
+
+/* ---------- le donjon guidé : la bulle de Sukhoï en bas de l'écran ---------- */
+function djTutoEvent(e) {
+  if (!dj || dj.st.d.theme !== 'source') return;
+  if (e.k === 'tuto') { dj.tuto = { s: e.s, t: performance.now() }; SND.sfx('tip'); }
+  else if (e.k === 'tutoOk') { if (SUK.ok[e.s]) dj.tutoOk = { txt: SUK.ok[e.s], t: performance.now() }; if (dj.tuto && dj.tuto.s === e.s) dj.tuto = null; }
+  else if (e.k === 'saved' && e.id === dj.hid) { dj.tutoOk = { txt: SUK.saved, t: performance.now() }; SND.sfx('power'); }
+  djTutoRender();
+}
+function djTutoRender() {
+  const el = document.getElementById('djTuto'); if (!el || !dj) return;
+  const nowT = performance.now(), praise = dj.tutoOk && nowT - dj.tutoOk.t < 2600 ? dj.tutoOk.txt : '';
+  const txt = praise || (dj.tuto ? SUK.tuto[dj.tuto.s] : dj.st.t < 6 ? SUK.start : '');
+  if (el._t !== txt) { el._t = txt; el.innerHTML = txt ? sukBubble(txt) : ''; el.hidden = !txt; }
+  /* le bouton dont parle Sukhoï clignote doucement */
+  const want = dj.tuto && !praise ? { skill: '[data-djsk="0"]', potion: '[data-djpot]', roll: '[data-djroll]' }[dj.tuto.s] : null;
+  for (const b of document.querySelectorAll('#djHud .djsk.hint')) if (!want || !b.matches(want)) b.classList.remove('hint');
+  if (want) { const b = document.querySelector('#djHud ' + want); if (b) b.classList.add('hint'); }
+}
+
+/* ---------- l'arrivée de Lilou (fenêtre au retour de la mission) ---------- */
+function lilouArriveHTML() {
+  const ch = me && me.b.find(b => b.type === 'chambre');
+  return `<p class="eyebrow">La Source du Mal</p><div class="lilhead">${lilouFace('contente')}<h2>Lilou arrive au village</h2></div>
+    ${sukBubble(SUK.arrive)}
+    <div class="row">${ch ? '<button class="btn primary grow" data-act="lilouSee">Voir sa chambre</button>' : ''}<button class="btn grow" data-act="closeModal">${ch ? 'Plus tard' : 'Compris'}</button></div>`;
+}
+/* ---------- la chambre de Lilou (menu) ---------- */
+function capRow(v, big) {
+  const L = v.lilou, cap = big ? L.w : L.d; if (!cap) return '';
+  const C = (big ? BIG_CAPRICES : CAPRICES)[cap.k]; if (!C) return '';
+  const c = capCost(v, cap.k, big), miss = missingTxt(v, c), t = now(), left = (big ? lilouNextWeek(L) : lilouNextDay(L)) - t;
+  const blocked = big && C.need && !C.need(v);
+  return `<div class="item${cap.ok ? '' : ' feature'}"><div class="head"><b>${big ? 'Gros caprice de la semaine' : 'Caprice du jour'} : ${esc(C.name)}</b><small>${cap.ok ? (big ? 'offert' : 'fait') + ' ✓' : 'encore ' + fmtDur(left)}</small></div>
+    <p>${esc(C.txt)}</p>${big && !cap.ok ? '<p class="note">Toute la vallée fera la fête : +' + LILOU.party + ' de moral pendant un jour.</p>' : ''}
+    ${cap.ok ? `<p class="note">${big ? 'Prochain gros caprice' : 'Prochain caprice'} dans ${fmtDur(left)}.</p>`
+      : `<div class="foot"><span class="chips2">${chipsRes(c, v.r)}</span><button class="btn small${miss || blocked ? ' off' : ' primary'}" data-act="lilouCap" data-w="${big ? 1 : 0}">${big ? 'Offrir' : 'Fabriquer'}</button></div>${blocked ? '<p class="why">' + esc(C.needTxt) + '</p>' : ''}`}</div>`;
+}
+function sheetLilou() {
+  const v = me, L = v.lilou;
+  if (!L) return `<p class="note">Lilou n’est pas encore au village.</p>${sourceEntryHTML()}`;
+  const m = lilouMood(L), ch = v.b.find(b => b.type === 'chambre');
+  let h = `<div class="item feature lilmood">${lilouFace(m.k)}<div><b>Lilou est ${esc(m.name)}</b><p class="note">${cap1(lilouEffect(m))}, en donjon comme pendant les raids.</p>
+    <div class="bar mood"><i style="width:${L.mood}%"></i></div></div></div>`;
+  h += capRow(v, false) + capRow(v, true);
+  h += `<div class="sec"><h4>Sukhoï</h4>${sukBubble(lilouLine(v), '<button class="btn small" data-act="sukPet">Gratouiller Sukhoï</button>')}</div>`;
+  h += `<div class="sec"><h4>Comment ça marche</h4><ul class="help">
+    <li>Chaque jour, Lilou a un caprice à fabriquer avec les ressources du village ; chaque semaine, un gros caprice, plus cher, qui fait la fête dans toute la vallée.</li>
+    <li>Un caprice satisfait la rend plus contente ; oublié, elle boude. Ravie, les monstres frappent 10 % moins fort ; en colère, 10 % plus fort.</li>
+    <li>Ses caprices coûtent un peu plus cher quand le village grandit.</li></ul>
+    ${ch ? `<button class="btn small" data-act="lilouMove" data-id="${ch.id}">Déplacer sa chambre</button>` : `<button class="btn small primary" data-act="place" data-type="chambre">Placer sa chambre</button>`}</div>`;
+  return h;
+}
+/* La berceuse, une fois à chaque ouverture de la chambre (petit plus b) */
+let lilouLull = 0;
+function lilouOpened() { if (performance.now() - lilouLull > 20000) { lilouLull = performance.now(); SND.sfx('berceuse'); } }
+
+const ACT_STORY = {
+  lilouCap: b => {
+    const big = b.dataset.w === '1', r = act({ type: 'lilouCap', w: big ? 1 : 0 });   // en cas de refus, act dit pourquoi (ressources, taverne…)
+    if (!r) return;
+    SND.sfx('giggle');
+    toast(big ? 'Lilou est aux anges ! Toute la vallée fait la fête.' : 'Lilou gazouille de joie' + (r.up ? ' : elle est maintenant ' + LILOU_MOODS.find(m => m.k === r.mood).name + ' !' : '.'));
+  },
+  sukPet: () => { SND.sfx('purr'); toast('Sukhoï : « ' + SUK.pet[Math.floor(Math.random() * SUK.pet.length)] + ' »'); },
+  lilouSee: () => { modal = null; openSheet('lilou'); },
+  lilouMove: b => { closeSheet(true); startMove(+b.dataset.id); },
+  sukGo: () => { modal = null; renderAll(); djBegin(1, 'source', 0); },
 };
 
 /* ===================== APPLICATION (village commun) ===================== */
@@ -8048,7 +8458,7 @@ function onVillage(snap) {
   if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
-const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def', 'sol']);
+const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def', 'sol', 'lilou']);
 const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch', 'portal']);
 /* Nouvelles du journal pendant qu'on joue : une bulle pour la plus récente. */
 function newsCheck() {
@@ -8137,6 +8547,7 @@ function onTap(cx, cy) {
   const pk = V3.pickPerson(cx, cy, kb && kb.type === 'poste' ? 7 : 16) || (k ? null : V3.pickPerson(cx, cy, 30));
   if (pk) { selP = pk; sel = null; SND.sfx('click'); refreshScene(); renderAll(); return; }
   if (k === 'merch') { sel = null; selP = null; SND.sfx('click'); openSheet('merch'); return; }
+  if (kb && kb.type === 'chambre' && !pk) { sel = null; selP = null; SND.sfx('click'); openSheet('lilou'); return; }
   if (k && k.indexOf('portal') === 0) { sel = null; selP = null; SND.sfx('click'); openSheet('defense'); return; }
   sel = k && k[0] === 'm' ? +k.slice(1) : null; selP = null;
   refreshScene(); renderAll();
@@ -8179,6 +8590,7 @@ function topHTML() {
   else chips += `<button class="glass chipb" data-act="sheet" data-s="village">${ico('link', 'c-tro')}Inviter</button>`;
   if (v.feast > t) chips += `<span class="glass chipb">${ico('mug', 'c-tro')}Fête · ${fmtDur(v.feast - t)}</span>`;
   if (merchHere(v, t)) chips += `<button class="glass chipb live" data-act="sheet" data-s="merch">${ico('or')}Marchand · ${fmtDur(merchLeaves(v, t) - t)}</button>`;
+  if (v.lilou && v.lilou.d && !v.lilou.d.ok) chips += `<button class="glass chipb" data-act="sheet" data-s="lilou">${lilouFace(lilouMood(v.lilou).k)}Caprice de Lilou</button>`;
   const ri = raidInfo(v, t);
   if (ri.st !== 'calm') chips += `<button class="glass chipb${ri.st === 'ready' ? ' alert' : ''}" data-act="sheet" data-s="defense">${ico('flame', '')}${ri.st === 'ready' ? 'Portail chargé !' : 'Portail · ' + fmtDur(ri.ready - t)}</button>`;
   const head = `<div class="idrow"><button class="glass me" data-act="sheet" data-s="village"><span class="crest" style="background:${safeColor(v.c)}">${esc(initial(v.name))}</span>
@@ -8299,7 +8711,7 @@ function navBar() {
     <button data-act="sheet" data-s="build">${ico('hammer', '')}Construire${canBuild ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="people">${ico('people', '')}Villageois${v.cands.length || idle ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="hero">${ico('crown', '')}${myHero ? esc(myHero.name) : 'Héros'}${myHero && myHero.sp ? '<span class="dot"></span>' : ''}</button>
-    <button data-act="sheet" data-s="donjon">${djIco('sword')}Donjon</button>
+    <button data-act="sheet" data-s="donjon">${djIco('sword')}Donjon${myHero && !v.lilou ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="defense">${djIco('shield')}Défense${raidInfo(v, now()).st !== 'calm' || v.b.some(b => repairCostOf(b)) || solList(v).some(solCanPromote) ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="journal">${ico('scroll', '')}Journal${unseen ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="village">${ico('house', '')}Village</button></nav>`;
@@ -8329,6 +8741,7 @@ function openSheet(s, arg) {
   if (!me) return;
   sheet = s; sheetArg = arg == null ? null : arg; place = null;
   if (s === 'journal') LS.set('mk2.read.' + vid, now());
+  if (s === 'lilou') lilouOpened();
   renderAll(); els.sheetBody.scrollTop = 0;
 }
 function closeSheet(silent) { sheet = null; sheetArg = null; if (!silent) renderAll(); }
@@ -8470,7 +8883,7 @@ function sheetHero() {
   if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
-const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield', sol: 'shield' };
+const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield', sol: 'shield', lilou: 'heart' };
 function sheetJournal() {
   const v = me;
   if (!v.log.length) return '<p class="note">Rien pour l’instant.</p>';
@@ -8524,14 +8937,15 @@ function sheetHelp() {
     + sec('L’équipement', ['Chaque héros porte une arme, un casque, une armure, des bottes et, dès le niveau 8, un bijou (menu Héros). Chaque classe manie sa famille d’armes : lames, arcs ou bâtons.', 'Les objets ont 5 raretés : commun (gris), peu commun (vert), rare (bleu), épique (violet), légendaire (orange, avec un pouvoir). Les objets d’ensemble (turquoise) donnent un bonus à 2 et à 4 pièces portées.', 'On les trouve en donjon : dans les coffres, sur les boss, parfois sur un monstre ; mieux dans les donjons plus hauts. À deux, chacun trouve ses propres objets.', 'Dans le sac, les flèches comparent avec l’objet porté : ▲ mieux, ▼ moins bien. Vendre un objet rapporte de l’or (la bourse commune) ; le fondre à la forge rend du fer.', 'La forge (avec le fer de la mine) fabrique un objet au choix, l’améliore jusqu’à +5 et sertit les pierres précieuses : trois pierres pareilles se fusionnent en une plus belle.', 'Un jour sur deux, un marchand ambulant s’installe près de la halle avec quelques objets à vendre.', 'Au niveau 6, un familier accompagne le héros : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.'])
     + sec('Les raids et la défense', ['À partir du 3e jour, un portail démoniaque s’ouvre au bord de la vallée (au plus un raid par jour). Il se charge pendant 3 heures : vous voyez de quel côté viendront les gobelins.', 'Le raid ne part que quand personne n’a joué depuis 2 heures. Il se joue tout seul ; au retour, un bilan s’affiche et vous pouvez revoir le combat.', 'Les gobelins foncent piller la halle, les voleurs filent vers l’entrepôt, les trolls cassent ce qui bloque (bien plus fort sur les palissades et les portes). Tous prennent le chemin le plus court, en comptant ce qu’il faudrait casser.', 'Ce qu’ils emportent est perdu s’ils regagnent le portail ; abattus avant, ils lâchent tout. Si la halle est pillée, le moral baisse pendant un jour.', 'Menu Défense : palissades (posées en ligne), portes (vos héros et villageois passent), tours d’archers, pièges à pointes et filets cachés. Vos héros défendent la halle et gagnent de l’expérience ; chaque ennemi abattu rapporte de l’or.', 'Refermez un portail avec votre héros (seul ou à deux) : un petit donjon et son gardien. Tous les portails refermés : pas de raid cette fois.', 'Après un raid, réparez les défenses abîmées (menu Défense).'])
     + sec('La garnison', ['La caserne (halle niveau 2) loge 3 soldats par niveau, 12 au plus, et donne un poste de garde par niveau. On y recrute contre de l’or : fantassin, archer, lancier ou mage de guerre.', 'Pendant un raid, chaque soldat garde le cercle de son poste sans jamais en sortir : fantassins et lanciers devant, du côté du portail, archers et mages derrière. Améliorer un poste agrandit son cercle. « Répartir » met un peu de chaque type partout.', 'Les soldats qui tiennent gagnent de l’expérience ; vous les faites monter de niveau (jusqu’au 15) contre de l’or, de la viande et, plus tard, du fer. Ils mangent, un peu plus à chaque niveau.', 'Un soldat abattu se repose 8 heures à la caserne, sans rien perdre sauf sa série : 5 raids de suite sans tomber font un Vétéran, 10 un Briscard, 20 un Héros de la garde.', 'À la forge, chaque soldat reçoit une arme et une armure complète (avec son bonus d’ensemble). Orbes (3 emplacements, aux niveaux 4, 8 et 12) et bannières (une par poste) se gagnent en défense réussie, en donjon et sur le gardien du portail.'])
+    + sec('Lilou et Sukhoï', ['Sukhoï, vieille guerrière (et chatte grise), vous guide et vous donne des conseils au bon moment.', 'La mission « La Source du Mal » (menu Donjon) ramène Lilou au village, une fois pour toutes. Elle s’installe dans sa chambre, près de la halle : touchez-la pour la voir.', 'Chaque jour, Lilou a un caprice à fabriquer ; chaque semaine, un gros caprice qui fait la fête dans toute la vallée (+10 de moral pendant un jour). Satisfaite, elle est plus contente ; oubliée, elle boude.', 'Son humeur compte en donjon et pendant les raids : ravie, les monstres frappent 10 % moins fort, contente 5 % ; grognon 5 % plus fort, en colère 10 %.'])
     + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4), et la roulade (barre d’espace ou touche 5) : un bond dans la direction du pouce, intouchable un instant, toutes les 4 secondes.', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de l’or, de la pierre et du bois pour le village, des objets et des pierres précieuses dans ton sac, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié (on garde les meilleurs objets).', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense', caserne: 'La caserne' };
+  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense', caserne: 'La caserne', lilou: 'La chambre de Lilou' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense, caserne: sheetCaserne }[sheet];
+  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense, caserne: sheetCaserne, lilou: sheetLilou }[sheet];
   setHTML(els.sheetBody, f ? f() : '');
   if (sheet === 'village' && sheetArg === 'feast' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#feastSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
@@ -8606,6 +9020,7 @@ function renderModal() {
   else if (M && M.kind === 'newhero' && me) h = heroHTML(true);
   else if (M && M.kind === 'djres' && dj) h = djResHTML();
   else if (M && M.kind === 'raid' && me) h = raidModalHTML();
+  else if (M && M.kind === 'lilou' && me) h = lilouArriveHTML();
   else if (M && M.kind === 'djfloor' && dj && dj.run) h = djFloorHTML();
   else if (M && M.kind === 'djfloorwait' && dj && dj.run && dj.duo) h = djFloorWaitHTML();
   else if (M && M.kind === 'djinv' && me) h = djInvHTML();
@@ -8619,13 +9034,14 @@ function renderModal() {
     h = `<p class="eyebrow">Pendant votre absence</p><h2>Des nouvelles du village</h2><ol class="log">${M.list.map(e => `<li><time>${fmtAgo(e.t)}</time><span>${esc(e.m)}</span></li>`).join('')}</ol><button class="btn primary" data-act="closeModal">Au travail !</button>`;
   } else if (M && M.kind === 'welcome') {
     h = `<p class="eyebrow">Bienvenue, ${esc(M.name)}</p><h2>Votre village commence ici</h2>
+      ${me && !me.lilou ? sukBubble(SUK.hello) : ''}
       <ul class="news">
         <li>${ico('star', 'c-tro')}<span>Suivez les <b>objectifs</b> en haut à gauche : ils rapportent des ressources.</span></li>
         <li>${ico('house', 'c-tro')}<span>Touchez un <b>bâtiment</b> pour le voir, l’agrandir ou y envoyer des travailleurs.</span></li>
         <li>${ico('people', '')}<span>Touchez un <b>villageois</b> pour voir ses notes sur 10 et changer son métier.</span></li>
         <li>${ico('pain', '')}<span>Chacun mange une ration par heure. En <b>hiver</b>, les champs dorment : faites des réserves.</span></li>
         <li>${ico('link', 'c-tro')}<span>Invitez votre partenaire depuis le menu <b>Village</b>.</span></li>
-      </ul><button class="btn primary" data-act="closeModal">C’est parti</button>`;
+      </ul>${me && !me.lilou ? `<div class="row"><button class="btn grow" data-act="closeModal">Plus tard</button><button class="btn primary grow" data-act="sukGo">${djIco('sword')}Aller voir la Source du Mal</button></div>` : '<button class="btn primary" data-act="closeModal">C’est parti</button>'}`;
   } else if (!M && mode === 'gate') h = gateHTML();
   else if (!M && mode === 'join' && joinInfo) h = joinHTML();
   else if (!M && mode === 'hero' && me) h = heroHTML();
@@ -8663,6 +9079,7 @@ const ACT = {
   ...ACT_RAID,
   ...ACT_GAR,
   ...ACT_TIP,
+  ...ACT_STORY,
   noop() {},
   gfxToggle: () => { const on = !gfxLight(); LS.set('mk2.light', on ? 1 : 0); if (gl) V3.setLight(on); toast(on ? 'Graphismes légers : image plus simple, jeu plus fluide.' : 'Graphismes complets : ombres et image fine.'); renderAll(); },
   orient: b => { orient = b.dataset.o; LS.set('mk2.orient', orient); applyOrientation(); renderAll(); },

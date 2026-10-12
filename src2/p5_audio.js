@@ -331,6 +331,13 @@ const SND = (() => {
     star: (d, t, p, i) => chime(d, [1046 * Math.pow(1.26, i || 0)], t, 0, 0.12),
     invite: (d, t) => { horn(d, [57, 62], t, 0.2, 0.08); horn(d, [57, 62], t + 0.55, 0.2, 0.07); },
     tip: (d, t) => chime(d, [1318, 1760], t, 0.1, 0.045),
+    /* l'histoire : la berceuse de Brahms (domaine public) en boîte à musique, le rire de Lilou, le ronron de Sukhoï */
+    berceuse: (d, t) => {
+      const N = [[76, .5], [76, .5], [79, 2], [76, .5], [76, .5], [79, 2], [76, .5], [79, .5], [84, 1], [83, 1.5], [81, .5], [81, 1], [79, 1], [74, .5], [76, .5], [77, 1], [74, 1], [74, .5], [76, .5], [77, 2]];
+      let x = t; for (const [m, b] of N) { const f = mtof(m); tone(d, 'sine', f, f, x, 0.004, 0.04, 0.9); tone(d, 'sine', f * 2.76, f * 2.76, x, 0.002, 0.012, 0.3); x += b * 0.32; }
+    },
+    giggle: (d, t) => { for (let i = 0; i < 5; i++) { const f = 820 + i * 60 + Math.random() * 80; tone(d, 'triangle', f, f * 1.35, t + i * 0.09, 0.008, 0.05, 0.06); } },
+    purr: (d, t) => { for (let i = 0; i < 6; i++) { hiss(d, 'lowpass', 240, 0.8, t + i * 0.2, 0.04, 0.09, 0.14); tone(d, 'sine', 48, 42, t + i * 0.2, 0.03, 0.05, 0.14); } },
     whoosh: (d, t, p) => { hiss(d, 'bandpass', 500, 1.4, t, 0.03, 0.14, 0.24, p, 2200); },
     recruit: (d, t) => { drum(d, t, 0.26, 'tom'); drum(d, t + 0.18, 0.2, 'tap'); horn(d, [55, 62], t + 0.3, 0.18, 0.08); },
     promote: (d, t) => { horn(d, [57, 61, 64], t, 0.12, 0.09); chime(d, [1318, 1760], t + 0.36, 0.06, 0.07); },

@@ -1082,7 +1082,47 @@ const V3 = (() => {
     if (lv >= 2) g.add(P('cone6', 0xc9d0d6, 0.12, 0.18, 0.12, 0, y + 0.14 + H, 0, 0, true));
     return { g, info: { top: y + H + 0.45, muzzle: 1, emit: [] } };
   }
-  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG, caserne: caserneG, poste: posteG };
+  /* L'histoire (lot A) : le berceau de Lilou et Sukhoï, dessinés par le code en attendant leurs modèles Meshy. */
+  function cradleG() {
+    const g = new THREE.Group(), wood = 0x9a6a3e;
+    for (const x of [-0.3, 0.3]) g.add(P('box', 0x7a5230, 0.06, 0.06, 0.5, x, 0, 0, 0, true));                 // les patins (berceau à bascule)
+    g.add(P('box', wood, 0.66, 0.08, 0.42, 0, 0.08, 0));
+    for (const x of [-0.3, -0.15, 0, 0.15, 0.3]) for (const z of [-0.19, 0.19]) g.add(P('cyl6', 0xb07a48, 0.03, 0.26, 0.03, x, 0.16, z, 0, true));
+    for (const z of [-0.19, 0.19]) g.add(P('box', wood, 0.68, 0.04, 0.04, 0, 0.42, z, 0, true));
+    for (const x of [-0.32, 0.32]) g.add(P('box', wood, 0.04, 0.34, 0.42, x, 0.12, 0, 0, true));
+    g.add(P('box', 0xf2b8c6, 0.5, 0.1, 0.34, 0.04, 0.16, 0, 0, true));                                           // la couverture rose
+    g.add(P('sph', 0xf3d3bd, 0.17, 0.16, 0.17, -0.2, 0.2, 0, 0, true));                                         // Lilou : la tête…
+    g.add(P('sph', 0xf2d27a, 0.12, 0.07, 0.12, -0.21, 0.34, 0, 0, true));                                       // … et sa houppette blonde
+    for (const z of [-0.035, 0.035]) g.add(P('sph', 0x4a7ad8, 0.03, 0.03, 0.03, -0.12, 0.27, z, 0, true));      // ses yeux bleus
+    return g;
+  }
+  function catG() {
+    /* Sukhoï endormie : une chatte grise roulée en boule, la tache blanche sur la poitrine, la queue autour d'elle */
+    const g = new THREE.Group(), grey = 0x8b9097, dark = 0x6d7178;
+    g.add(P('sph', grey, 0.42, 0.2, 0.3, 0, 0, 0));
+    g.add(P('sph', grey, 0.2, 0.17, 0.19, 0.17, 0.04, 0.07));
+    g.add(P('sph', 0xf4f1ea, 0.1, 0.08, 0.08, 0.2, 0.02, 0.15, 0, true));
+    for (const z of [0.0, 0.12]) g.add(P('cone4', dark, 0.06, 0.08, 0.05, 0.2, 0.18, z, 0, true));
+    g.add(piv(-0.16, 0.03, 0.12, [P('cyl6', dark, 0.05, 0.36, 0.05, 0, 0, 0, 0, true)], Math.PI / 2, 0.9, 0));
+    return g;
+  }
+  /* La chambre de Lilou : une petite maison douillette, le berceau devant la porte et Sukhoï qui dort à côté. */
+  function chambreG(it) {
+    const g = new THREE.Group(), y0 = 0.1, col = it.col || COLORS[0];
+    g.add(P('box', 0xa89a84, 1.7, y0, 1.6, 0, 0, 0));
+    g.add(P('box', 0xf1e3c8, 1.3, 0.72, 0.8, 0, y0, -0.36));
+    g.add(P('prism', 0xd4848e, 1.48, 0.55, 1.0, 0, y0 + 0.72, -0.36));
+    g.add(P('box', 0x7a5230, 0.26, 0.46, 0.04, 0.3, y0, 0.05, 0, true));
+    g.add(P('cyl12', winMat, 0.22, 0.03, 0.22, -0.32, y0 + 0.46, 0.05, 0, true));
+    g.add(P('box', 0x7a5230, 0.36, 0.06, 0.08, -0.32, y0 + 0.22, 0.08, 0, true));
+    for (const x of [-0.42, -0.32, -0.22]) g.add(P('sph', [0xf28fb0, 0xf6d36a, 0x9ad0f2][Math.round((x + 0.42) * 10)], 0.07, 0.07, 0.07, x, y0 + 0.28, 0.09, 0, true));
+    g.add(P('box', 0xe8d9b8, 1.5, 0.02, 0.62, 0, y0, 0.45, 0, true));
+    const c = cradleG(); c.position.set(-0.38, y0, 0.48); c.rotation.y = 0.2; g.add(c);
+    const k = catG(); k.position.set(0.32, y0 + 0.02, 0.56); k.rotation.y = -0.5; g.add(k);
+    g.add(flag(0.72, y0, -0.7, col, 1.0));
+    return { g, info: { top: y0 + 1.35, muzzle: 1, emit: [[-0.4, y0 + 1.2, -0.5]] } };
+  }
+  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG, caserne: caserneG, poste: posteG, chambre: chambreG };
   function build(it) {
     const s = BLD[it.type].size, g = new THREE.Group();
     let info = { top: 1.2, muzzle: 1, emit: [] };
@@ -1891,12 +1931,15 @@ const V3 = (() => {
     diablotin: { m: 'rogue', tex: 'orc_rogue', tint: 0xff8a6a, show: ['Knife'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.72, w: 0.95 },
     lanceflamme: { m: 'rogue', tex: 'orc_rogue', tint: 0xffb07a, show: ['Throwable'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.8, w: 0.95 },
     gardien: { m: 'barbarian', tex: 'troll', tint: 0xff7a5a, show: ['2H_Axe', 'Barbarian_Hat'], atk: '2H_Melee_Attack_Chop', h: 2.5, w: 1.45 },
+    /* la Source du Mal (mission d'intro) */
+    gardeSource: { m: 'barbarian', tex: 'troll', tint: 0xb89cff, show: ['2H_Axe'], atk: '2H_Melee_Attack_Chop', h: 2.2, w: 1.4 },
   };
   /* Couleurs du décor selon le donjon. */
   const DJ_LOOK = {
     mine: { room: [0x6b645a, 0x625b52, 0x736b5f], hall: [0x4f4a44, 0x57514a], wall: [0x5d564d, 0x534d45], torch: 0xffa040, light: 0xffb066 },
     crypte: { room: [0x5e626b, 0x565a63, 0x666a73], hall: [0x44474e, 0x4b4e55], wall: [0x4d5159, 0x454951], torch: 0x5fe0c8, light: 0xa8d8ff },
     portail: { room: [0x5a4442, 0x52403e, 0x63494a], hall: [0x40302f, 0x473534], wall: [0x4a3634, 0x412f2e], torch: 0xff5a2a, light: 0xff8a5a },
+    source: { room: [0x625c66, 0x5a5560, 0x6a636e], hall: [0x4a454f, 0x514b56], wall: [0x57515d, 0x4e4854], torch: 0xb98aff, light: 0xd2b0ff },
   };
   const DJ_HERO_ATK = { guerrier: '1H_Melee_Attack_Chop', paladin: '1H_Melee_Attack_Chop', rodeur: '2H_Ranged_Shoot', voleur: '1H_Melee_Attack_Slice_Diagonal' };
   const DJ_CAST_ANIM = { tourbillon: 'spin', cri: 'cheer', bouclier: 'cheer', consecration: 'cheer', poison: 'cheer', fumee: 'cheer', lumiere: 'cheer', priere: 'cheer', ours: 'cheer', loup: 'cheer', racines: 'cheer', squelettes: 'cheer', nova: 'cheer' };
@@ -2092,6 +2135,13 @@ const V3 = (() => {
       const mark = makeGlow(0xfff0a0, 0.9, 1.9); g.add(mark);
       djGroup.add(g); DJ.pris = { g, chains, mark, t: 0 };
     }
+    /* La Source du Mal : le berceau au fond de la dernière salle, dans une lueur inquiétante */
+    if (d.cradle) {
+      const g = new THREE.Group(); g.position.set(d.cradle[0] + 0.5 - half, 0, d.cradle[1] + 0.5 - half); g.rotation.y = -Math.PI / 4;
+      const c = cradleG(); c.scale.setScalar(1.3); g.add(c);
+      const glow = makeGlow(0xb98aff, 2.6, 0.6); g.add(glow); const ring = djRing(0xb98aff, 2.2, 0.45); g.add(ring);
+      djGroup.add(g); DJ.cradle = { g, c, glow, ring };
+    }
     /* Lumière chaude qui suit le héros. */
     DJ.light = new THREE.PointLight(LK.light, 1.5, 13, 1.6); djGroup.add(DJ.light);
     setMood('donjon');
@@ -2195,6 +2245,7 @@ const V3 = (() => {
       case 'clear': { const c = djCenter(st.d.rooms[e.room]); wave(c[0] + 0.5, c[1] + 0.5, 0xffd27a, 4, 0.9); break; }
       case 'trap': spark(e.x, 0.4, e.y, 0xff5a3c); break;
       case 'revive': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xb8ffcf, 2, 0.8); djNum(p[0], p[1], 'se relève !', '#b8ffcf', true); } break; }
+      case 'saved': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xc9b3ff, 2, 0.8); djNum(p[0], p[1], 'Sukhoï te relève !', '#d8c8ff', true); } break; }
       case 'raise': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xffe08a, 1.8, 0.8); for (let i = 0; i < 8; i++) spark(p[0] + (Math.random() - 0.5) * 0.8, 0.4 + i * 0.25, p[1] + (Math.random() - 0.5) * 0.8, 0xffe08a); djNum(p[0], p[1], 'relevé !', '#ffe08a', true); } break; }
       case 'cast': { const r = DJ.ents.get(e.id); if (r) { r.castT = performance.now() / 1000; const an = DJ_CAST_ANIM[e.s] || 'atk'; if (r.g.userData.A && r.g.userData.A[an]) djPlay(r, an, an === 'spin' ? 1.4 : 1.2, true); } break; }
     }
@@ -2202,7 +2253,7 @@ const V3 = (() => {
   /* Mise à jour de l'affichage d'après l'état du combat (appelée à chaque image ; alpha = entre deux pas). */
   function djSync(st, alpha, dt, tNow) {
     if (!DJ) return;
-    DJ.frame++; DJ.t += dt; DJ.dt = dt;
+    DJ.frame++; DJ.t += dt; DJ.dt = dt; DJ.st = st;
     const fr = DJ.frame, Q = camera.quaternion;
     const upd = (map, e, make) => { let r = map.get(e.id); if (!r) { r = make(e); map.set(e.id, r); djGroup.add(r.g); } r.seen = fr; return r; };
     for (const h of st.heroes) {
@@ -2329,6 +2380,13 @@ const V3 = (() => {
     }
     DJ.dying = DJ.dying.filter(d => !d.done);
     for (const t of DJ.torches) { const f = 0.85 + 0.1 * Math.sin(tNow * 13 + t.ph) + 0.06 * Math.sin(tNow * 31 + t.ph); t.s.material.opacity = 0.42 * f; t.f.scale.y = 0.26 * f; }
+    /* le berceau de la Source : il se balance tout seul, la lueur bat (et vire au doré quand la voie est libre) */
+    if (DJ.cradle) {
+      const C = DJ.cradle, free = !!DJ.st.exit;
+      C.c.rotation.z = Math.sin(tNow * 2.2) * 0.08;
+      C.glow.material.opacity = 0.35 + 0.2 * Math.sin(tNow * 3.1);
+      if (free !== C.free) { C.free = free; const col = lin(free ? 0xffd27a : 0xb98aff); C.glow.material.color.copy(col); C.ring.material.color.copy(col); }
+    }
     const sp = P_MOOD.sunPos;
     sun.position.set(cam.tx + sp[0], sp[1], cam.tz + sp[2]); sun.target.position.set(cam.tx, 0, cam.tz); sun.target.updateMatrixWorld();
   }

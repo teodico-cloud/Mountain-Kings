@@ -30,6 +30,8 @@ const DJ_BOSSES = {
   chefTroll: { name: 'Chef troll', hp: 520, dmg: 16, speed: 1.8, range: 1.6, rate: 2.1, xp: 80, big: true, boss: true },
   roiSquelette: { name: 'Roi squelette', hp: 560, dmg: 15, speed: 1.9, range: 1.7, rate: 2.0, xp: 85, big: true, boss: true },
   gardien: { name: 'Gardien du portail', hp: 540, dmg: 15, speed: 1.9, range: 1.7, rate: 2.0, xp: 85, big: true, boss: true },
+  /* l'histoire (lot A) : le gardien de la Source du Mal, un gros troll qui annonce son coup (de quoi apprendre la roulade) */
+  gardeSource: { name: 'Gardien de la Source', hp: 230, dmg: 8, speed: 1.6, range: 1.6, rate: 2.2, xp: 40, big: true, boss: true },
 };
 /* Renforts des boss qui appellent à l'aide (tempête d'os ou pluie de feu) */
 const DJ_BOSS_ADDS = { roiSquelette: ['squelette', 'squelette', 'squelette', 'archerSq'], gardien: ['diablotin', 'diablotin', 'diablotin', 'lanceflamme'] };
@@ -37,6 +39,8 @@ const DJ_THEMES = {
   mine: { name: 'Mine des gobelins', the: 'la mine des gobelins', monsters: ['gobelin', 'archer', 'chaman', 'troll'], boss: 'chefTroll' },
   crypte: { name: 'Crypte des rois', the: 'la crypte des rois', monsters: ['squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem'], boss: 'roiSquelette' },
   portail: { name: 'Portail démoniaque', the: 'le portail démoniaque', monsters: ['diablotin', 'lanceflamme', 'gobelin', 'troll'], boss: 'gardien', rooms: 3 },
+  /* la mission d'intro (l'histoire) : un petit donjon fait main, guidé par Sukhoï (genSource) */
+  source: { name: 'La Source du Mal', the: 'la Source du Mal', monsters: ['gobelin', 'archer', 'chaman'], boss: 'gardeSource', rooms: 3 },
 };
 const DJ_PRISONER_CHANCE = lvl => Math.min(0.10, 0.03 + 0.007 * lvl);   // rare : de 4 % (niveau 1) à 10 %
 
@@ -62,6 +66,7 @@ const djCenter = r => [r.x + (r.w >> 1), r.y + (r.h >> 1)];
 /* Fabrique un donjon : 5 à 6 salles de combat (2 ou 3 vagues de monstres chacune) + l'arène du boss, une salle annexe (trésor ou prisonnier).
    opts (étages des Profondeurs) : { rooms: nombre de salles de combat, boss: false pour un étage sans boss }. */
 function genDungeon(seed, lvl, theme, opts) {
+  if (theme === 'source') return genSource(seed);
   const o = opts || {}, R = mulberry32((seed ^ 0x9e3779b9) >>> 0), pick = a => a[Math.floor(R() * a.length)];
   const T = DJ_THEMES[theme] || DJ_THEMES.mine, coin = R() < 0.5 ? 1 : 0, nFight = o.rooms || T.rooms || 5 + coin, withBoss = o.boss !== false;
   let rooms = null;
@@ -132,6 +137,30 @@ function genDungeon(seed, lvl, theme, opts) {
   const pris = rooms.find(r => r.kind === 'prisoner');
   return { seed, lvl, theme: DJ_THEMES[theme] ? theme : 'mine', W, H, grid, rooms, start: djCenter(rooms[0]), monsters, traps, chests, altar,
     prisoner: pris ? djCenter(pris) : null, exitRoom: rooms.indexOf(chain[chain.length - 1]), floor: o.floor || 0 };
+}
+/* La Source du Mal (mission d'intro) : toujours le même petit donjon, fait main. Entrée, 3 salles d'une seule vague
+   (2 gobelins ; 3 gobelins, un archer et un coffre ; 2 gobelins et un chaman), puis la salle de la Source : le gardien,
+   et au fond le berceau (la sortie). Personne n'y meurt : Sukhoï relève le héros (st.noDeath). */
+function genSource(seed) {
+  const rooms = [
+    { k: 'entree', w: 8, h: 8, shape: 'rect', kind: 'start', x: 2, y: 5 },
+    { k: 'carree', w: 9, h: 9, shape: 'rect', kind: 'fight', x: 15, y: 4 },
+    { k: 'longue', w: 11, h: 9, shape: 'rect', kind: 'fight', x: 30, y: 4 },
+    { k: 'carree', w: 9, h: 9, shape: 'pillars', kind: 'fight', x: 47, y: 4 },
+    { k: 'source', w: 13, h: 13, shape: 'arena', kind: 'boss', x: 62, y: 2 },
+  ];
+  const W = 77, H = 17, grid = new Uint8Array(W * H);
+  for (const r of rooms) r.cells = djCarve(grid, W, r.x, r.y, r.w, r.h, r.shape);
+  for (let i = 1; i < rooms.length; i++) djCorridor(grid, W, djCenter(rooms[i - 1]), djCenter(rooms[i]));
+  let mid = 1; const monsters = [];
+  const put = (ri, type, dx, dy, boss) => { const r = rooms[ri]; monsters.push({ id: mid++, room: ri, type, x: r.x + dx + 0.5, y: r.y + dy + 0.5, wave: 0, boss: !!boss }); };
+  put(1, 'gobelin', 5, 3); put(1, 'gobelin', 6, 6);
+  put(2, 'gobelin', 4, 2); put(2, 'gobelin', 6, 6); put(2, 'gobelin', 8, 4); put(2, 'archer', 9, 2);
+  put(3, 'gobelin', 4, 3); put(3, 'gobelin', 5, 6); put(3, 'chaman', 7, 4);
+  put(4, 'gardeSource', 6, 6, true);
+  const B = rooms[4];
+  return { seed, lvl: 1, theme: 'source', W, H, grid, rooms, start: djCenter(rooms[0]), monsters, traps: [], chests: [{ room: 2, x: rooms[2].x + 9.5, y: rooms[2].y + 7.5 }], altar: null,
+    prisoner: null, exitRoom: 4, floor: 0, cradle: [B.x + B.w - 3, B.y + (B.h >> 1)], tuto: true };
 }
 /* Cases atteignables depuis l'entrée (pour vérifier qu'aucune salle n'est coupée du reste). */
 function djReach(d) {
@@ -316,6 +345,7 @@ function djStart(d, heroes, opts) {
     traps: d.traps.map((t, i) => ({ x: t.x, y: t.y, ph: (i * 0.37) % 2.4, on: false, hit: {} })),
     exit: null, bless: null, xp: 0, loot: {}, kills: 0, flow: null, flowN: -99, boss: 0, calmT: 0, gold: 0, items: {}, gems: {},
     pk: 1 + 0.7 * (heroes.length - 1),
+    noDeath: !!d.tuto, tuto: d.tuto ? { on: '', done: {}, x0: d.start[0] + 0.5, y0: d.start[1] + 0.5, pot0: 0, slam: 0 } : null,
   };
   for (const h of st.heroes) if (o.remote && h.id === o.remote) h.remote = true;
   d.rooms.forEach((r, ri) => { for (const [x, y] of r.cells) st.roomAt[y * W + x] = ri; });
@@ -324,6 +354,7 @@ function djStart(d, heroes, opts) {
   for (const m of d.monsters) {
     const mob = djMob(st, m.type, m.x, m.y, m.room, !!m.boss); mob.wave = m.wave || 0; mob.hidden = mob.wave > 0; st.mobs.push(mob);
     if (mob.boss) st.boss = mob.id;
+    if (mob.type === 'gardeSource') mob.sp.slam = 2.5;
     st.rooms[m.room].waves = Math.max(st.rooms[m.room].waves, mob.wave + 1);
   }
   if (st.heroes.some(h => h.cls === 'pretre' && h.lvl >= 4)) for (const h of st.heroes) { h.hpBase *= 1.1; h.hpMax = h.hp = h.hpBase; }   // Bénédiction
@@ -338,6 +369,7 @@ function djStart(d, heroes, opts) {
   for (const h of st.heroes) if (h.pet) st.allies.push({ id: st.nid++, kind: 'pet', pt: h.pet, own: h.id, x: h.x - 0.8, y: h.y + 0.8, px: h.x - 0.8, py: h.y + 0.8, r: 0.25, hp: 1, hpMax: 1,
     dmg: h.dmg * 0.35 * (h.cls === 'rodeur' && h.spec === 1 ? 3 : 1) * (h.pet === 'loup' ? 1.3 : h.pet === 'faucon' ? 0.8 : 1), range: 1.1, rate: 1.2, speed: 5.5, atkT: 0, t: 1e9, inv: true, tgt: 0, mv: false, atkN: 0 });
   st.goldMul = 1 + st.heroes.reduce((a, h) => a + (h.gold || 0), 0);
+  if (st.tuto && st.heroes[0]) st.tuto.pot0 = st.heroes[0].pot;
   return st;
 }
 
@@ -418,7 +450,8 @@ function djDamageHero(st, h, v) {
   if (h.dead || !(v > 0)) return 0;
   h.hp -= v; st.ev.push({ k: 'hurt', id: h.id, v: Math.round(v) });
   if (h.hp <= 0) {
-    if (h.pw && h.pw.sursis && !h.sursis) { h.sursis = true; h.hp = 1; h.b.inv = 2; st.ev.push({ k: 'sursis', id: h.id }); }   // Dernier Rempart (légendaire)
+    if (st.noDeath) { h.hp = Math.max(1, h.hpMax * 0.35); h.b.inv = 2; st.ev.push({ k: 'saved', id: h.id }); }       // la mission d'intro : Sukhoï le relève
+    else if (h.pw && h.pw.sursis && !h.sursis) { h.sursis = true; h.hp = 1; h.b.inv = 2; st.ev.push({ k: 'sursis', id: h.id }); }   // Dernier Rempart (légendaire)
     else if (h.race === 'mortvivant' && !h.revived) { h.revived = true; h.hp = h.hpMax * 0.4; h.b.inv = 1.5; st.ev.push({ k: 'revive', id: h.id }); }
     else { h.hp = 0; h.dead = true; h.form = null; h.mv = false; st.ev.push({ k: 'down', id: h.id }); }
   }
@@ -855,9 +888,9 @@ function djBossRoi(st, m) {
 }
 /* Le chef troll : coup de massue en cercle, charge, renforts à 66 % et 33 % de vie, rage sous 25 %. */
 function djBossTroll(st, m) {
-  const S = m.sp, dt = DJ_DT;
+  const S = m.sp, dt = DJ_DT, tuto = m.type === 'gardeSource';
   S.slam -= dt; S.charge -= dt;
-  if ((S.phase === 0 && m.hp < m.hpMax * 0.66) || (S.phase === 1 && m.hp < m.hpMax * 0.33)) {
+  if (!tuto && ((S.phase === 0 && m.hp < m.hpMax * 0.66) || (S.phase === 1 && m.hp < m.hpMax * 0.33))) {
     S.phase++;
     const R = st.d.rooms[m.room], c = djCenter(R);
     ['gobelin', 'gobelin', 'archer'].forEach((type, k) => {
@@ -866,10 +899,10 @@ function djBossTroll(st, m) {
     });
     st.ev.push({ k: 'summon', id: m.id, x: m.x, y: m.y, boss: true });
   }
-  if (!S.enr && m.hp < m.hpMax * 0.25) { S.enr = true; m.rate *= 0.7; m.speed *= 1.2; st.ev.push({ k: 'enrage', id: m.id }); }
+  if (!tuto && !S.enr && m.hp < m.hpMax * 0.25) { S.enr = true; m.rate *= 0.7; m.speed *= 1.2; st.ev.push({ k: 'enrage', id: m.id }); }
   if (S.act === 'slam') {
     S.actT -= dt; m.mv = false;
-    if (S.actT <= 0) { for (const t of djFoes(st)) if (djDist(m, t) <= 3 + t.r) djHit(st, t, m.dmg * 1.6); st.ev.push({ k: 'slam', id: m.id, x: m.x, y: m.y, r: 3 }); S.act = null; S.slam = 7; }
+    if (S.actT <= 0) { for (const t of djFoes(st)) if (djDist(m, t) <= 3 + t.r) djHit(st, t, m.dmg * 1.6); st.ev.push({ k: 'slam', id: m.id, x: m.x, y: m.y, r: 3 }); S.act = null; S.slam = tuto ? 6 : 7; }
     return true;
   }
   if (S.act === 'chargeW') { S.actT -= dt; m.mv = false; if (S.actT <= 0) { S.act = 'charge'; S.actT = 0.85; S.hit = []; st.ev.push({ k: 'charge', id: m.id }); } return true; }
@@ -887,8 +920,8 @@ function djBossTroll(st, m) {
   if (m.wind > 0) return false;
   const t = djMobTarget(st, m); if (!t) return false;
   const dd = djDist(m, t);
-  if (S.slam <= 0 && dd <= 3.5) { S.act = 'slam'; S.actT = 1.0; st.ev.push({ k: 'tele', id: m.id, a: 'slam', x: m.x, y: m.y, r: 3, t: 1.0 }); return true; }
-  if (S.charge <= 0 && dd >= 3 && dd <= 10 && djLos(st, m.x, m.y, t.x, t.y)) {
+  if (S.slam <= 0 && dd <= 3.5) { const tt = tuto ? 1.4 : 1.0; S.act = 'slam'; S.actT = tt; st.ev.push({ k: 'tele', id: m.id, a: 'slam', x: m.x, y: m.y, r: 3, t: tt }); if (st.tuto) st.tuto.slam = 1; return true; }
+  if (!tuto && S.charge <= 0 && dd >= 3 && dd <= 10 && djLos(st, m.x, m.y, t.x, t.y)) {
     S.dx = (t.x - m.x) / dd; S.dy = (t.y - m.y) / dd; S.act = 'chargeW'; S.actT = 0.8;
     st.ev.push({ k: 'tele', id: m.id, a: 'charge', x: m.x, y: m.y, dx: S.dx, dy: S.dy, len: 9, t: 0.8 }); return true;
   }
@@ -961,7 +994,7 @@ function djWorld(st) {
       R.st = 'clear'; for (const k of st.doors[ri]) st.door[k] = 0;
       const boss = d.rooms[ri].kind === 'boss';
       const left = st.rooms.some((R2, i) => (d.rooms[i].kind === 'fight' || d.rooms[i].kind === 'boss') && R2.st !== 'clear');
-      if (!left && !st.exit) { const c = djCenter(d.rooms[d.exitRoom != null ? d.exitRoom : ri]); st.exit = { x: c[0] + 0.5, y: c[1] + 0.5 }; }
+      if (!left && !st.exit) { const c = d.cradle || djCenter(d.rooms[d.exitRoom != null ? d.exitRoom : ri]); st.exit = { x: c[0] + 0.5, y: c[1] + 0.5 }; }
       st.ev.push({ k: 'clear', room: ri, boss });
       for (const h of st.heroes) if (h.dead && !h.gone) djRaise(st, h, 0.3, 0);      // salle nettoyée : l'allié tombé se relève
       return;
@@ -1038,12 +1071,34 @@ function djStep(st, inputs) {
   for (const s of st.shots) djShotStep(st, s);
   for (const z of st.zones) djZoneStep(st, z);
   djWorld(st);
+  if (st.tuto) djTuto(st);
   st.mobs = st.mobs.filter(m => m.hp > 0);
   st.allies = st.allies.filter(a => a.inv || a.hp > 0);
   st.shots = st.shots.filter(s => !s.dead);
   st.zones = st.zones.filter(z => !z.dead);
   st.corpses = st.corpses.filter(c => st.t - c.t < 10);
   return st;
+}
+/* La mission d'intro, guidée par Sukhoï : chaque étape s'annonce ({ k: 'tuto', s }) quand elle devient utile et se valide
+   ({ k: 'tutoOk', s }) quand le joueur l'a faite ; une seule bulle à la fois (la première étape en cours, dans l'ordre). */
+const DJ_TUTO = [
+  { s: 'move', on: () => true, ok: (st, h, T) => Math.hypot(h.x - T.x0, h.y - T.y0) > 3 },
+  { s: 'fight', on: st => st.mobs.some(m => m.awake && m.hp > 0), ok: st => st.kills > 0 },
+  { s: 'roll', on: (st, h, T) => !!T.slam, ok: (st, h) => (h.rollN | 0) > 0, end: st => !!st.exit },
+  { s: 'potion', on: (st, h) => h.hp < h.hpMax * 0.6 && h.pot > 0, ok: (st, h, T) => h.pot < T.pot0, end: (st, h) => h.hp >= h.hpMax * 0.95 || h.pot <= 0 },
+  { s: 'skill', on: (st, h) => st.kills > 0 && h.rank[0] > 0 && st.mobs.some(m => m.awake && m.hp > 0), ok: (st, h) => h.castN > 0, end: st => !!st.exit },
+  { s: 'chest', on: st => st.chests.some(c => !c.open && st.rooms[c.room].st === 'clear'), ok: st => st.chests.every(c => c.open), end: st => st.rooms.some((R, i) => st.d.rooms[i].kind === 'boss' && R.st !== 'idle') },
+  { s: 'cradle', on: st => !!st.exit, ok: st => st.over === 'win' },
+];
+function djTuto(st) {
+  const T = st.tuto, h = st.heroes[0]; if (!h) return;
+  for (const S of DJ_TUTO) {
+    if (T.done[S.s]) continue;
+    if (S.ok(st, h, T)) { T.done[S.s] = 1; st.ev.push({ k: 'tutoOk', s: S.s }); if (T.on === S.s) T.on = ''; continue; }
+    if (S.end && S.end(st, h, T)) { T.done[S.s] = 1; if (T.on === S.s) T.on = ''; continue; }
+  }
+  const next = DJ_TUTO.find(S => !T.done[S.s] && S.on(st, h, T));
+  if (next && T.on !== next.s) { T.on = next.s; st.ev.push({ k: 'tuto', s: next.s }); }
 }
 function djFlee(st) { if (!st.over) { st.fled = true; st.over = 'lose'; st.ev.push({ k: 'lose', fled: true }); } }
 /* Bilan : victoire = tout ; défaite ou fuite = moitié de l'expérience et du butin. Le prisonnier délivré est sauvé dans tous les cas. */
@@ -1077,9 +1132,9 @@ function djProgress(st) {
 /* ===================== DONJONS À DEUX : l'hôte simule, l'invitée affiche =====================
    Le téléphone de l'hôte fait tourner le combat et envoie l'état ~7 fois par seconde ; celui de l'invitée l'affiche
    (en lissant), déplace lui-même son héros (pour qu'il réponde tout de suite) et envoie sa position et ses boutons. */
-const DJ_PV = 5;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent (4 : donjon du portail, 5 : roulade)
+const DJ_PV = 6;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent (4 : donjon du portail, 5 : roulade, 6 : humeur de Lilou)
 const DJ_PETS = ['loup', 'faucon', 'sanglier', 'chouette'];
-const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette', 'diablotin', 'lanceflamme', 'gardien'];
+const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette', 'diablotin', 'lanceflamme', 'gardien', 'gardeSource'];
 const DJ_ST = { idle: 'i', lock: 'l', clear: 'c', open: 'o', fight: 'f' }, DJ_STR = { i: 'idle', l: 'lock', c: 'clear', o: 'open', f: 'fight' };
 const djR1 = x => Math.round(x * 10) / 10, djR2 = x => Math.round(x * 100) / 100;
 /* Instantané envoyé par l'hôte (nombres arrondis, listes courtes). evs : événements depuis le précédent (pour les effets). */

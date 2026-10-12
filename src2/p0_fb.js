@@ -74,6 +74,13 @@ function normVillage(v) {
   const BN = {};
   for (const [k, b0] of Object.entries(fbObj(v.bans))) if (b0 && typeof b0 === 'object' && b0.k) BN[b0.id || k] = Object.assign({}, b0, { id: b0.id || k });
   if (Object.keys(BN).length) v.bans = BN; else delete v.bans;
+  /* L'histoire (lot A) : Lilou, son humeur et ses caprices */
+  if (v.lilou && typeof v.lilou === 'object') {
+    const L = v.lilou, cap = c => c && typeof c === 'object' && c.k ? { n: c.n | 0, k: String(c.k), ok: c.ok ? 1 : 0 } : null;
+    v.lilou = { at: +L.at || 0, by: String(L.by || ''), mood: Math.max(0, Math.min(100, L.mood == null ? 60 : +L.mood || 0)), party: +L.party || 0, nd: L.nd | 0, nw: L.nw | 0 };
+    if (cap(L.d)) v.lilou.d = cap(L.d);
+    if (cap(L.w)) v.lilou.w = cap(L.w);
+  } else delete v.lilou;
   return v;
 }
 const fbItem = x => x && typeof x === 'object' && x.sl ? Object.assign({}, x, { gm: Object.assign({}, fbObj(x.gm)) }) : null;

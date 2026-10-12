@@ -2,7 +2,7 @@
    et le vrai moteur de donjon (un petit robot joue les donjons). Sert à régler l'équilibrage : on ne doit jamais être coincé.
    Usage : node tools/sim_semaine.js [jours] [--detail] [--solo]   (--solo : un seul joueur, qui passe aux mêmes heures) */
 const fs = require('fs'), path = require('path');
-const src = ['p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
+const src = ['p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2s_histoire.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
 const S = new Function(src + `
 return { newVillage, simulateVillage, applyV, clone, goalsOf, goalDone, freeSpot, freeHousing, housingOf, hallLvl, BLD, costOf, missingTxt, limitV, countOf, maxLvlOf, sites, sitesMax,
   builders, buildersMax, workersOf, jobsOf, SPEC, heroesOf, activeHero, compareItem, canWear, itemInfo, bagOf, CLASSES, SKILL_LVLS, SPEC_LVL, PET_LVL, raidInfo, raidLevel,

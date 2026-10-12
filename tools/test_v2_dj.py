@@ -41,7 +41,7 @@ async def main():
         await A.click('.nav [data-s="donjon"]'); await A.wait_for_timeout(1200)
         print('sheet donjon:', (await A.inner_text('#sheetBody')).replace('\n', ' | ')[:260])
         await A.screenshot(path=S + 'dj_sheet.png')
-        await A.click('[data-act="djGo"]'); await A.wait_for_timeout(6000)
+        await A.click('[data-act="djGo"][data-th="mine"]'); await A.wait_for_timeout(6000)
         st = await A.evaluate('(() => { const d = window.__mk.dj; if (!d) return null; const s = d.st, h = s.heroes[0]; return { mode: window.__mk.mode, W: s.d.W, H: s.d.H, rooms: s.d.rooms.length, mobs: s.mobs.length, hero: [h.x, h.y], hp: h.hp, n: s.n }; })()')
         print('in dungeon:', st)
         print('hud:', (await A.inner_text('#djHud')).replace('\n', ' | ')[:200])

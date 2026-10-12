@@ -1,7 +1,7 @@
 /* Essais des règles du nouveau jeu (village commun). Usage : node tools/test_v2.js */
 const fs = require('fs'), path = require('path');
-const src = ['p0_fb.js', 'p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
-const R = new Function(src + '\nreturn { normVillage, solList, solStats, solCap, postCap, postsOf, guardsOf, solHurt, solXpNeed, recruitCost, promoteCost, solEat, solFood, solTitle, solName, orbOf, orbAdd, banAdd, banOk, garLoot, solFormation, raidGuards, SOLDIERS, ORB_LVLS, ORBS, BANNERS, SOL_SETS, POST_SLOTS, limitV, caserneLvl, VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone, genItem, cleanItem, itemInfo, canWear, gearOf, compareItem, bagOf, bagMax, mulberry32, merchHere, merchDay, RARITY, SETS, POWERS, GEMS, gemOf, craftCost, improveCost, SLOTS, DROP, rollRarity, forgeLvlOf, hpOf, hpMaxOf, repairCostOf, raidTick, raidInput, raidStart, raidStep, raidResult, raidReplay, raidInfo, raidLevel, raidClosePortal, raidField, raidFoeStep, raidHurtFoe, RAID_FIRST, RAID_CHARGE, RAID_AWAY, RAID_FOES, limitOf, fits };')();
+const src = ['p0_fb.js', 'p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2s_histoire.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
+const R = new Function(src + '\nreturn { normVillage, solList, solStats, solCap, postCap, postsOf, guardsOf, solHurt, solXpNeed, recruitCost, promoteCost, solEat, solFood, solTitle, solName, orbOf, orbAdd, banAdd, banOk, garLoot, solFormation, raidGuards, SOLDIERS, ORB_LVLS, ORBS, BANNERS, SOL_SETS, POST_SLOTS, limitV, caserneLvl, VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone, genItem, cleanItem, itemInfo, canWear, gearOf, compareItem, bagOf, bagMax, mulberry32, merchHere, merchDay, RARITY, SETS, POWERS, GEMS, gemOf, craftCost, improveCost, SLOTS, DROP, rollRarity, forgeLvlOf, hpOf, hpMaxOf, repairCostOf, raidTick, raidInput, raidStart, raidStep, raidResult, raidReplay, raidInfo, raidLevel, raidClosePortal, raidField, raidFoeStep, raidHurtFoe, RAID_FIRST, RAID_CHARGE, RAID_AWAY, RAID_FOES, limitOf, fits, lilouTick, lilouArrive, lilouMood, lilouMul, capCost, CAPRICES, BIG_CAPRICES, LILOU, LILOU_MOODS, DAY };')();
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
 const H = 3600000, D = 24 * H, T0 = Date.UTC(2026, 9, 12, 8, 0, 0);
@@ -590,6 +590,49 @@ ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
   /* formation : fantassins et lanciers devant (vers le portail), archers et mages derrière */
   const F = R.solFormation({ x: 12.5, y: 8.5, r: 3 }, ['arch', 'fant', 'mage', 'lanc'], 0, -1, () => false);
   ok(F[1][1] < F[0][1] && F[3][1] < F[2][1] && F.every(p => Math.hypot(p[0] - 12.5, p[1] - 8.5) <= 3), 'formation : la ligne de front face au portail, tout le monde dans le cercle');
+}
+
+/* 19. L'histoire (lot A) : Lilou, son humeur et ses caprices */
+{
+  const vl = R.newVillage('vlil', 'Lilouville', '#D27A22', T0, 'u1', 'Téo');
+  R.applyV(vl, { type: 'hero', name: 'Brokk', race: 'nain', cls: 'guerrier', sex: 'm' }, who);
+  const hb = Object.values(vl.heroes)[0];
+  ok(!R.applyV(R.clone(vl), { type: 'build', b: 'chambre', gx: 3, gz: 3 }, who).ok && R.lilouMul(vl) === 1, 'avant la mission : pas de chambre de Lilou, aucun effet sur les monstres');
+  let r = R.applyV(vl, { type: 'djEnd', hid: hb.id, lvl: 1, win: true, xp: 120, theme: 'source' }, who);
+  const ch = vl.b.find(b => b.type === 'chambre');
+  ok(r.ok && r.lilou && ch && ch.lvl === 1 && vl.lilou && vl.lilou.mood === R.LILOU.start && R.lilouMood(vl.lilou).k === 'contente' && hb.dj === 1 && r.xp > 0, 'mission « La Source du Mal » gagnée : Lilou arrive (contente), sa chambre est posée, la mine ne change pas de niveau');
+  ok(vl.lilou.d && R.CAPRICES[vl.lilou.d.k] && vl.lilou.w && R.BIG_CAPRICES[vl.lilou.w.k] && vl.log.some(l => l.k === 'lilou' && /Caprice du jour/.test(l.m)) && vl.log.some(l => /un bébé/.test(l.m)), 'un caprice du jour et un gros caprice de la semaine, annoncés au journal');
+  r = R.applyV(vl, { type: 'djEnd', hid: hb.id, lvl: 1, win: true, xp: 120, theme: 'source' }, who);
+  ok(r.ok && !r.lilou && vl.b.filter(b => b.type === 'chambre').length === 1, 'une seule Lilou et une seule chambre par village');
+  ok(!R.applyV(R.clone(vl), { type: 'demolish', id: ch.id }, who).ok && R.applyV(R.clone(vl), { type: 'move', id: ch.id, gx: 3, gz: 18 }, who).ok, 'la chambre se déplace mais ne se démolit pas');
+  const a2 = R.clone(vl), b2 = R.clone(vl); R.simulateVillage(a2, vl.t + 3 * D + 2 * 60000); R.simulateVillage(b2, vl.t + 3 * D + 2 * 60000);
+  ok(JSON.stringify(a2.lilou) === JSON.stringify(b2.lilou) && a2.lilou.d.n === 3, 'mêmes caprices sur les deux téléphones, un nouveau chaque jour');
+  vl.r = Object.assign(vl.r, { bois: 600, pierre: 600, ble: 300, pain: 300, viande: 300, biere: 60, or: 600 });
+  const k = vl.lilou.d.k, c = R.capCost(vl, k), b0 = Object.assign({}, vl.r);
+  r = R.applyV(vl, { type: 'lilouCap', w: 0 }, who);
+  ok(r.ok && vl.lilou.d.ok === 1 && vl.lilou.mood === R.LILOU.start + R.LILOU.day && Object.keys(c).every(x => Math.abs(b0[x] - c[x] - vl.r[x]) < 1e-6), 'caprice du jour (' + R.CAPRICES[k].name + ') fabriqué : il est payé, Lilou est plus contente');
+  ok(!R.applyV(R.clone(vl), { type: 'lilouCap', w: 0 }, who).ok, 'pas deux fois le caprice du jour');
+  const mor0 = R.moraleOf(vl, vl.t), wk = vl.lilou.w.k;
+  r = R.applyV(vl, { type: 'lilouCap', w: 1 }, who2.uid in vl.members ? who2 : who);
+  ok(r.ok && wk !== 'anniv' && vl.lilou.w.ok === 1 && R.lilouMood(vl.lilou).k === 'ravie' && R.moraleOf(vl, vl.t) === Math.min(100, mor0 + R.LILOU.party), 'gros caprice (' + R.BIG_CAPRICES[wk].name + ') offert : Lilou ravie, +10 de moral au village (pas d’anniversaire sans taverne)');
+  ok(R.lilouMul(vl) === 0.9 && R.LILOU_MOODS.map(m => m.mul).join(',') === '1.1,1.05,1,0.95,0.9', 'cinq humeurs, de +10 % (en colère) à −10 % de dégâts des monstres (ravie)');
+  const vm = R.clone(vl), m0 = vm.lilou.mood, d0 = vm.lilou.d.n;
+  R.simulateVillage(vm, vm.lilou.at + (d0 + 1) * D + 60000);
+  ok(vm.lilou.d.n === d0 + 1 && vm.lilou.mood === m0 && !vm.lilou.d.ok, 'nouveau jour, nouveau caprice (le précédent était fait : pas de bouderie)');
+  R.simulateVillage(vm, vm.lilou.at + (d0 + 2) * D + 60000);
+  ok(vm.lilou.mood === m0 - R.LILOU.dayMiss && vm.log.some(l => /Lilou boude/.test(l.m)), 'caprice oublié : ' + vm.log.filter(l => /Lilou boude/.test(l.m)).slice(-1)[0].m);
+  const big = R.capCost(Object.assign(R.clone(vl), { b: vl.b.map(b => b.type === 'halle' ? Object.assign({}, b, { lvl: 5 }) : b) }), 'cubes');
+  ok(big.bois === 80 && R.capCost(vl, 'cubes').bois === 40, 'les caprices coûtent plus cher quand le village grandit (cubes : 40 → 80 de bois)');
+  /* au raid : l'humeur de Lilou change les dégâts des gobelins, et la rediffusion la garde */
+  const vx = R.clone(vl); vx.lilou.mood = 5;
+  vx.raid = { n: 3, next: vx.t }; R.simulateVillage(vx, vx.t + 60000);
+  const inp = R.raidInput(vx, vx.t), s1 = R.raidStart(inp), s0 = R.raidStart(Object.assign({}, inp, { M: undefined }));
+  ok(inp.M === 1.1 && Math.abs(s1.foes[0].dmg - Math.round(s0.foes[0].dmg * 1.1 * 10) / 10) < 0.11, 'Lilou en colère : les gobelins frappent 10 % plus fort (' + s0.foes[0].dmg + ' → ' + s1.foes[0].dmg + ')');
+  R.simulateVillage(vx, vx.raid.at + 3 * H + 2 * 60000);
+  const rep = st => { let n = 0; while (!st.over && n++ < 4000) { R.raidStep(st); st.ev.length = 0; } return R.raidResult(st); };
+  ok(vx.lastRaid && vx.lastRaid.M === 1.1 && JSON.stringify(rep(R.raidReplay(JSON.parse(JSON.stringify(vx.lastRaid))))) === JSON.stringify(vx.lastRaid.res), 'raid avec Lilou en colère : la rediffusion rejoue exactement le même combat');
+  const back = R.normVillage(JSON.parse(JSON.stringify(vl)));
+  ok(JSON.stringify(back.lilou) === JSON.stringify(vl.lilou), 'Lilou intacte après un aller-retour par la base');
 }
 
 /* 14. Rapidité : simuler 3 jours */

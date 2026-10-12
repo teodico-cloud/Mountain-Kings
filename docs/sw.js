@@ -1,7 +1,7 @@
 /* Mountain Kings : mise en cache pour un démarrage rapide et des mises à jour automatiques. */
-const CACHE = 'mk2-32a7cb17ee';
+const CACHE = 'mk2-0fcdcf0cd3';
 const MCACHE = 'mk2-models-83744f3adc';
-const CORE = ["./", "game.js?v=32a7cb17ee", "manifest.json", "lib/three.min.js", "lib/GLTFLoader.js", "lib/SkeletonUtils.js", "icons/icon-192.png", "icons/favicon.png"];
+const CORE = ["./", "game.js?v=0fcdcf0cd3", "manifest.json", "lib/three.min.js", "lib/GLTFLoader.js", "lib/SkeletonUtils.js", "icons/icon-192.png", "icons/favicon.png"];
 const MODELS = ["models/atlas.png", "models/barbarian.json", "models/barracks.json", "models/castle.json", "models/church.json", "models/destroyed.json", "models/fence.json", "models/hills_A.json", "models/hills_C.json", "models/knight.json", "models/lumbermill.json", "models/market.json", "models/mine.json", "models/mountain_A.json", "models/mountain_B.json", "models/mountain_C.json", "models/orc_barbarian.png", "models/orc_rogue.png", "models/rock_A.json", "models/rock_C.json", "models/rock_E.json", "models/rogue.json", "models/scaffolding.json", "models/stone.json", "models/tavern.json", "models/tower_A.json", "models/tower_B.json", "models/tower_catapult.json", "models/tree_A.json", "models/tree_B.json", "models/trees_A_large.json", "models/trees_A_medium.json", "models/trees_B_large.json", "models/troll.png", "models/windmill.json", "v2/models/chantier.glb", "v2/models/halle.glb", "v2/models/taverne.glb"];
 self.addEventListener('install', e => {
   e.waitUntil(Promise.all([

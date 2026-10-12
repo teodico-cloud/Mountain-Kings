@@ -1,7 +1,7 @@
 /* Essais des donjons : fabrication, puis combats joués par un petit robot pour chaque classe. Usage : node tools/test_donjon.js [--long] */
 const fs = require('fs'), path = require('path');
-const src = ['p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
-const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove, djLocalRoll, djFloorCfg, djFloor, djCarry, djRunAdd, djRunResult, genItem, mulberry32, gearOf, djPack, djUnpack, SLOTS, djHalfItems, itemInfo, djHurt };')();
+const src = ['p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2s_histoire.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
+const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove, djLocalRoll, djFloorCfg, djFloor, djCarry, djRunAdd, djRunResult, genItem, mulberry32, gearOf, djPack, djUnpack, SLOTS, djHalfItems, itemInfo, djHurt, djDamageHero };')();
 const LONG = process.argv.includes('--long');
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
@@ -413,6 +413,31 @@ function playDuo(seed, lvl, hA, hB, opts) {
   /* à deux : l'invitée roule chez elle, l'hôte la rend intouchable au même moment */
   const r = playDuo(4321, 2, hero('guerrier', 'nain', 3, { id: 'hA', own: 'uA' }), hero('mage', 'elfe', 3, { id: 'hB', own: 'uB' }), { roll: true });
   ok(r.rolls >= 3 && r.st.heroes[1].rollN === r.rolls && r.desync < 1.5 && r.st.over === 'win', 'à deux : les roulades de l’invitée (' + r.rolls + ') arrivent chez l’hôte, les héros restent au même endroit (écart ' + r.desync.toFixed(2) + ')');
+}
+/* ---------- l'histoire : la mission d'intro « La Source du Mal », guidée par Sukhoï ---------- */
+{
+  const d = D.genDungeon(123, 1, 'source'), d2 = D.genDungeon(999, 7, 'source'), seen = D.djReach(d);
+  ok(d.theme === 'source' && d.rooms.length === 5 && d.rooms.filter(r => r.kind === 'fight').length === 3 && d.rooms.every(r => r.cells.some(([x, y]) => seen[y * d.W + x])) && d.cradle && seen[d.cradle[1] * d.W + d.cradle[0]] && JSON.stringify(d.rooms.map(r => [r.x, r.y])) === JSON.stringify(d2.rooms.map(r => [r.x, r.y])) && d.monsters.length === 10,
+    'la Source du Mal : toujours le même petit donjon (3 salles, le gardien, le berceau au fond), tout est relié');
+  for (const [cls, race] of [['guerrier', 'nain'], ['mage', 'humain'], ['pretre', 'elfe'], ['voleur', 'halfelin']]) {
+    const st = D.djStart(d, [hero(cls, race, 1)], { seed: 123 }), bot = makeBot(st), tut = [], oks = [];
+    let saved = 0;
+    while (!st.over && st.t < 900) {
+      const h = st.heroes[0], inp = bot(h);
+      if (st.tuto.on === 'roll' && !(h.rollCd > 0)) inp.rl = true;                 // le joueur écoute Sukhoï
+      D.djStep(st, { [h.id]: inp });
+      for (const e of st.ev) { if (e.k === 'tuto') tut.push(e.s); if (e.k === 'tutoOk') oks.push(e.s); if (e.k === 'saved') saved++; }
+      st.ev.length = 0;
+    }
+    const r = D.djResult(st);
+    ok(st.over === 'win' && r.win && !st.heroes[0].dead && ['move', 'fight', 'cradle'].every(s => tut.includes(s)) && oks.includes('cradle') && tut.includes('roll') && Math.hypot(st.exit.x - d.cradle[0] - 0.5, st.exit.y - d.cradle[1] - 0.5) < 0.01,
+      cls + ' niveau 1 : la mission est gagnée en ' + Math.floor(st.t / 60) + ' min ' + String(Math.round(st.t % 60)).padStart(2, '0') + ', +' + r.xp + ' xp ; Sukhoï guide : ' + tut.join(' → ') + (saved ? ' (relevé ' + saved + ' fois)' : ''));
+  }
+  const st = D.djStart(d, [hero('mage', 'humain', 1)], { seed: 7 }), h = st.heroes[0];
+  st.ev.length = 0; D.djDamageHero(st, h, h.hpMax * 5);
+  ok(!h.dead && h.hp > h.hpMax * 0.3 && h.b.inv > 0 && st.ev.some(e => e.k === 'saved'), 'dans la mission d’intro, personne ne meurt : Sukhoï relève le héros');
+  const g = st.mobs.find(m => m.type === 'gardeSource');
+  ok(g && g.boss && g.sp.slam <= 2.5, 'le gardien de la Source annonce vite son premier coup (de quoi apprendre la roulade)');
 }
 console.log(fails ? fails + ' échec(s).' : 'Tout est bon.');
 process.exit(fails ? 1 : 0);

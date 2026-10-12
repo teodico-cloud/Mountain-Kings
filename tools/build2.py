@@ -20,8 +20,8 @@ sys.path.insert(0, ROOT + 'tools'); import rules as RULES
 rd = lambda p: open(p, encoding='utf-8').read()
 head = rd(D + 'p1_head.html')
 # ordre : Firebase, règles du village, équipement, garnison, raids, donjons, rendu 3D, sons, interfaces (donjons, équipement, raids, garnison, conseils), application
-PARTS = ['p0_fb.js', 'p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2d_donjon.js', 'p3_render.js', 'p5_audio.js',
-         'p4d_donjon.js', 'p4e_equip.js', 'p4r_raid.js', 'p4g_garnison.js', 'p4c_conseils.js', 'p4_app.js']
+PARTS = ['p0_fb.js', 'p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2s_histoire.js', 'p2d_donjon.js', 'p3_render.js', 'p5_audio.js',
+         'p4d_donjon.js', 'p4e_equip.js', 'p4r_raid.js', 'p4g_garnison.js', 'p4c_conseils.js', 'p4s_histoire.js', 'p4_app.js']
 js = "(() => {\n'use strict';\n" + "\n".join(rd(D + f) for f in PARTS) + "\n})();\n"
 build = hashlib.sha1(js.encode()).hexdigest()[:10]
 for f in ('fakefb.js', 'v2/fakefb.js', 'v2/game.js', 'v2/manifest.json'):      # restes d'un ancien essai ou de l'ancienne adresse d'essai
