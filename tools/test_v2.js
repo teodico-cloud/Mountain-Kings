@@ -169,6 +169,16 @@ ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
   const hu = R.clone(vh); R.applyV(hu, { type: 'hero', name: 'Hu', race: 'humain', cls: 'pretre' }, who2);
   const hum = Object.values(hu.heroes).find(x => x.name === 'Hu'); R.applyV(hu, { type: 'djEnd', hid: hum.id, lvl: 1, win: false, xp: 50 }, who2);
   ok(hum.xp === 55, 'humain : +10 % d’expérience (50 → ' + hum.xp + ')');
+  /* Profondeurs : record d'étages, pas de niveau de donjon ouvert, plafond d'expérience qui grandit avec les étages */
+  const vp = R.clone(vh), gp = vp.heroes[R.activeHero(vp, 'u1').id], dj0 = gp.dj || 1;
+  const rp = R.applyV(vp, { type: 'djEnd', hid: gp.id, lvl: 4, win: true, xp: 900, loot: { pierre: 40 }, theme: 'prof', deep: 4 }, who);
+  ok(rp.ok && gp.deep === 4 && (gp.dj || 1) === dj0 && vp.log.slice(-1)[0].m.includes('remonte des Profondeurs (4 étages terminés)'), 'Profondeurs : record de 4 étages, aucun niveau de donjon ouvert, le journal le raconte');
+  R.applyV(vp, { type: 'djEnd', hid: gp.id, lvl: 4, win: false, xp: 10, theme: 'prof', deep: 2 }, who);
+  ok(gp.deep === 4 && vp.log.slice(-1)[0].m.includes('a dû fuir les Profondeurs (2 étages terminés)'), 'un moins bon résultat ne baisse pas le record');
+  const c1 = R.clone(vh), g1 = c1.heroes[R.activeHero(c1, 'u1').id]; g1.lvl = 1; g1.xp = 0;
+  const c2 = R.clone(vh), g2 = c2.heroes[R.activeHero(c2, 'u1').id]; g2.lvl = 1; g2.xp = 0;
+  const x1 = R.applyV(c1, { type: 'djEnd', hid: g1.id, lvl: 1, win: true, xp: 99999, theme: 'prof', deep: 0 }, who).xp, x2 = R.applyV(c2, { type: 'djEnd', hid: g2.id, lvl: 1, win: true, xp: 99999, theme: 'prof', deep: 3 }, who).xp;
+  ok(x2 === x1 * 4, 'plafond d’expérience des Profondeurs : ×(1 + étages) (' + x1 + ' → ' + x2 + ')');
 }
 
 /* 14. Rapidité : simuler 3 jours */

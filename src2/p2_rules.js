@@ -600,14 +600,15 @@ function applyV(v, a, who) {
     case 'djEnd': {
       /* Retour de donjon : expérience (et niveaux) pour le héros, butin pour le village, niveau suivant ouvert, prisonnier délivré. */
       const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
-      const L = Math.max(1, Math.min(99, a.lvl | 0)), win = !!a.win;
-      let xp = Math.max(0, Math.min(DJ_XP_CAP(L), Math.round(+a.xp || 0)));
+      const L = Math.max(1, Math.min(99, a.lvl | 0)), win = !!a.win, th = a.theme === 'crypte' || a.theme === 'prof' ? a.theme : 'mine', deep = Math.max(0, Math.min(200, a.deep | 0));
+      let xp = Math.max(0, Math.min(DJ_XP_CAP(L) * (th === 'prof' ? 1 + deep : 1), Math.round(+a.xp || 0)));
       if (hh.race === 'humain') xp = Math.round(xp * 1.1);                 // Apprend vite
       const lv0 = hh.lvl;
       hh.xp = (hh.xp || 0) + xp;
       while (hh.lvl < HERO_MAX_LVL && hh.xp >= heroXpNeed(hh.lvl)) { hh.xp -= heroXpNeed(hh.lvl); hh.lvl++; hh.sp = (hh.sp || 0) + (hh.lvl === 9 ? 2 : 1); }
       if (hh.lvl >= HERO_MAX_LVL) hh.xp = Math.min(hh.xp, heroXpNeed(hh.lvl));
-      if (win) hh.dj = Math.max(hh.dj || 1, Math.min(99, L + 1));
+      if (win && th !== 'prof') hh.dj = Math.max(hh.dj || 1, Math.min(99, L + 1));
+      if (th === 'prof') hh.deep = Math.max(hh.deep || 0, deep);
       hh.runs = (hh.runs || 0) + 1; if (win) hh.wins = (hh.wins || 0) + 1;
       const cap = capOf(v), got = {};
       for (const k of ['bois', 'pierre', 'viande', 'pain', 'biere']) {
@@ -618,9 +619,12 @@ function applyV(v, a, who) {
       const pris = a.pris ? prisonerOf(v, t) : null;
       if (pris) v.cands.push(pris);
       const up = hh.lvl - lv0;
-      addLog(v, t, hh.name + (win ? ' revient vainqueur de la mine des gobelins' : ' a dû fuir la mine des gobelins') + ' (niveau ' + L + ') : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : ''), 'dj');
-      if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + ' du cachot de la mine, voudrait s’installer au village.', 'cand');
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj };
+      const fl = deep ? deep + ' étage' + (deep > 1 ? 's terminés' : ' terminé') : 'aucun étage terminé';
+      const what = th === 'prof' ? (win ? ' remonte des Profondeurs (' : ' a dû fuir les Profondeurs (') + fl + ')'
+        : win ? ' revient vainqueur ' + (th === 'crypte' ? 'de la crypte des rois' : 'de la mine des gobelins') + ' (niveau ' + L + ')' : ' a dû fuir ' + (th === 'crypte' ? 'la crypte des rois' : 'la mine des gobelins') + ' (niveau ' + L + ')';
+      addLog(v, t, hh.name + what + ' : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : ''), 'dj');
+      if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + (th === 'crypte' ? ' d’un tombeau de la crypte' : ' d’un cachot souterrain') + ', voudrait s’installer au village.', 'cand');
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0 };
     }
     case 'skill': {
       /* Un point de compétence : +1 rang (5 au plus) à une compétence déjà ouverte. */

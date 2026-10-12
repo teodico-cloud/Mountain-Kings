@@ -330,6 +330,8 @@ const SND = (() => {
     death: (d, t, p) => { tone(d, 'sine', 150, 60, t, 0.003, 0.1, 0.14, p); hiss(d, 'lowpass', 320, 0.7, t, 0.002, 0.08, 0.1, p); },
     star: (d, t, p, i) => chime(d, [1046 * Math.pow(1.26, i || 0)], t, 0, 0.12),
     invite: (d, t) => { horn(d, [57, 62], t, 0.2, 0.08); horn(d, [57, 62], t + 0.55, 0.2, 0.07); },
+    combo: (d, t, p) => { clink(d, t, 0.12, p); tone(d, 'triangle', 392, 784, t, 0.003, 0.07, 0.12, p); chime(d, [1568, 2349], t + 0.05, 0.05, 0.05); },
+    storm: (d, t, p) => { tone(d, 'sine', 62, 36, t, 0.04, 0.3, 0.8, p); hiss(d, 'bandpass', 520, 1.3, t, 0.12, 0.2, 0.9, p, 2400); for (let i = 0; i < 5; i++) knock(d, t + 0.1 + i * 0.11, 260 + i * 70, 0.1, p); },
     alarm: (d, t) => horn(d, [50, 50, 46], t, 0.22, 0.08),
     error: (d, t) => { const o = tone(d, 'square', 170, 150, t, 0.004, 0.035, 0.12); o.detune.value = -10; },
     victory: (d, t) => {

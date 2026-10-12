@@ -1699,10 +1699,23 @@ const V3 = (() => {
     troll: { m: 'barbarian', tex: 'troll', show: ['2H_Axe'], atk: '2H_Melee_Attack_Chop', h: 1.9, w: 1.3 },
     chefTroll: { m: 'barbarian', tex: 'troll', show: ['2H_Axe', 'Barbarian_Hat'], atk: '2H_Melee_Attack_Chop', h: 2.6, w: 1.45 },
     skel: { m: 'knight', tint: 0xf2eee2, show: ['1H_Sword'], atk: '1H_Melee_Attack_Chop', h: 0.95, w: 0.9 },
+    /* la crypte des rois (modèles provisoires teintés, en attendant Meshy) */
+    squelette: { m: 'knight', tint: 0xd9d2bf, show: ['1H_Sword', 'Round_Shield'], atk: '1H_Melee_Attack_Chop', h: 1.0, w: 0.88 },
+    archerSq: { m: 'rogue', tint: 0xd9d2bf, show: ['2H_Crossbow'], atk: '2H_Ranged_Shoot', h: 1.0, w: 0.88 },
+    goule: { m: 'barbarian', tint: 0x8fa38a, show: [], atk: '1H_Melee_Attack_Chop', h: 0.85, w: 1.0 },
+    spectre: { m: 'rogue', tint: 0x9cc8ff, show: ['Rogue_Cape'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 1.05, w: 0.95, ghost: true },
+    necromant: { m: 'rogue', tint: 0x7a6a9a, show: ['Throwable', 'Rogue_Cape'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 1.0, w: 0.95 },
+    golem: { m: 'barbarian', tint: 0xe6dcc6, show: [], atk: '2H_Melee_Attack_Chop', h: 1.9, w: 1.35 },
+    roiSquelette: { m: 'knight', tint: 0xe0d6bf, show: ['2H_Sword', 'Knight_Helmet', 'Knight_Cape'], atk: '2H_Melee_Attack_Chop', h: 2.4, w: 1.3 },
+  };
+  /* Couleurs du décor selon le donjon. */
+  const DJ_LOOK = {
+    mine: { room: [0x6b645a, 0x625b52, 0x736b5f], hall: [0x4f4a44, 0x57514a], wall: [0x5d564d, 0x534d45], torch: 0xffa040, light: 0xffb066 },
+    crypte: { room: [0x5e626b, 0x565a63, 0x666a73], hall: [0x44474e, 0x4b4e55], wall: [0x4d5159, 0x454951], torch: 0x5fe0c8, light: 0xa8d8ff },
   };
   const DJ_HERO_ATK = { guerrier: '1H_Melee_Attack_Chop', paladin: '1H_Melee_Attack_Chop', rodeur: '2H_Ranged_Shoot', voleur: '1H_Melee_Attack_Slice_Diagonal' };
   const DJ_CAST_ANIM = { tourbillon: 'spin', cri: 'cheer', bouclier: 'cheer', consecration: 'cheer', poison: 'cheer', fumee: 'cheer', lumiere: 'cheer', priere: 'cheer', ours: 'cheer', loup: 'cheer', racines: 'cheer', squelettes: 'cheer', nova: 'cheer' };
-  const DJ_SHOT = { arrow: 0x3a2a1e, fire: 0xff7a2a, holy: 0xffe08a, thorn: 0x7bd36a, shadow: 0xa070ff, curse: 0xb05cff };
+  const DJ_SHOT = { arrow: 0x3a2a1e, fire: 0xff7a2a, holy: 0xffe08a, thorn: 0x7bd36a, shadow: 0xa070ff, curse: 0xb05cff, ghost: 0x8fd0ff };
   const DJ_FX = { steel: 0xe8e8e8, ice: 0x9fe3ff, root: 0x7bd36a, fire: 0xff7a2a, bone: 0xe8e0c8 };
   function djSimple(color, h) {
     const g = new THREE.Group(), body = new THREE.Group();
@@ -1718,7 +1731,11 @@ const V3 = (() => {
       if (GEAR_NAMES.has(o.name)) { o.visible = def.show.includes(o.name); if (o.visible) have.add(o.name); }
       if (o.isMesh) {
         o.castShadow = true; o.receiveShadow = false; o.frustumCulled = false;
-        if (!GEAR_NAMES.has(o.name)) { if (def.tex && LIB.tex[def.tex]) o.material = skinMat(o.material, def.tex); if (def.tint) o.material = tintMat(o.material, def.tint); }
+        if (!GEAR_NAMES.has(o.name)) {
+          if (def.tex && LIB.tex[def.tex]) o.material = skinMat(o.material, def.tex);
+          if (def.tint) o.material = tintMat(o.material, def.tint);
+          if (def.ghost) { const key = o.material.uuid + '|ghost'; if (!tintMats.has(key)) { const gm = o.material.clone(); gm.transparent = true; gm.opacity = 0.55; gm.depthWrite = false; tintMats.set(key, gm); } o.material = tintMats.get(key); }
+        }
       }
     });
     for (const n of def.show) { const G2 = LIB.gear[n]; if (have.has(n) || !G2) continue; let bone = null; obj.traverse(o => { if (!bone && o.name === G2.parent) bone = o; }); if (bone) { const c = G2.obj.clone(); c.visible = true; bone.add(c); } }
@@ -1820,17 +1837,18 @@ const V3 = (() => {
       im.castShadow = !!shadow; im.receiveShadow = true; djGroup.add(keep(im)); return im;
     };
     const fMat = keep(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 }));
+    const LK = DJ_LOOK[d.theme] || DJ_LOOK.mine; DJ.look = LK;
     inst(geo('box'), fMat, floors, (f, p, s) => { p.set(f[0] + 0.5 - half, -0.2, f[1] + 0.5 - half); s.set(0.98, 0.2, 0.98); },
-      (f, i, c) => { const n = hash2(f[0] * 7, f[1] * 13); return c.copy(lin(f[2] ? (n < 0.5 ? 0x6b645a : n < 0.85 ? 0x625b52 : 0x736b5f) : (n < 0.6 ? 0x4f4a44 : 0x57514a))); });
+      (f, i, c) => { const n = hash2(f[0] * 7, f[1] * 13); return c.copy(lin(f[2] ? (n < 0.5 ? LK.room[0] : n < 0.85 ? LK.room[1] : LK.room[2]) : (n < 0.6 ? LK.hall[0] : LK.hall[1]))); });
     const wMat = keep(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 }));
-    const wallCol = (w, i, c) => c.copy(lin(hash2(w[0] * 5, w[1] * 3) < 0.5 ? 0x5d564d : 0x534d45));
+    const wallCol = (w, i, c) => c.copy(lin(hash2(w[0] * 5, w[1] * 3) < 0.5 ? LK.wall[0] : LK.wall[1]));
     if (tall.length) inst(geo('box'), wMat, tall, (w, p, s) => { p.set(w[0] + 0.5 - half, 0, w[1] + 0.5 - half); s.set(1, 1.5, 1); }, wallCol, true);
     if (low.length) inst(geo('box'), wMat, low, (w, p, s) => { p.set(w[0] + 0.5 - half, 0, w[1] + 0.5 - half); s.set(1, 0.35, 1); }, wallCol, false);
     /* Torches sur les murs du fond (de simples lueurs qui vacillent). */
     tall.forEach(([x, y], i) => {
       if (hash2(x * 31, y * 17) > 0.12) return;
       const fx = isFloor(x + 1, y) ? 0.55 : isFloor(x, y + 1) ? 0 : 0.5, fz = isFloor(x, y + 1) ? 0.55 : 0;
-      const t = makeGlow(0xffa040, 1.6, 1.15); t.position.set(x + 0.5 - half + fx, 1.15, y + 0.5 - half + fz); djGroup.add(t);
+      const t = makeGlow(LK.torch, 1.6, 1.15); t.position.set(x + 0.5 - half + fx, 1.15, y + 0.5 - half + fz); djGroup.add(t);
       const f = P('cone6', fireMat, 0.12, 0.26, 0.12, t.position.x, 1.0, t.position.z, 0, true); djGroup.add(f);
       DJ.torches.push({ s: t, f, ph: i * 1.7 });
     });
@@ -1870,7 +1888,7 @@ const V3 = (() => {
       djGroup.add(g); DJ.pris = { g, chains, mark, t: 0 };
     }
     /* Lumière chaude qui suit le héros. */
-    DJ.light = new THREE.PointLight(0xffb066, 1.5, 13, 1.6); djGroup.add(DJ.light);
+    DJ.light = new THREE.PointLight(LK.light, 1.5, 13, 1.6); djGroup.add(DJ.light);
     setMood('donjon');
     cam.view = aspect < 0.8 ? 17 : 12.5; frustum();
     const hh = st.heroes.find(x => x.id === me) || st.heroes[0];
@@ -1908,6 +1926,7 @@ const V3 = (() => {
   function djTele(e) {
     const red = basic(0xff3020, { transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide });
     let m;
+    if (e.a === 'storm') { for (const p of e.pts || []) djTele({ a: 'slam', x: p[0], y: p[1], r: e.r, t: e.t, id: e.id }); return; }
     if (e.a === 'slam') { const g2 = new THREE.CircleGeometry(e.r, 40); g2.rotateX(-Math.PI / 2); m = new THREE.Mesh(g2, red); m.position.set(e.x - half, 0.04, e.y - half); }
     else { const g2 = new THREE.PlaneGeometry(1.6, e.len); g2.rotateX(-Math.PI / 2); g2.translate(0, 0, e.len / 2); m = new THREE.Mesh(g2, red); m.position.set(e.x - half, 0.04, e.y - half); m.rotation.y = Math.atan2(e.dx, e.dy); }
     m.renderOrder = 3; djGroup.add(m); DJ.teles.push({ m, t: 0, T: e.t, id: e.id });
@@ -1938,6 +1957,10 @@ const V3 = (() => {
       case 'summon': wave(e.x, e.y, e.boss ? 0xff3a2a : 0xa070ff, e.boss ? 3 : 2, 0.6); for (let i = 0; i < 6; i++) smokeAt(e.x - half + (Math.random() - 0.5) * 2, 0.3, e.y - half + (Math.random() - 0.5) * 2, true); break;
       case 'form': { const p = P2(e.id); if (p) { burst(p[0], p[1], 0.6, e.f === 'ours' ? 0x8a6a4a : e.f === 'loup' ? 0x9a9a9a : 0x7bd36a, 6); } break; }
       case 'tele': djTele(e); break;
+      case 'teleCancel': for (const t of DJ.teles) if (t.id === e.id && !t.fly && !t.fade) { t.t = t.T; } break;
+      case 'storm': for (const p of e.pts || []) { burst(p[0], p[1], 0.3, 0xe8e0c8, 5); wave(p[0], p[1], 0xd8d0b8, e.r, 0.4); } shake(0.3); break;
+      case 'raised': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xa070ff, 1.2, 0.6); djNum(p[0], p[1], 'relevé…', '#c9a0ff', false); } break; }
+      case 'combo': { const p = P2(e.id); if (p) { djNum(p[0], p[1], 'COMBO !', '#ffd23f', true); wave(p[0], p[1], 0xffd23f, 1.3, 0.35); for (let i = 0; i < 4; i++) spark(p[0], 0.7 + i * 0.25, p[1], 0xffe07a); } break; }
       case 'slam': wave(e.x, e.y, 0xff6a3a, e.r, 0.5); debris(e.x, e.y, 2.5, true, 12); shake(0.45); break;
       case 'charge': dustRing(P2(e.id) ? P2(e.id)[0] : 0, P2(e.id) ? P2(e.id)[1] : 0, 0.6); break;
       case 'wall': shake(0.4); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5), 2.4 + Math.random() * 0.4, e.y + (Math.random() - 0.5), 0xfff07a); break;

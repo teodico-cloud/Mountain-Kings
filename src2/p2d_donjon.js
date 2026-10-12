@@ -8,15 +8,29 @@ const DJ_ROOMS = [
   { k: 'enL', w: 11, h: 10, shape: 'L' }, { k: 'couloir', w: 13, h: 7, shape: 'rect' }, { k: 'ronde', w: 11, h: 11, shape: 'round' },
 ];
 const DJ_BOSS = { k: 'arene', w: 14, h: 14, shape: 'arena' };
-/* Monstres de la mine des gobelins (statistiques de base au niveau 1). */
+/* Monstres (statistiques de base au niveau 1). w : fréquence dans le thème. */
 const DJ_MONSTERS = {
+  /* la mine des gobelins */
   gobelin: { name: 'Gobelin', hp: 40, dmg: 5, speed: 2.8, range: 1.1, rate: 1.7, xp: 4, w: 4 },
   archer: { name: 'Gobelin archer', hp: 28, dmg: 6, speed: 2.4, range: 6, rate: 2.2, xp: 5, w: 2, ranged: true },
   chaman: { name: 'Chaman', hp: 34, dmg: 4, speed: 2.2, range: 5, rate: 2.6, xp: 6, w: 1, heals: true },
   troll: { name: 'Troll', hp: 130, dmg: 14, speed: 1.6, range: 1.4, rate: 2.4, xp: 12, w: 1, big: true },
+  /* la crypte des rois */
+  squelette: { name: 'Squelette', hp: 44, dmg: 5, speed: 2.5, range: 1.2, rate: 1.8, xp: 4, w: 4 },
+  archerSq: { name: 'Squelette archer', hp: 26, dmg: 6, speed: 2.2, range: 6, rate: 2.2, xp: 5, w: 2, ranged: true },
+  goule: { name: 'Goule', hp: 30, dmg: 4, speed: 3.7, range: 1.0, rate: 1.0, xp: 4, w: 2 },
+  spectre: { name: 'Spectre', hp: 32, dmg: 6, speed: 2.6, range: 5.5, rate: 2.4, xp: 6, w: 1, ranged: true, evade: 0.3, shot: 'ghost' },
+  necromant: { name: 'Nécromant', hp: 34, dmg: 4, speed: 2.1, range: 5, rate: 2.8, xp: 7, w: 1, raises: true },
+  golem: { name: 'Golem d’os', hp: 140, dmg: 15, speed: 1.5, range: 1.4, rate: 2.5, xp: 13, w: 1, big: true },
 };
-const DJ_BOSSES = { chefTroll: { name: 'Chef troll', hp: 520, dmg: 16, speed: 1.8, range: 1.6, rate: 2.1, xp: 80, big: true, boss: true } };
-const DJ_THEMES = { mine: { name: 'Mine des gobelins', monsters: ['gobelin', 'archer', 'chaman', 'troll'], boss: 'chefTroll' } };
+const DJ_BOSSES = {
+  chefTroll: { name: 'Chef troll', hp: 520, dmg: 16, speed: 1.8, range: 1.6, rate: 2.1, xp: 80, big: true, boss: true },
+  roiSquelette: { name: 'Roi squelette', hp: 560, dmg: 15, speed: 1.9, range: 1.7, rate: 2.0, xp: 85, big: true, boss: true },
+};
+const DJ_THEMES = {
+  mine: { name: 'Mine des gobelins', the: 'la mine des gobelins', monsters: ['gobelin', 'archer', 'chaman', 'troll'], boss: 'chefTroll' },
+  crypte: { name: 'Crypte des rois', the: 'la crypte des rois', monsters: ['squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem'], boss: 'roiSquelette' },
+};
 const DJ_PRISONER_CHANCE = lvl => Math.min(0.10, 0.03 + 0.007 * lvl);   // rare : de 4 % (niveau 1) à 10 %
 
 function djCarve(grid, W, x0, y0, w, h, shape) {
@@ -38,15 +52,16 @@ function djCorridor(grid, W, a, b) {
 }
 const djCenter = r => [r.x + (r.w >> 1), r.y + (r.h >> 1)];
 
-/* Fabrique un donjon : 5 à 6 salles de combat (2 ou 3 vagues de monstres chacune) + l'arène du boss, une salle annexe (trésor ou prisonnier). */
-function genDungeon(seed, lvl, theme) {
-  const R = mulberry32((seed ^ 0x9e3779b9) >>> 0), pick = a => a[Math.floor(R() * a.length)];
-  const T = DJ_THEMES[theme || 'mine'], nFight = 5 + (R() < 0.5 ? 1 : 0);
+/* Fabrique un donjon : 5 à 6 salles de combat (2 ou 3 vagues de monstres chacune) + l'arène du boss, une salle annexe (trésor ou prisonnier).
+   opts (étages des Profondeurs) : { rooms: nombre de salles de combat, boss: false pour un étage sans boss }. */
+function genDungeon(seed, lvl, theme, opts) {
+  const o = opts || {}, R = mulberry32((seed ^ 0x9e3779b9) >>> 0), pick = a => a[Math.floor(R() * a.length)];
+  const T = DJ_THEMES[theme] || DJ_THEMES.mine, coin = R() < 0.5 ? 1 : 0, nFight = o.rooms || 5 + coin, withBoss = o.boss !== false;
   let rooms = null;
   for (let attempt = 0; attempt < 50 && !rooms; attempt++) {
     const list = [{ k: 'entree', w: 8, h: 8, shape: 'rect', kind: 'start', x: 0, y: 0 }];
     let ok = true;
-    for (let i = 0; i <= nFight && ok; i++) {
+    for (let i = 0; i < nFight + (withBoss ? 1 : 0) && ok; i++) {
       const prev = list[list.length - 1], boss = i === nFight, t = boss ? DJ_BOSS : pick(DJ_ROOMS);
       let placed = null;
       for (let tries = 0; tries < 40 && !placed; tries++) {
@@ -108,8 +123,8 @@ function genDungeon(seed, lvl, theme) {
   const altarRoom = chain.length > 4 ? 2 + Math.floor(R() * (chain.length - 4)) : null;
   const altar = altarRoom != null ? djCenter(chain[altarRoom]) : null;
   const pris = rooms.find(r => r.kind === 'prisoner');
-  return { seed, lvl, theme: theme || 'mine', W, H, grid, rooms, start: djCenter(rooms[0]), monsters, traps, chests, altar,
-    prisoner: pris ? djCenter(pris) : null };
+  return { seed, lvl, theme: DJ_THEMES[theme] ? theme : 'mine', W, H, grid, rooms, start: djCenter(rooms[0]), monsters, traps, chests, altar,
+    prisoner: pris ? djCenter(pris) : null, exitRoom: rooms.indexOf(chain[chain.length - 1]), floor: o.floor || 0 };
 }
 /* Cases atteignables depuis l'entrée (pour vérifier qu'aucune salle n'est coupée du reste). */
 function djReach(d) {
@@ -220,14 +235,16 @@ function djNearest(st, e, max) {
   for (const m of st.mobs) { if (m.hp <= 0 || !m.awake) continue; const d = djDist(e, m) - m.r; if (d < bd && djLos(st, e.x, e.y, m.x, m.y)) { bd = d; best = m; } }
   return best;
 }
+/* Un spectre esquive parfois les attaques simples. */
+function djEvade(st, m) { if (m.evade && djRnd(st) < m.evade) { st.ev.push({ k: 'miss', id: m.id }); return true; } return false; }
 /* Cible d'un héros (attaque automatique et compétences) : d'abord les chamans à portée (sinon ils soignent tout le monde),
    puis la même cible que tout à l'heure, sinon la plus proche (un monstre presque mort passe un peu devant). */
 function djTargetFor(st, h, range) {
   const ok = m => m.hp > 0 && m.awake && djDist(h, m) - m.r <= range && djLos(st, h.x, h.y, m.x, m.y);
-  const cur = h.tgt && st.mobs.find(m => m.id === h.tgt), healer = st.mobs.some(m => m.heals && ok(m));
-  if (cur && ok(cur) && (cur.heals || !healer)) return cur;
+  const cur = h.tgt && st.mobs.find(m => m.id === h.tgt), healer = st.mobs.some(m => (m.heals || m.raises) && ok(m));
+  if (cur && ok(cur) && (cur.heals || cur.raises || !healer)) return cur;
   let best = null, bs = 1e9;
-  for (const m of st.mobs) { if (!ok(m)) continue; const sc = djDist(h, m) - m.r - (m.heals ? 4 : 0) - (m.hp < m.hpMax * 0.3 ? 1 : 0); if (sc < bs) { bs = sc; best = m; } }
+  for (const m of st.mobs) { if (!ok(m)) continue; const sc = djDist(h, m) - m.r - (m.heals || m.raises ? 4 : 0) - (m.hp < m.hpMax * 0.3 ? 1 : 0); if (sc < bs) { bs = sc; best = m; } }
   return best;
 }
 function djLootAdd(st, base, mul) { const got = {}; for (const k in base) { const n = Math.round(base[k] * mul); st.loot[k] = (st.loot[k] || 0) + n; got[k] = n; } return got; }
@@ -265,7 +282,8 @@ function djMob(st, type, x, y, room, boss) {
   const D = (boss ? DJ_BOSSES : DJ_MONSTERS)[type], mk = djMobMul(st.lvl), pk = st.pk || 1;
   return { id: st.nid++, type, kind: 'mob', room, x, y, px: x, py: y, r: boss ? 0.75 : D.big ? 0.6 : 0.38,
     hp: D.hp * mk * pk, hpMax: D.hp * mk * pk, dmg: D.dmg * mk, range: D.range, rate: D.rate, speed: D.speed, xp: D.xp,
-    ranged: !!D.ranged, heals: !!D.heals, big: !!D.big, boss: !!boss, awake: false, wave: 0, hidden: false,
+    ranged: !!D.ranged, heals: !!D.heals, raises: !!D.raises, evade: D.evade || 0, big: !!D.big, boss: !!boss, awake: false, wave: 0, hidden: false,
+    shot: D.shot || (D.heals || D.raises ? 'curse' : 'arrow'),
     atkT: 0.4 + djRnd(st) * D.rate, wind: 0, act: null, actTgt: 0, tgt: 0, stun: 0, frz: 0, root: 0, poi: 0, poiD: 0, poiAcc: 0, taunt: 0, tauntBy: 0,
     fx: 0, fy: 1, mv: false, atkN: 0,
     sp: boss ? { slam: 4, charge: 8, phase: 0, enr: false, act: null, actT: 0, dx: 0, dy: 0, hit: [] } : null };
@@ -296,6 +314,12 @@ function djStart(d, heroes, opts) {
     st.rooms[m.room].waves = Math.max(st.rooms[m.room].waves, mob.wave + 1);
   }
   if (st.heroes.some(h => h.cls === 'pretre' && h.lvl >= 4)) for (const h of st.heroes) { h.hpBase *= 1.1; h.hpMax = h.hp = h.hpBase; }   // Bénédiction
+  /* Profondeurs : ce que chaque héros rapporte de l'étage précédent (vie, potions, relèvement utilisé, partie) */
+  for (const h of st.heroes) {
+    const c = o.carry && o.carry[h.id]; if (!c) continue;
+    h.hp = Math.max(1, Math.min(1, c.hp) * h.hpMax); h.pot = Math.max(0, Math.min(h.pot, c.pot)); h.revived = !!c.revived;
+    if (c.gone) { h.gone = true; h.dead = true; h.hp = 0; }
+  }
   st.heroes.forEach((h, i) => { h.x = h.px = d.start[0] + 0.5 + (i ? 1.2 : 0); h.y = h.py = d.start[1] + 0.5 + (i ? 0.6 : 0); });
   /* Le familier (niveau 6) : il suit son héros et mord sa cible ; les monstres ne s'en occupent pas. */
   for (const h of st.heroes) if (h.lvl >= 6) st.allies.push({ id: st.nid++, kind: 'pet', own: h.id, x: h.x - 0.8, y: h.y + 0.8, px: h.x - 0.8, py: h.y + 0.8, r: 0.25, hp: 1, hpMax: 1,
@@ -304,8 +328,16 @@ function djStart(d, heroes, opts) {
 }
 
 /* ---------- dégâts, soins, effets ---------- */
-function djHurt(st, m, v, src, crit) {
+/* kind : 'skill' (compétence), 'basic' (attaque simple), 'dot' (zone, poison : pas de combo). */
+function djHurt(st, m, v, src, crit, kind) {
   if (!m || m.hp <= 0 || !(v > 0)) return 0;
+  /* Combo à deux : un monstre marqué par une compétence de l'autre héros (ou étourdi, gelé, enraciné par lui) prend 50 % de plus.
+     Une compétence marque à son tour le monstre pour l'autre (3 secondes). */
+  if (src && src.kind === 'hero' && st.heroes.length > 1 && kind && kind !== 'dot') {
+    const mk = m.mark && m.mark.by !== src.id && m.mark.t > st.t, cc = m.ccBy && m.ccBy !== src.id && (m.stun > 0 || m.frz > 0 || m.root > 0);
+    if (mk || cc) { v *= 1.5; st.combos = (st.combos || 0) + 1; if (mk) m.mark = null; st.ev.push({ k: 'combo', id: m.id, by: src.id }); }
+    if (kind === 'skill') m.mark = { by: src.id, t: st.t + 3 };
+  }
   const dealt = Math.min(v, m.hp);
   m.hp -= v; st.ev.push({ k: 'hit', id: m.id, v: Math.round(v), crit: !!crit });
   if (m.hp <= 0) djKill(st, m);
@@ -359,10 +391,11 @@ function djHit(st, t, v) {
   return v;
 }
 /* Étourdi, gelé (ne fait plus rien) ou enraciné (ne bouge plus). Le boss y résiste en partie ; ça interrompt ses attaques spéciales. */
-function djCC(st, m, kind, s) {
+function djCC(st, m, kind, s, by) {
   if (!m || m.hp <= 0) return;
+  if (by) m.ccBy = by;
   m[kind] = Math.max(m[kind], s * (m.boss ? (kind === 'stun' ? 0.3 : 0.5) : 1));
-  if (kind !== 'root') { m.wind = 0; if (m.sp && m.sp.act) { m.sp.act = null; m.sp.slam = Math.max(m.sp.slam, 2.5); m.sp.charge = Math.max(m.sp.charge, 3); st.ev.push({ k: 'interrupt', id: m.id }); } }
+  if (kind !== 'root') { m.wind = 0; if (m.sp && m.sp.act) { m.sp.act = null; m.sp.slam = Math.max(m.sp.slam || 0, 2.5); m.sp.charge = Math.max(m.sp.charge || 0, 3); m.sp.storm = Math.max(m.sp.storm || 0, 2.5); st.ev.push({ k: 'interrupt', id: m.id }); st.ev.push({ k: 'teleCancel', id: m.id }); } }
   st.ev.push({ k: 'cc', id: m.id, c: kind, t: m[kind] });
 }
 function djPoison(st, h, m) {
@@ -409,11 +442,11 @@ function djCast(st, h, i) {
       const x0 = h.x, y0 = h.y, dx = t.x - h.x, dy = t.y - h.y, len = Math.hypot(dx, dy) || 1, go = Math.max(0, len - t.r - h.r - 0.15);
       djMove(st, h, dx / len * go, dy / len * go); h.fx = dx / len; h.fy = dy / len; h.b.inv = 0.25;
       st.ev.push({ k: 'dash', id: h.id, x0, y0, x1: h.x, y1: h.y });
-      if (djDist(h, t) <= t.r + h.r + 0.8) { const d = D(S.dmg); djHurt(st, t, d.v, h, d.crit); djCC(st, t, 'stun', S.stun); }
+      if (djDist(h, t) <= t.r + h.r + 0.8) { const d = D(S.dmg); djHurt(st, t, d.v, h, d.crit, 'skill'); djCC(st, t, 'stun', S.stun, h.id); }
       break;
     }
     case 'tourbillon':
-      for (const m of djAround(st, h.x, h.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); }
+      for (const m of djAround(st, h.x, h.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit, 'skill'); }
       st.ev.push({ k: 'nova', id: h.id, x: h.x, y: h.y, r: S.rad, c: 'steel' }); break;
     case 'cri':
       for (const m of djAround(st, h.x, h.y, S.rad)) { m.taunt = S.taunt + (h.spec === 1 ? 2 : 0); m.tauntBy = h.id; }
@@ -422,7 +455,7 @@ function djCast(st, h, i) {
     case 'marteau': case 'chatiment': {
       const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
       st.ev.push({ k: 'bolt', id: h.id, tgt: t.id, c: S.id });
-      const d = D(S.dmg); djHurt(st, t, d.v, h, d.crit); if (S.stun) djCC(st, t, 'stun', S.stun);
+      const d = D(S.dmg); djHurt(st, t, d.v, h, d.crit, 'skill'); if (S.stun) djCC(st, t, 'stun', S.stun, h.id);
       break;
     }
     case 'bouclier': {
@@ -449,17 +482,17 @@ function djCast(st, h, i) {
       const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
       const dx = t.x - h.x, dy = t.y - h.y, len0 = Math.hypot(dx, dy) || 1, ux = dx / len0, uy = dy / len0;
       let len = 0; while (len < S.range && st.d.grid[Math.floor(h.y + uy * (len + 0.3)) * st.d.W + Math.floor(h.x + ux * (len + 0.3))]) len += 0.3;
-      for (const m of djLiving(st)) { const ax = m.x - h.x, ay = m.y - h.y, p = ax * ux + ay * uy; if (p >= 0 && p <= len && Math.abs(ax * uy - ay * ux) <= 0.6 + m.r) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); } }
+      for (const m of djLiving(st)) { const ax = m.x - h.x, ay = m.y - h.y, p = ax * ux + ay * uy; if (p >= 0 && p <= len && Math.abs(ax * uy - ay * ux) <= 0.6 + m.r) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit, 'skill'); } }
       st.ev.push({ k: 'line', id: h.id, x0: h.x, y0: h.y, x1: h.x + ux * len, y1: h.y + uy * len }); break;
     }
     case 'boule': {
       const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
       const x = t.x, y = t.y;
-      for (const m of djAround(st, x, y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); if (h.spec === 0 && m.hp > 0) { m.poi = 3; m.poiD = Math.max(m.poiD, h.dmg * 0.5); } }
+      for (const m of djAround(st, x, y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit, 'skill'); if (h.spec === 0 && m.hp > 0) { m.poi = 3; m.poiD = Math.max(m.poiD, h.dmg * 0.5); } }
       st.ev.push({ k: 'boom', id: h.id, x, y, r: S.rad, c: 'fire' }); break;
     }
     case 'nova':
-      for (const m of djAround(st, h.x, h.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); djCC(st, m, 'frz', S.frz * (h.spec === 1 ? 1.5 : 1)); }
+      for (const m of djAround(st, h.x, h.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit, 'skill'); djCC(st, m, 'frz', S.frz * (h.spec === 1 ? 1.5 : 1), h.id); }
       st.ev.push({ k: 'nova', id: h.id, x: h.x, y: h.y, r: S.rad, c: 'ice' }); break;
     case 'tp': {
       const t = djNearest(st, h, 10), dx = t ? h.x - t.x : h.fx, dy = t ? h.y - t.y : h.fy, len = Math.hypot(dx, dy) || 1;
@@ -474,14 +507,14 @@ function djCast(st, h, i) {
       if (!djFree(st, nx, ny, h.r)) { nx = h.x; ny = h.y; }
       st.ev.push({ k: 'blink', id: h.id, x0: h.x, y0: h.y, x1: nx, y1: ny });
       h.x = h.px = nx; h.y = h.py = ny; h.fx = -dx / len; h.fy = -dy / len;
-      const d = D(S.dmg); djHurt(st, t, d.v, h, d.crit); if (h.b.poison > 0) djPoison(st, h, t);
+      const d = D(S.dmg); djHurt(st, t, d.v, h, d.crit, 'skill'); if (h.b.poison > 0) djPoison(st, h, t);
       break;
     }
     case 'poison': h.b.poison = S.dur * L; st.ev.push({ k: 'buff', id: h.id, b: 'poison' }); break;
     case 'fumee':
       h.b.stealth = S.dur * L;
       for (const m of st.mobs) if (m.tgt === h.id || m.actTgt === h.id) { m.tgt = 0; m.wind = 0; }
-      if (h.spec === 1) for (const m of djAround(st, h.x, h.y, 2.5)) djCC(st, m, 'stun', 1.5);
+      if (h.spec === 1) for (const m of djAround(st, h.x, h.y, 2.5)) djCC(st, m, 'stun', 1.5, h.id);
       st.ev.push({ k: 'smoke', id: h.id, x: h.x, y: h.y }); break;
     case 'lumiere': {
       const t = djWeakest(st); if (!t) { ok = false; break; }
@@ -492,7 +525,7 @@ function djCast(st, h, i) {
       break;
     case 'ours': case 'loup': djSetForm(st, h, S.id); h.b.form = S.dur * L; break;
     case 'racines':
-      for (const m of djAround(st, h.x, h.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); djCC(st, m, 'root', S.root * L); }
+      for (const m of djAround(st, h.x, h.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit, 'skill'); djCC(st, m, 'root', S.root * L, h.id); }
       st.ev.push({ k: 'nova', id: h.id, x: h.x, y: h.y, r: S.rad, c: 'root' }); break;
     case 'squelettes': {
       for (const a of st.allies) if (a.kind === 'skel' && a.own === h.id && a.hp > 0) { a.hp = 0; st.ev.push({ k: 'die', id: a.id, x: a.x, y: a.y }); }
@@ -507,14 +540,14 @@ function djCast(st, h, i) {
     case 'drain': {
       const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
       st.ev.push({ k: 'drain', id: h.id, tgt: t.id });
-      const d = D(S.dmg * (h.spec === 1 ? 1.3 : 1)); djHeal(st, h, djHurt(st, t, d.v, h, d.crit)); break;
+      const d = D(S.dmg * (h.spec === 1 ? 1.3 : 1)); djHeal(st, h, djHurt(st, t, d.v, h, d.crit, 'skill')); break;
     }
     case 'cadavre': {
       const ref = djTargetFor(st, h, S.range) || h; let best = null, bd = 1e9;
       for (const c of st.corpses) { const dd = Math.hypot(c.x - ref.x, c.y - ref.y); if (Math.hypot(c.x - h.x, c.y - h.y) <= S.range && dd < bd) { bd = dd; best = c; } }
       if (!best) { ok = false; break; }
       st.corpses.splice(st.corpses.indexOf(best), 1);
-      for (const m of djAround(st, best.x, best.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); }
+      for (const m of djAround(st, best.x, best.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit, 'skill'); }
       st.ev.push({ k: 'boom', id: h.id, x: best.x, y: best.y, r: S.rad, c: 'bone' }); break;
     }
     default: ok = false;
@@ -569,7 +602,7 @@ function djHeroStep(st, h, inp) {
       if (h.b.stealth > 0) { v *= 2; delete h.b.stealth; st.ev.push({ k: 'unstealth', id: h.id }); }
       h.atkT = h.form === 'loup' ? 0.5 : h.form === 'ours' ? 1.1 : h.cdAtk; h.atkN++;
       st.ev.push({ k: 'atk', id: h.id, tgt: t.id });
-      if (reach < 2) { djHurt(st, t, v, h, d.crit); if (h.b.poison > 0) djPoison(st, h, t); }
+      if (reach < 2) { if (!djEvade(st, t)) { djHurt(st, t, v, h, d.crit, 'basic'); if (h.b.poison > 0) djPoison(st, h, t); } }
       else st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: 14, dmg: v, crit: d.crit, life: 2, splash: DJ_CLASS[h.cls].splash || 0 });
     }
   }
@@ -671,12 +704,25 @@ function djMobStep(st, m) {
     if (m.wind > 0) return;
     const tt = djEnt(st, m.actTgt);
     if (m.act === 'melee') { if (tt && !tt.dead && tt.hp > 0 && djDist(m, tt) <= m.range + tt.r + m.r + 0.45) djHit(st, tt, m.dmg); }
-    else if (m.act === 'shot') { if (tt) { const ax = tt.x - m.x, ay = tt.y - m.y, len = Math.hypot(ax, ay) || 1, sp = m.heals ? 6 : 9; st.shots.push({ id: st.nid++, side: 'm', kind: m.heals ? 'curse' : 'arrow', from: m.id, x: m.x, y: m.y, px: m.x, py: m.y, vx: ax / len * sp, vy: ay / len * sp, dmg: m.dmg, life: (m.range + 2) / sp, r: 0.25 }); } }
+    else if (m.act === 'shot') { if (tt) { const ax = tt.x - m.x, ay = tt.y - m.y, len = Math.hypot(ax, ay) || 1, sp = m.shot === 'arrow' ? 9 : 6; st.shots.push({ id: st.nid++, side: 'm', kind: m.shot, from: m.id, x: m.x, y: m.y, px: m.x, py: m.y, vx: ax / len * sp, vy: ay / len * sp, dmg: m.dmg, life: (m.range + 2) / sp, r: 0.25 }); } }
     else if (m.act === 'heal') { if (tt && tt.hp > 0) { tt.hp = Math.min(tt.hpMax, tt.hp + tt.hpMax * 0.15); st.ev.push({ k: 'mheal', id: tt.id, by: m.id }); } }
+    else if (m.act === 'raise' && m.raiseAt) {
+      /* le nécromant relève un squelette (plus faible) à la place d'un monstre tombé */
+      const n = djMob(st, 'squelette', m.raiseAt[0], m.raiseAt[1], m.room, false);
+      n.hp *= 0.6; n.hpMax *= 0.6; n.xp = 1; n.awake = true; n.raisedBy = m.id; n.atkT = 1;
+      if (!djFree(st, n.x, n.y, n.r)) { const p = djRoomSpot(st, m.room, n.r); if (p) { n.x = n.px = p[0]; n.y = n.py = p[1]; } }
+      st.mobs.push(n); st.ev.push({ k: 'spawn', id: n.id, x: n.x, y: n.y }); st.ev.push({ k: 'raised', id: n.id, by: m.id });
+      m.raiseAt = null;
+    }
     return;
   }
   const start = (act, tgt, wind, a) => { m.act = act; m.actTgt = tgt; m.wind = wind; m.atkT = m.rate; m.atkN++; st.ev.push({ k: 'matk', id: m.id, a, tgt }); };
   /* Le chaman soigne d'abord les blessés autour de lui. */
+  if (m.raises && m.atkT <= 0 && st.mobs.filter(o => o.raisedBy === m.id && o.hp > 0).length < 3) {
+    let best = null, bd = 6;
+    for (const c of st.corpses) { const dd = Math.hypot(c.x - m.x, c.y - m.y); if (dd < bd && st.roomAt[Math.floor(c.y) * st.d.W + Math.floor(c.x)] === m.room) { bd = dd; best = c; } }
+    if (best) { st.corpses.splice(st.corpses.indexOf(best), 1); m.raiseAt = [best.x, best.y]; start('raise', 0, 0.6, 'raise'); return; }
+  }
   if (m.heals && m.atkT <= 0) {
     let best = null, bf = 0.7;
     for (const o of st.mobs) if (o !== m && o.hp > 0 && o.awake && o.hp / o.hpMax < bf && djDist(m, o) < 5) { bf = o.hp / o.hpMax; best = o; }
@@ -686,7 +732,7 @@ function djMobStep(st, m) {
   if (!t) { m.mv = false; return; }
   m.tgt = t.id;
   const dx = t.x - m.x, dy = t.y - m.y, dd = Math.hypot(dx, dy) || 0.001;
-  if (m.ranged || m.heals) {
+  if (m.ranged || m.heals || m.raises) {
     const los = djLos(st, m.x, m.y, t.x, t.y);
     if (dd < 2.8 && los && m.root <= 0) { djSteer(st, m, t, true); if (m.mv || m.atkT > 0) return; }
     else if (dd > m.range || !los) { djSteer(st, m, t, false); return; }
@@ -698,8 +744,44 @@ function djMobStep(st, m) {
   m.mv = false; m.fx = dx / dd; m.fy = dy / dd;
   if (m.atkT <= 0) start('melee', t.id, m.big ? 0.55 : 0.35, 'melee');
 }
+function djBossStep(st, m) { return m.type === 'roiSquelette' ? djBossRoi(st, m) : djBossTroll(st, m); }
+/* Le roi squelette : tempête d'os (des cercles s'allument sous les héros puis explosent), renforts à 70 % et 40 %, rage sous 30 %. */
+function djBossRoi(st, m) {
+  const S = m.sp, dt = DJ_DT;
+  if (S.storm == null) S.storm = 5;
+  S.storm -= dt;
+  if ((S.phase === 0 && m.hp < m.hpMax * 0.7) || (S.phase === 1 && m.hp < m.hpMax * 0.4)) {
+    S.phase++;
+    const c = djCenter(st.d.rooms[m.room]);
+    ['squelette', 'squelette', 'squelette', 'archerSq'].forEach((type, k) => {
+      const a = k / 4 * 6.2832 + S.phase, x = m.x + Math.cos(a) * 2.6, y = m.y + Math.sin(a) * 2.6, ok = djFree(st, x, y, 0.38);
+      const n = djMob(st, type, ok ? x : c[0] + 0.5, ok ? y : c[1] + 0.5, m.room, false); n.awake = true; st.mobs.push(n);
+      st.ev.push({ k: 'spawn', id: n.id, x: n.x, y: n.y });
+    });
+    st.ev.push({ k: 'summon', id: m.id, x: m.x, y: m.y, boss: true });
+  }
+  if (!S.enr && m.hp < m.hpMax * 0.3) { S.enr = true; m.rate *= 0.7; m.speed *= 1.25; st.ev.push({ k: 'enrage', id: m.id }); }
+  if (S.act === 'storm') {
+    S.actT -= dt; m.mv = false;
+    if (S.actT <= 0) {
+      for (const p of S.pts) for (const t of djFoes(st)) if (Math.hypot(t.x - p[0], t.y - p[1]) <= 1.6 + t.r) djHit(st, t, m.dmg * 1.4);
+      st.ev.push({ k: 'storm', id: m.id, pts: S.pts, r: 1.6 }); S.act = null; S.storm = 7.5;
+    }
+    return true;
+  }
+  if (m.wind > 0) return false;
+  if (S.storm <= 0 && djMobTarget(st, m)) {
+    /* un cercle sous chaque héros, et deux de plus autour, au hasard */
+    const pts = [];
+    for (const h of st.heroes) if (!h.dead) { pts.push([djR2(h.x), djR2(h.y)]); const a = djRnd(st) * 6.2832; pts.push([djR2(h.x + Math.cos(a) * 2.4), djR2(h.y + Math.sin(a) * 2.4)]); }
+    S.pts = pts; S.act = 'storm'; S.actT = 1.3;
+    st.ev.push({ k: 'tele', id: m.id, a: 'storm', pts, r: 1.6, t: 1.3 });
+    return true;
+  }
+  return false;
+}
 /* Le chef troll : coup de massue en cercle, charge, renforts à 66 % et 33 % de vie, rage sous 25 %. */
-function djBossStep(st, m) {
+function djBossTroll(st, m) {
   const S = m.sp, dt = DJ_DT;
   S.slam -= dt; S.charge -= dt;
   if ((S.phase === 0 && m.hp < m.hpMax * 0.66) || (S.phase === 1 && m.hp < m.hpMax * 0.33)) {
@@ -761,7 +843,7 @@ function djShotStep(st, s) {
     if (!t || s.life <= 0) { s.dead = true; return; }
     const dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy), step = s.spd * dt;
     if (len <= step + t.r) {
-      s.dead = true; s.x = t.x; s.y = t.y; djHurt(st, t, s.dmg, djEnt(st, s.from), s.crit);
+      s.dead = true; s.x = t.x; s.y = t.y; if (djEvade(st, t)) return; djHurt(st, t, s.dmg, djEnt(st, s.from), s.crit, 'basic');
       if (s.splash) for (const m of djAround(st, s.x, s.y, s.splash)) if (m !== t) djHurt(st, m, s.dmg * 0.4, null, false);   // la boule du mage éclabousse
       return;
     }
@@ -776,7 +858,7 @@ function djZoneStep(st, z) {
   z.t -= DJ_DT; z.tick -= DJ_DT;
   if (z.tick <= 0) {
     z.tick += 0.5;
-    if (z.dps) for (const m of djAround(st, z.x, z.y, z.r)) djHurt(st, m, z.dps * 0.5, djEnt(st, z.own), false);
+    if (z.dps) for (const m of djAround(st, z.x, z.y, z.r)) djHurt(st, m, z.dps * 0.5, djEnt(st, z.own), false, 'dot');
     if (z.hps) for (const h of st.heroes) if (!h.dead && Math.hypot(h.x - z.x, h.y - z.y) <= z.r + h.r) djHeal(st, h, h.hpMax * z.hps * 0.5);
   }
   if (z.t <= 0) z.dead = true;
@@ -804,7 +886,8 @@ function djWorld(st) {
     if (!st.mobs.some(m => m.room === ri && m.hp > 0)) {
       R.st = 'clear'; for (const k of st.doors[ri]) st.door[k] = 0;
       const boss = d.rooms[ri].kind === 'boss';
-      if (boss) { const c = djCenter(d.rooms[ri]); st.exit = { x: c[0] + 0.5, y: c[1] + 0.5 }; }
+      const left = st.rooms.some((R2, i) => (d.rooms[i].kind === 'fight' || d.rooms[i].kind === 'boss') && R2.st !== 'clear');
+      if (!left && !st.exit) { const c = djCenter(d.rooms[d.exitRoom != null ? d.exitRoom : ri]); st.exit = { x: c[0] + 0.5, y: c[1] + 0.5 }; }
       st.ev.push({ k: 'clear', room: ri, boss });
       for (const h of st.heroes) if (h.dead && !h.gone) djRaise(st, h, 0.3, 0);      // salle nettoyée : l'allié tombé se relève
       return;
@@ -842,7 +925,7 @@ function djWorld(st) {
       st.ev.push({ k: 'altar', b: st.bless, x: st.altar.x, y: st.altar.y });
     }
     if (st.pris && !st.pris.freed && Math.hypot(st.pris.x - h.x, st.pris.y - h.y) < 1.3) { st.pris.freed = true; st.ev.push({ k: 'free', x: st.pris.x, y: st.pris.y }); }
-    if (st.exit && !st.over && Math.hypot(st.exit.x - h.x, st.exit.y - h.y) < 1.0) { st.over = 'win'; st.ev.push({ k: 'win' }); }
+    if (st.exit && !st.over && Math.hypot(st.exit.x - h.x, st.exit.y - h.y) < 1.0) { st.over = st.d.floor ? 'floor' : 'win'; st.ev.push({ k: st.over }); }
   }
   /* À deux : rester 3 s près d'un allié tombé le relève (40 % de vie). */
   for (const h of st.heroes) {
@@ -885,9 +968,9 @@ function djStep(st, inputs) {
 function djFlee(st) { if (!st.over) { st.fled = true; st.over = 'lose'; st.ev.push({ k: 'lose', fled: true }); } }
 /* Bilan : victoire = tout ; défaite ou fuite = moitié de l'expérience et du butin. Le prisonnier délivré est sauvé dans tous les cas. */
 function djResult(st) {
-  const win = st.over === 'win', L = st.lvl, k = win ? 1 : 0.5, loot = {};
+  const win = st.over === 'win' || st.over === 'floor', L = st.lvl, k = win ? 1 : 0.5, loot = {};
   for (const r in st.loot) { const n = Math.round(st.loot[r] * k); if (n > 0) loot[r] = n; }
-  return { win, lvl: L, xp: Math.round((st.xp + (win ? 60 * djXpMul(L) : 0)) * k), loot, pris: !!(st.pris && st.pris.freed), kills: st.kills, secs: Math.round(st.t), fled: !!st.fled };
+  return { win, lvl: L, xp: Math.round((st.xp + (win ? 60 * djXpMul(L) : 0)) * k), loot, pris: !!(st.pris && st.pris.freed), kills: st.kills, secs: Math.round(st.t), fled: !!st.fled, combos: st.combos || 0, theme: st.d.theme };
 }
 /* Où en est-on ? (pour l'interface) */
 function djProgress(st) {
@@ -901,14 +984,14 @@ function djProgress(st) {
 /* ===================== DONJONS À DEUX : l'hôte simule, l'invitée affiche =====================
    Le téléphone de l'hôte fait tourner le combat et envoie l'état ~7 fois par seconde ; celui de l'invitée l'affiche
    (en lissant), déplace lui-même son héros (pour qu'il réponde tout de suite) et envoie sa position et ses boutons. */
-const DJ_PV = 1;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent
-const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll'];
+const DJ_PV = 2;                       // version du jeu à deux : à augmenter quand le combat ou les messages changent
+const DJ_MT = ['gobelin', 'archer', 'chaman', 'troll', 'chefTroll', 'squelette', 'archerSq', 'goule', 'spectre', 'necromant', 'golem', 'roiSquelette'];
 const DJ_ST = { idle: 'i', lock: 'l', clear: 'c', open: 'o', fight: 'f' }, DJ_STR = { i: 'idle', l: 'lock', c: 'clear', o: 'open', f: 'fight' };
 const djR1 = x => Math.round(x * 10) / 10, djR2 = x => Math.round(x * 100) / 100;
 /* Instantané envoyé par l'hôte (nombres arrondis, listes courtes). evs : événements depuis le précédent (pour les effets). */
-function djSnap(st, evs, n) {
+function djSnap(st, evs, n, res) {
   return {
-    n, t: djR2(st.t), sn: st.n, pv: DJ_PV, sd: st.d.seed,
+    n, t: djR2(st.t), sn: st.n, pv: DJ_PV, sd: st.d.seed, fl: st.d.floor || 0, lv: st.lvl, th: st.d.theme, nr: st.d.rooms.filter(r => r.kind === 'fight').length, bs: st.d.rooms.some(r => r.kind === 'boss') ? 1 : 0,
     h: st.heroes.map(h => [h.id, djR2(h.x), djR2(h.y), djR1(h.hp), djR1(h.hpMax),
       (h.dead ? 1 : 0) | (h.mv ? 2 : 0) | (h.b.stealth > 0 ? 4 : 0) | (h.b.inv > 0 ? 8 : 0) | (h.gone ? 16 : 0),
       djR2(h.fx), djR2(h.fy), djR1(h.cd[0]), djR1(h.cd[1]), djR1(h.cd[2]), djR1(h.cdMax[0]), djR1(h.cdMax[1]), djR1(h.cdMax[2]),
@@ -923,7 +1006,7 @@ function djSnap(st, evs, n) {
     ch: st.chests.map(c => (c.open ? '1' : '0')).join('') || '0',
     al: st.altar && st.altar.used ? 1 : 0, bl: st.bless || 0, pr: st.pris && st.pris.freed ? 1 : 0,
     ex: st.exit ? [djR2(st.exit.x), djR2(st.exit.y)] : 0,
-    ov: st.over || 0, res: st.over ? djResult(st) : 0, xp: Math.round(st.xp), k: st.kills,
+    ov: st.over || 0, res: res || (st.over && st.over !== 'floor' ? djResult(st) : 0), xp: Math.round(st.xp), k: st.kills, cb: st.combos || 0,
     ev: evs && evs.length ? evs : 0,
   };
 }
@@ -965,8 +1048,8 @@ function djApplySnap(ms, sn, me) {
   if (ms.pris) ms.pris.freed = !!sn.pr;
   ms.exit = sn.ex ? { x: sn.ex[0], y: sn.ex[1] } : null;
   for (const tr of ms.traps) { const u = ms.t + tr.ph, cyc = Math.floor(u / 2.4); tr.on = u - cyc * 2.4 < 0.6; }
-  ms.xp = sn.xp; ms.kills = sn.k;
-  if (sn.ov && !ms.over) { ms.over = sn.ov; ms.res = sn.res || null; }
+  ms.xp = sn.xp; ms.kills = sn.k; ms.combos = sn.cb || 0;
+  if ((sn.ov || null) !== (ms.over || null)) { ms.over = sn.ov || null; ms.res = sn.res || null; }
   return sn.ev || [];
 }
 /* Sur le téléphone de l'invitée : son héros bouge tout de suite (mêmes murs, même vitesse, même pas en avant au contact). */
@@ -981,4 +1064,34 @@ function djLocalMove(st, h, mx, my, dt) {
     const t = djNearest(st, h, 4.5);
     if (t && djDist(h, t) > reach + t.r) { const dx = t.x - h.x, dy = t.y - h.y, len = Math.hypot(dx, dy); h.mv = djMove(st, h, dx / len * spd * dt, dy / len * spd * dt); h.fx = dx / len; h.fy = dy / len; }
   }
+}
+
+/* ===================== LES PROFONDEURS : des étages sans fin =====================
+   Étages de 3 ou 4 salles ; un boss tous les 5 étages ; la mine puis la crypte, par tranches de 5 étages ;
+   +1 niveau de monstres tous les 2 étages. À la sortie de chaque étage : descendre, ou remonter avec tout le butin. */
+function djFloorCfg(floor, start) {
+  return { floor, lvl: Math.max(1, start) + Math.floor((floor - 1) / 2), theme: Math.floor((floor - 1) / 5) % 2 ? 'crypte' : 'mine',
+    rooms: floor % 5 === 0 ? 3 : 3 + (floor % 2 ? 0 : 1), boss: floor % 5 === 0 };
+}
+const djFloorSeed = (seed, floor) => (hash((seed ^ Math.imul(floor, 7919)) >>> 0) || 1) >>> 0;
+function djFloor(seed, floor, start) {
+  const c = djFloorCfg(floor, start), sd = djFloorSeed(seed, floor);
+  return genDungeon(sd, c.lvl, c.theme, { rooms: c.rooms, boss: c.boss, floor });
+}
+/* Ce que les héros emportent à l'étage suivant : leur vie (+25 %), leurs potions, le relèvement déjà utilisé. */
+function djCarry(st) {
+  const out = {};
+  for (const h of st.heroes) out[h.id] = { hp: h.dead ? (h.gone ? 0 : 0.3) : Math.min(1, h.hp / h.hpMax + 0.25), pot: h.pot, revived: h.revived, gone: h.gone };
+  return out;
+}
+/* Cumul d'une descente : chaque étage fini ajoute son bilan ; à la fin, défaite ou fuite = la moitié de tout. */
+function djRunAdd(run, r) {
+  run.xp += r.xp; run.kills += r.kills; run.secs += r.secs; run.combos += r.combos || 0; if (r.pris) run.pris = true;
+  for (const k in r.loot) run.loot[k] = (run.loot[k] || 0) + r.loot[k];
+  return run;
+}
+function djRunResult(run, win, partial) {
+  const all = djRunAdd(JSON.parse(JSON.stringify(run)), partial || { xp: 0, kills: 0, secs: 0, loot: {} }), k = win ? 1 : 0.5, loot = {};
+  for (const r in all.loot) { const n = Math.round(all.loot[r] * k); if (n > 0) loot[r] = n; }
+  return { win, prof: true, lvl: run.start, deep: run.done, xp: Math.round(all.xp * k), loot, pris: !!all.pris, kills: all.kills, secs: all.secs, combos: all.combos, fled: !win && !!(partial && partial.fled), theme: 'prof' };
 }

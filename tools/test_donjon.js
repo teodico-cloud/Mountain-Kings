@@ -1,7 +1,7 @@
 /* Essais des donjons : fabrication, puis combats joués par un petit robot pour chaque classe. Usage : node tools/test_donjon.js [--long] */
 const fs = require('fs'), path = require('path');
 const src = fs.readFileSync(path.join(__dirname, '../src2/p2_rules.js'), 'utf8') + '\n' + fs.readFileSync(path.join(__dirname, '../src2/p2d_donjon.js'), 'utf8');
-const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove };')();
+const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove, djFloorCfg, djFloor, djCarry, djRunAdd, djRunResult };')();
 const LONG = process.argv.includes('--long');
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
@@ -82,8 +82,8 @@ function makeBot(st) {
     return inp;
   };
 }
-function play(heroes, lvl, seed, maxMin) {
-  const d = D.genDungeon(seed, lvl), st = D.djStart(d, heroes, { seed });
+function play(heroes, lvl, seed, maxMin, theme) {
+  const d = D.genDungeon(seed, lvl, theme), st = D.djStart(d, heroes, { seed });
   const bots = st.heroes.map(() => makeBot(st));
   let pots = 0;
   while (!st.over && st.t < (maxMin || 20) * 60) {
@@ -207,6 +207,83 @@ function playDuo(seed, lvl, hA, hB, opts) {
   ok(Math.abs(duo.mobs[0].hpMax / solo.mobs[0].hpMax - 1.7) < 1e-9, 'à deux, les monstres ont 70 % de vie en plus');
   const r2 = playDuo(777, 1, hero('paladin', 'humain', 2, { id: 'hA', own: 'uA' }), hero('voleur', 'orque', 2, { id: 'hB', own: 'uB' }), { killB: 20 });
   ok(r2.raised >= 1, 'un allié tombé se relève (à côté de son partenaire ou à la fin de la salle)');
+}
+{
+  const r = playDuo(4321, 2, hero('mage', 'humain', 4, { id: 'hA', own: 'uA', sk: { s0: 1 } }), hero('guerrier', 'nain', 4, { id: 'hB', own: 'uB' }));
+  ok((r.st.combos || 0) >= 5 && D.djResult(r.st).combos === r.st.combos, 'combos à deux : ' + r.st.combos + ' dans la partie (marques et contrôles de l’autre héros)');
+  const so = play([hero('mage', 'humain', 4)], 2, 4321);
+  ok(!so.st.combos, 'pas de combo en solo');
+}
+/* ---------- la crypte des rois ---------- */
+{
+  const d = D.genDungeon(99, 3, 'crypte');
+  ok(d.theme === 'crypte' && d.monsters.some(m => m.type === 'squelette') && d.monsters.some(m => m.boss && m.type === 'roiSquelette') && !d.monsters.some(m => m.type === 'gobelin'), 'crypte : squelettes, goules, spectres… et le roi squelette au fond');
+  let wins = 0, n = 0, raised = 0, storms = 0, misses = 0, secs = [];
+  for (const [cls, race] of [['guerrier', 'nain'], ['mage', 'humain'], ['rodeur', 'elfe'], ['pretre', 'elfe'], ['necro', 'mortvivant'], ['voleur', 'halfelin']]) for (const lvl of [3, 6]) {
+    const sk = lvl >= 5 ? { s0: 2, s1: 1, s2: 1 } : { s0: 1 };
+    const dd = D.genDungeon(500 + lvl * 7 + n, lvl, 'crypte'), st = D.djStart(dd, [hero(cls, race, lvl, { sk })], { seed: 500 + lvl * 7 + n }), bot = makeBot(st);
+    while (!st.over && st.t < 1200) { D.djStep(st, { [st.heroes[0].id]: bot(st.heroes[0]) }); for (const e of st.ev) { if (e.k === 'raised') raised++; if (e.k === 'storm') storms++; if (e.k === 'miss' && st.mobs.some(m => m.id === e.id)) misses++; } st.ev.length = 0; }
+    n++; if (st.over === 'win') wins++; secs.push(Math.round(st.t));
+  }
+  ok(wins >= n - 2, 'crypte : le robot gagne ' + wins + ' fois sur ' + n + ' (niveaux 3 et 6), ' + Math.round(secs.reduce((a, b) => a + b, 0) / secs.length) + ' s en moyenne');
+  ok(raised > 0 && storms > 0 && misses > 0, 'nécromants qui relèvent les morts (' + raised + '), tempêtes d’os du roi (' + storms + '), spectres qui esquivent (' + misses + ')');
+}
+/* ---------- les Profondeurs : des étages sans fin ---------- */
+{
+  const cf = n => D.djFloorCfg(n, 5);
+  ok(cf(1).lvl === 5 && cf(2).lvl === 5 && cf(3).lvl === 6 && cf(10).lvl === 9, 'Profondeurs : +1 niveau de monstres tous les 2 étages');
+  ok([1, 2, 3, 4, 5].every(n => cf(n).theme === 'mine') && [6, 10].every(n => cf(n).theme === 'crypte') && cf(11).theme === 'mine', 'la mine (étages 1 à 5), la crypte (6 à 10), et ainsi de suite');
+  ok([5, 10, 15].every(n => cf(n).boss) && ![1, 2, 3, 4, 6].some(n => cf(n).boss), 'un boss tous les 5 étages');
+  let bad = 0;
+  for (let n = 1; n <= 12; n++) for (const seed of [17, 4242, 99991]) {
+    const d = D.djFloor(seed, n, 3), c = D.djFloorCfg(n, 3), fights = d.rooms.filter(r => r.kind === 'fight').length, seen = D.djReach(d);
+    if (d.floor !== n || d.lvl !== c.lvl || d.theme !== c.theme || fights !== c.rooms || d.rooms.some(r => r.kind === 'boss') !== c.boss || d.monsters.some(m => m.boss) !== c.boss) bad++;
+    for (const r of d.rooms) if (!r.cells.some(([x, y]) => seen[y * d.W + x])) bad++;
+    if (JSON.stringify(D.djFloor(seed, n, 3).rooms) !== JSON.stringify(d.rooms)) bad++;
+  }
+  ok(bad === 0, 'étages : bonne taille, bon thème, boss au bon étage, salles reliées, même graine = même étage (36 étages)');
+  ok(D.djFloor(17, 1, 3).seed !== D.djFloor(17, 2, 3).seed, 'chaque étage a sa propre graine');
+}
+{
+  /* un robot descend : la vie et les potions suivent d'un étage à l'autre, le cumul grossit */
+  const H = hero('guerrier', 'nain', 5, { sk: { s0: 1, s1: 1, s2: 1 } });
+  const run = { start: 5, floor: 1, done: 0, xp: 0, loot: {}, kills: 0, secs: 0, combos: 0, pris: false };
+  let carry = null, floors = 0, carried = true, last = null;
+  for (let n = 1; n <= 6; n++) {
+    const d = D.djFloor(31337, n, 5), st = D.djStart(d, [H], { seed: d.seed, carry }), bot = makeBot(st), h = st.heroes[0];
+    if (carry) { const c = carry[H.id]; if ((c.hp < 1 && Math.abs(h.hp / h.hpMax - c.hp) > 0.01) || h.pot !== c.pot) carried = false; }
+    while (!st.over && st.t < 900) { D.djStep(st, { [h.id]: bot(h) }); st.ev.length = 0; }
+    last = st.over;
+    if (st.over !== 'floor') break;
+    D.djRunAdd(run, D.djResult(st)); run.done = n; floors++;
+    carry = D.djCarry(st);
+  }
+  console.log('  descente du robot : ' + floors + ' étage(s), puis « ' + last + ' » · ' + Math.round(run.xp) + ' xp · ' + run.kills + ' monstres · ' + Math.floor(run.secs / 60) + ' min');
+  ok(floors >= 3, 'Profondeurs : le robot (guerrier niveau 5) enchaîne ' + floors + ' étages, chacun finit par « étage terminé »');
+  ok(carried, 'la vie (+25 %) et les potions passent d’un étage à l’autre');
+  const before = JSON.stringify(run), w = D.djRunResult(run, true), l = D.djRunResult(run, false, { xp: 100, kills: 3, secs: 30, loot: { pierre: 10 }, fled: true }), z = D.djRunResult(run, false, { xp: 0, kills: 0, secs: 0, loot: {} });
+  ok(w.win && w.prof && w.deep === floors && w.xp === Math.round(run.xp) && w.theme === 'prof' && JSON.stringify(run) === before, 'remonter : toute l’expérience de la descente (' + w.xp + ')');
+  ok(!l.win && l.fled && l.xp === Math.round((run.xp + 100) * 0.5) && l.deep === floors && !z.fled, 'tomber ou fuir : la moitié de tout, étage en cours compris');
+  const P = hero('pretre', 'elfe', 5, { sk: { s0: 1, s1: 1, s2: 1 } }), dp = D.djFloor(5, 2, 5);
+  const sp = D.djStart(dp, [P], { seed: dp.seed, carry: { [P.id]: { hp: 0.5, pot: 1, revived: true, gone: false } } });
+  ok(Math.abs(sp.heroes[0].hp / sp.heroes[0].hpMax - 0.5) < 0.01 && sp.heroes[0].pot === 1 && sp.heroes[0].revived, 'la vie rapportée compte aussi avec la Bénédiction du prêtre ; le relèvement du mort-vivant reste utilisé');
+}
+{
+  /* à deux : l'hôte descend, l'invitée fabrique le même étage et suit */
+  const A = hero('guerrier', 'nain', 6, { id: 'hA', own: 'uA', sk: { s0: 2, s1: 1, s2: 1 } }), B = hero('pretre', 'elfe', 6, { id: 'hB', own: 'uB', sk: { s0: 1, s1: 1, s2: 1 } });
+  const seed = 2024, d1 = D.djFloor(seed, 1, 6), st = D.djStart(d1, [A, B], { seed: d1.seed }), ms = D.djStart(D.djFloor(seed, 1, 6), [A, B], { seed: d1.seed });
+  const bots = st.heroes.map(() => makeBot(st));
+  while (!st.over && st.t < 900) { const inp = {}; st.heroes.forEach((h, i) => { inp[h.id] = bots[i](h); }); D.djStep(st, inp); st.ev.length = 0; }
+  const sn1 = JSON.parse(JSON.stringify(D.djSnap(st, [], 50)));
+  D.djApplySnap(ms, sn1, 'hB');
+  ok(st.over === 'floor' && ms.over === 'floor' && sn1.fl === 1 && !sn1.res, 'à deux : fin du 1er étage vue des deux côtés (pas encore de bilan)');
+  const carry = D.djCarry(st), d2 = D.djFloor(seed, 2, 6), st2 = D.djStart(d2, [A, B], { seed: d2.seed, remote: 'hB', carry });
+  for (let i = 0; i < 30; i++) D.djStep(st2, { hA: {}, hB: { pos: [st2.heroes[1].x, st2.heroes[1].y, 0, 1, 0], tp: 0 } });
+  const sn2 = JSON.parse(JSON.stringify(D.djSnap(st2, [], 51)));
+  const g2 = D.djFloor(seed, sn2.fl, 6), ms2 = D.djStart(g2, [A, B], { seed: g2.seed });
+  const applied = D.djApplySnap(ms2, sn2, 'hB') !== null;
+  ok(sn2.fl === 2 && g2.seed === sn2.sd && applied && D.djApplySnap(ms, sn2, 'hB') === null, 'l’invitée refait le 2e étage avec la même graine ; l’ancienne copie refuse le nouvel instantané');
+  ok(ms2.heroes.every((h, i) => Math.abs(h.hp - st2.heroes[i].hp) < 0.06) && ms2.mobs.length === st2.mobs.filter(m => !m.hidden && m.hp > 0).length, 'vie rapportée et monstres identiques sur les deux téléphones');
 }
 console.log(fails ? fails + ' échec(s).' : 'Tout est bon.');
 process.exit(fails ? 1 : 0);
