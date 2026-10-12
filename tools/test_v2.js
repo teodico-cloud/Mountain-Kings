@@ -144,6 +144,33 @@ R.simulateVillage(vh2, T0 + 6 * D + 4 * H); vh2.r.pain = 3000;
 R.simulateVillage(vh2, T0 + 8 * D + H);
 ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
 
+/* 15. Retour de donjon : expérience, niveaux, points de compétence, butin, prisonnier */
+{
+  const vd = R.clone(vh), hid = R.activeHero(vd, 'u1').id;          // Grosh, orque nécromancien niveau 1
+  const r1 = R.applyV(vd, { type: 'djEnd', hid, lvl: 1, win: true, xp: 450, loot: { pierre: 90, bois: 60 }, pris: false }, who);
+  const g = vd.heroes[hid];
+  ok(r1.ok && g.lvl === 3 && g.sp === 2 && g.dj === 2, 'victoire au niveau 1 : +450 d’expérience → niveau 3, 2 points de compétence, niveau 2 du donjon ouvert');
+  ok(vd.log.slice(-1)[0].m.includes('passe au niveau 3'), 'le journal raconte le retour de donjon');
+  const p0 = vd.r.pierre; R.applyV(vd, { type: 'djEnd', hid, lvl: 1, win: false, xp: 10, loot: { pierre: 99999 } }, who);
+  ok(vd.r.pierre <= Math.max(R.capOf(vd), p0) && g.dj === 2, 'le butin ne dépasse pas les réserves ; une défaite n’ouvre pas de niveau');
+  ok(!R.applyV(R.clone(vd), { type: 'djEnd', hid, lvl: 1, win: true, xp: 10 }, who2).ok, 'on ne déclare pas le donjon du héros de l’autre');
+  const c0 = vd.cands.length; const r2 = R.applyV(vd, { type: 'djEnd', hid, lvl: 2, win: true, xp: 100, pris: true }, who);
+  const pr = vd.cands.find(c => c.pris);
+  ok(r2.ok && vd.cands.length === c0 + 1 && pr && Math.max(...Object.values(pr.st)) >= 9 && Math.min(...Object.values(pr.st)) >= 5, 'prisonnier délivré : un villageois doué (' + pr.name + ', meilleure note ' + Math.max(...Object.values(pr.st)) + ')');
+  ok(R.applyV(vd, { type: 'skill', hid, i: 0 }, who).ok && g.sk.s0 === 1 && g.sp === 1, 'un point dans la 1re compétence : rang 2');
+  ok(!R.applyV(R.clone(vd), { type: 'skill', hid, i: 2 }, who).ok, 'pas de point dans une compétence encore fermée (niveau 5)');
+  R.applyV(vd, { type: 'skill', hid, i: 1 }, who);
+  ok(!R.applyV(R.clone(vd), { type: 'skill', hid, i: 0 }, who).ok && g.sp === 0, 'plus de point : refusé');
+  ok(!R.applyV(R.clone(vd), { type: 'spec', hid, s: 1 }, who).ok, 'pas de spécialisation avant le niveau 10');
+  g.lvl = 10; ok(R.applyV(vd, { type: 'spec', hid, s: 1 }, who).ok && g.spec === 1 && !R.applyV(R.clone(vd), { type: 'spec', hid, s: 0 }, who).ok, 'spécialisation au niveau 10, une seule fois');
+  const hb = R.clone(vh), hh = Object.values(hb.heroes).find(x => x.race === 'nain');
+  hh.xp = 0; R.applyV(hb, { type: 'djEnd', hid: hh.id, lvl: 1, win: true, xp: 99999 }, who);
+  ok(hh.lvl < 10, 'garde-fou : une expérience absurde est plafonnée (niveau ' + hh.lvl + ')');
+  const hu = R.clone(vh); R.applyV(hu, { type: 'hero', name: 'Hu', race: 'humain', cls: 'pretre' }, who2);
+  const hum = Object.values(hu.heroes).find(x => x.name === 'Hu'); R.applyV(hu, { type: 'djEnd', hid: hum.id, lvl: 1, win: false, xp: 50 }, who2);
+  ok(hum.xp === 55, 'humain : +10 % d’expérience (50 → ' + hum.xp + ')');
+}
+
 /* 14. Rapidité : simuler 3 jours */
 const t0 = Date.now(); R.simulateVillage(R.clone(v3), v3.t + 3 * D); const ms = Date.now() - t0;
 ok(ms < 1500, 'simulation de 3 jours en ' + ms + ' ms');

@@ -31,7 +31,7 @@ function normVillage(v) {
   for (const [k, h0] of Object.entries(fbObj(v.heroes))) {
     if (!h0 || typeof h0 !== 'object') continue;
     const old = !h0.own, id = old ? 'h_' + k : (h0.id || k);
-    const h = Object.assign({ lvl: 1, xp: 0, sp: 0, spec: null, at: null, n: 0 }, h0, { id, own: old ? k : h0.own, sk: Object.assign({}, h0.sk) });
+    const h = Object.assign({ lvl: 1, xp: 0, sp: 0, spec: null, at: null, n: 0, dj: 1 }, h0, { id, own: old ? k : h0.own, sk: Object.assign({}, h0.sk) });
     H[id] = h;
     if (old && v.members[k] && !v.members[k].hero) v.members[k].hero = id;
   }
@@ -390,6 +390,18 @@ function heroBonus(v, target, spec) {
   return k;
 }
 const heroesAt = (v, target) => Object.values(v.heroes || {}).filter(h => h && h.at === target);
+/* Rang d'une compétence (0 = pas encore ouverte, puis 1 à 5) ; points dépensés dans hero.sk = { s0, s1, s2 }. */
+const skillRank = (h, i) => h.lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, (h.sk && h.sk['s' + i]) | 0)) : 0;
+const DJ_XP_CAP = lvl => Math.round(1500 * (1 + 0.25 * (lvl - 1)));      // garde-fou : expérience maximale d'un donjon
+/* Prisonnier délivré : un villageois expérimenté (9 dans sa spécialité, au moins 5 ailleurs) qui voudrait s'installer. */
+function prisonerOf(v, t) {
+  const taken = new Set(v.vil.map(x => x.name).concat(v.cands.map(x => x.name)));
+  const p = genVillager(hash((v.seed ^ Math.imul(v.nid + 13, 2654435761)) >>> 0), t, v.nid++, taken);
+  const fav = bestSpec(p);
+  for (const s of SPEC) p.st[s] = Math.max(p.st[s], 5);
+  p.st[fav] = Math.max(p.st[fav], 9); p.pris = 1;
+  return p;
+}
 
 /* ---------- villageois ---------- */
 function genVillager(seed, t, id, taken) {
@@ -600,7 +612,7 @@ function applyV(v, a, who) {
       if (!RACES[a.race] || !CLASSES[a.cls]) return fail('Choisis une race et une classe.');
       const name = String(a.name || '').trim().slice(0, 18); if (!name) return fail('Donne un nom à ton héros.');
       const n = v.nid++, id = 'h' + n, sex = a.sex === 'f' ? 'f' : 'm';
-      v.heroes[id] = { id, n, own: who.uid, name, race: a.race, cls: a.cls, sex, col: COLORS.includes(a.col) ? a.col : COLORS[0], lvl: 1, xp: 0, sp: 0, sk: {}, spec: null, at: null };
+      v.heroes[id] = { id, n, own: who.uid, name, race: a.race, cls: a.cls, sex, col: COLORS.includes(a.col) ? a.col : COLORS[0], lvl: 1, xp: 0, sp: 0, sk: {}, spec: null, at: null, dj: 1 };
       if (!activeHero(v, who.uid) || !v.members[who.uid].hero) v.members[who.uid].hero = id;
       addLog(v, t, name + ', ' + raceName(a.race, sex).toLowerCase() + ' ' + className(a.cls, sex).toLowerCase() + ', ' + (mine.length ? 'rejoint la compagnie de ' + nm : 'arrive au village') + '.', 'hero');
       return { ok: true, id };
@@ -712,6 +724,50 @@ function applyV(v, a, who) {
       addLog(v, t, nm + ' sème ' + (a.c === 'orge' ? 'de l’orge' : 'du blé') + ' dans un champ.', 'crop');
       return { ok: true };
     }
+    case 'djEnd': {
+      /* Retour de donjon : expérience (et niveaux) pour le héros, butin pour le village, niveau suivant ouvert, prisonnier délivré. */
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      const L = Math.max(1, Math.min(99, a.lvl | 0)), win = !!a.win;
+      let xp = Math.max(0, Math.min(DJ_XP_CAP(L), Math.round(+a.xp || 0)));
+      if (hh.race === 'humain') xp = Math.round(xp * 1.1);                 // Apprend vite
+      const lv0 = hh.lvl;
+      hh.xp = (hh.xp || 0) + xp;
+      while (hh.lvl < HERO_MAX_LVL && hh.xp >= heroXpNeed(hh.lvl)) { hh.xp -= heroXpNeed(hh.lvl); hh.lvl++; hh.sp = (hh.sp || 0) + (hh.lvl === 9 ? 2 : 1); }
+      if (hh.lvl >= HERO_MAX_LVL) hh.xp = Math.min(hh.xp, heroXpNeed(hh.lvl));
+      if (win) hh.dj = Math.max(hh.dj || 1, Math.min(99, L + 1));
+      hh.runs = (hh.runs || 0) + 1; if (win) hh.wins = (hh.wins || 0) + 1;
+      const cap = capOf(v), got = {};
+      for (const k of ['bois', 'pierre', 'viande', 'pain', 'biere']) {
+        const n = Math.max(0, Math.min(3000, Math.round(+((a.loot || {})[k]) || 0))); if (!n) continue;
+        const before = v.r[k] || 0; v.r[k] = Math.min(Math.max(cap, before), before + n); got[k] = Math.round(v.r[k] - before);
+        if (!got[k]) delete got[k];
+      }
+      const pris = a.pris ? prisonerOf(v, t) : null;
+      if (pris) v.cands.push(pris);
+      const up = hh.lvl - lv0;
+      addLog(v, t, hh.name + (win ? ' revient vainqueur de la mine des gobelins' : ' a dû fuir la mine des gobelins') + ' (niveau ' + L + ') : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : ''), 'dj');
+      if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + ' du cachot de la mine, voudrait s’installer au village.', 'cand');
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj };
+    }
+    case 'skill': {
+      /* Un point de compétence : +1 rang (5 au plus) à une compétence déjà ouverte. */
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      const i = a.i | 0; if (i < 0 || i > 2) return fail('Compétence inconnue.');
+      if (hh.lvl < SKILL_LVLS[i]) return fail('Cette compétence s’ouvre au niveau ' + SKILL_LVLS[i] + '.');
+      if ((hh.sp || 0) < 1) return fail('Plus de point de compétence : il faut gagner un niveau.');
+      const k = 's' + i, cur = (hh.sk && hh.sk[k]) || 0; if (cur >= 4) return fail('Cette compétence est déjà au rang maximum (5).');
+      hh.sk = Object.assign({}, hh.sk, { [k]: cur + 1 }); hh.sp -= 1;
+      return { ok: true, rank: cur + 2 };
+    }
+    case 'spec': {
+      /* Spécialisation, au niveau 10 : une des deux voies de la classe, pour de bon. */
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      if (hh.lvl < SPEC_LVL) return fail('La spécialisation s’ouvre au niveau ' + SPEC_LVL + '.');
+      if (hh.spec === 0 || hh.spec === 1) return fail('Spécialisation déjà choisie.');
+      const sIdx = a.s === 1 ? 1 : 0; hh.spec = sIdx;
+      addLog(v, t, hh.name + ' choisit sa voie : ' + CLASSES[hh.cls].specs[sIdx][0].toLowerCase() + '.', 'hero');
+      return { ok: true };
+    }
     case 'claim': {
       /* Récompense d'un objectif atteint (si l'autre joueur l'a déjà prise, il n'y a rien à faire). */
       if (!v.goals) v.goals = [];
@@ -729,6 +785,883 @@ function applyV(v, a, who) {
 
 /* Restes du rendu des combats de l'ancien jeu (serviront aux donjons, étape 2). */
 const HEROES = {}, TROOPS = {};
+
+/* ===================== DONJONS : fabrication à partir d'une graine (pur, sans DOM) =====================
+   Même graine + même niveau = même donjon, sur les deux téléphones. Une case = 1 unité (≈ un personnage). */
+const DJ_TILE = { WALL: 0, FLOOR: 1 };
+/* Salles faites main : largeur, hauteur, forme. */
+const DJ_ROOMS = [
+  { k: 'carree', w: 9, h: 9, shape: 'rect' }, { k: 'longue', w: 12, h: 8, shape: 'rect' }, { k: 'haute', w: 8, h: 12, shape: 'rect' },
+  { k: 'piliers', w: 11, h: 11, shape: 'pillars' }, { k: 'grande', w: 13, h: 10, shape: 'pillars' }, { k: 'carrefour', w: 11, h: 11, shape: 'cross' },
+  { k: 'enL', w: 11, h: 10, shape: 'L' }, { k: 'couloir', w: 13, h: 7, shape: 'rect' }, { k: 'ronde', w: 11, h: 11, shape: 'round' },
+];
+const DJ_BOSS = { k: 'arene', w: 14, h: 14, shape: 'arena' };
+/* Monstres de la mine des gobelins (statistiques de base au niveau 1). */
+const DJ_MONSTERS = {
+  gobelin: { name: 'Gobelin', hp: 40, dmg: 5, speed: 2.8, range: 1.1, rate: 1.7, xp: 4, w: 4 },
+  archer: { name: 'Gobelin archer', hp: 28, dmg: 6, speed: 2.4, range: 6, rate: 2.2, xp: 5, w: 2, ranged: true },
+  chaman: { name: 'Chaman', hp: 34, dmg: 4, speed: 2.2, range: 5, rate: 2.6, xp: 6, w: 1, heals: true },
+  troll: { name: 'Troll', hp: 130, dmg: 14, speed: 1.6, range: 1.4, rate: 2.4, xp: 12, w: 1, big: true },
+};
+const DJ_BOSSES = { chefTroll: { name: 'Chef troll', hp: 520, dmg: 16, speed: 1.8, range: 1.6, rate: 2.1, xp: 80, big: true, boss: true } };
+const DJ_THEMES = { mine: { name: 'Mine des gobelins', monsters: ['gobelin', 'archer', 'chaman', 'troll'], boss: 'chefTroll' } };
+const DJ_PRISONER_CHANCE = lvl => Math.min(0.10, 0.03 + 0.007 * lvl);   // rare : de 4 % (niveau 1) à 10 %
+
+function djCarve(grid, W, x0, y0, w, h, shape) {
+  const cells = [];
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    if (shape === 'cross' && (i < (w / 3 | 0) || i >= w - (w / 3 | 0)) && (j < (h / 3 | 0) || j >= h - (h / 3 | 0))) continue;
+    if (shape === 'L' && i >= (w / 2 | 0) && j < (h / 2 | 0)) continue;
+    if (shape === 'round') { const dx = (i + 0.5) / w - 0.5, dy = (j + 0.5) / h - 0.5; if (dx * dx + dy * dy > 0.25) continue; }
+    if ((shape === 'pillars' || shape === 'arena') && [[2, 2], [w - 3, 2], [2, h - 3], [w - 3, h - 3]].some(([a, b]) => a === i && b === j)) continue;
+    grid[(y0 + j) * W + x0 + i] = DJ_TILE.FLOOR; cells.push([x0 + i, y0 + j]);
+  }
+  return cells;
+}
+function djCorridor(grid, W, a, b) {
+  /* Couloir de 3 cases de large, en L : d'abord à l'horizontale, puis à la verticale. */
+  const [ax, ay] = a, [bx, by] = b;
+  for (let x = Math.min(ax, bx); x <= Math.max(ax, bx); x++) for (let d = -1; d <= 1; d++) grid[(ay + d) * W + x] = DJ_TILE.FLOOR;
+  for (let y = Math.min(ay, by); y <= Math.max(ay, by); y++) for (let d = -1; d <= 1; d++) grid[y * W + bx + d] = DJ_TILE.FLOOR;
+}
+const djCenter = r => [r.x + (r.w >> 1), r.y + (r.h >> 1)];
+
+/* Fabrique un donjon : 5 à 6 salles de combat (2 ou 3 vagues de monstres chacune) + l'arène du boss, une salle annexe (trésor ou prisonnier). */
+function genDungeon(seed, lvl, theme) {
+  const R = mulberry32((seed ^ 0x9e3779b9) >>> 0), pick = a => a[Math.floor(R() * a.length)];
+  const T = DJ_THEMES[theme || 'mine'], nFight = 5 + (R() < 0.5 ? 1 : 0);
+  let rooms = null;
+  for (let attempt = 0; attempt < 50 && !rooms; attempt++) {
+    const list = [{ k: 'entree', w: 8, h: 8, shape: 'rect', kind: 'start', x: 0, y: 0 }];
+    let ok = true;
+    for (let i = 0; i <= nFight && ok; i++) {
+      const prev = list[list.length - 1], boss = i === nFight, t = boss ? DJ_BOSS : pick(DJ_ROOMS);
+      let placed = null;
+      for (let tries = 0; tries < 40 && !placed; tries++) {
+        const dir = pick(['E', 'E', 'E', 'N', 'S']), gap = 4 + Math.floor(R() * 4);
+        const x = dir === 'E' ? prev.x + prev.w + gap : prev.x + Math.floor(R() * 7) - 3;
+        const y = dir === 'E' ? prev.y + Math.floor(R() * 9) - 4 : dir === 'N' ? prev.y - t.h - gap : prev.y + prev.h + gap;
+        const c = { k: t.k, w: t.w, h: t.h, shape: t.shape, kind: boss ? 'boss' : 'fight', x, y };
+        /* Le donjon reste ramassé (au plus ≈ 92 × 60 cases) : moins de marche, plus de combat. */
+        const all = list.concat([c]), bw = Math.max(...all.map(r => r.x + r.w)) - Math.min(...all.map(r => r.x)), bh = Math.max(...all.map(r => r.y + r.h)) - Math.min(...all.map(r => r.y));
+        if (bw <= (attempt < 30 ? 88 : 140) && bh <= (attempt < 30 ? 56 : 110) && !list.some(r => c.x < r.x + r.w + 2 && c.x + c.w + 2 > r.x && c.y < r.y + r.h + 2 && c.y + c.h + 2 > r.y)) placed = c;
+      }
+      if (placed) list.push(placed); else ok = false;
+    }
+    if (ok) rooms = list;
+  }
+  /* Salle annexe : accrochée à une salle du milieu (trésor, ou prisonnier, rare). */
+  const prisoner = R() < DJ_PRISONER_CHANCE(lvl);
+  for (let i = 2; i < rooms.length - 1; i++) {
+    const host = rooms[i], w = 7, h = 6, g = 4, opts = [[host.x + (host.w >> 1) - 3, host.y - h - g], [host.x + (host.w >> 1) - 3, host.y + host.h + g], [host.x - w - g, host.y + (host.h >> 1) - 3], [host.x + host.w + g, host.y + (host.h >> 1) - 3]];
+    const spot = opts.find(([x, y]) => !rooms.some(r => x < r.x + r.w + 2 && x + w + 2 > r.x && y < r.y + r.h + 2 && y + h + 2 > r.y));
+    if (spot) { rooms.push({ k: prisoner ? 'cachot' : 'tresor', w, h, shape: 'rect', kind: prisoner ? 'prisoner' : 'treasure', x: spot[0], y: spot[1], host: i }); break; }
+  }
+  /* Grille : on décale tout pour commencer à (2, 2). */
+  const minX = Math.min(...rooms.map(r => r.x)) - 2, minY = Math.min(...rooms.map(r => r.y)) - 2;
+  for (const r of rooms) { r.x -= minX; r.y -= minY; }
+  const W = Math.max(...rooms.map(r => r.x + r.w)) + 2, H = Math.max(...rooms.map(r => r.y + r.h)) + 2;
+  const grid = new Uint8Array(W * H);
+  for (const r of rooms) r.cells = djCarve(grid, W, r.x, r.y, r.w, r.h, r.shape);
+  const chain = rooms.filter(r => r.host == null);
+  for (let i = 1; i < chain.length; i++) djCorridor(grid, W, djCenter(chain[i - 1]), djCenter(chain[i]));
+  for (const r of rooms) if (r.host != null) djCorridor(grid, W, djCenter(rooms[r.host]), djCenter(r));
+  /* Contenu : monstres (3 à 6 par salle de combat), pièges, coffres, autel, boss. */
+  const inner = r => r.cells.filter(([x, y]) => x > r.x + 1 && x < r.x + r.w - 2 && y > r.y + 1 && y < r.y + r.h - 2);
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const weights = T.monsters.map(k => DJ_MONSTERS[k].w), wsum = weights.reduce((a, b) => a + b, 0);
+  const monsterType = () => { let x = R() * wsum; for (let i = 0; i < weights.length; i++) { x -= weights[i]; if (x < 0) return T.monsters[i]; } return T.monsters[0]; };
+  let mid = 1;
+  const monsters = [], traps = [], chests = [];
+  /* Vagues : la 1re attend dans la salle ; les suivantes sortent des galeries quand la précédente est vaincue.
+     2 vagues dans les premières salles, 3 dans les dernières. */
+  let fi = 0;
+  rooms.forEach((r, ri) => {
+    const free = shuffle(inner(r).slice());
+    if (r.kind === 'fight') {
+      const waves = fi < Math.ceil(nFight / 2) ? 2 : 3; fi++;
+      const edge = shuffle(r.cells.filter(([x, y]) => x <= r.x + 1 || x >= r.x + r.w - 2 || y <= r.y + 1 || y >= r.y + r.h - 2));
+      let used = 0;
+      for (let w = 0; w < waves; w++) {
+        const n = w === 0 ? 3 + Math.floor(R() * 3) : 3 + Math.floor(R() * 2), pool = w === 0 ? free : edge;
+        for (let i = 0; i < n; i++) {
+          const c = pool[(w === 0 ? i : used++) % pool.length];
+          monsters.push({ id: mid++, room: ri, type: monsterType(), x: c[0] + 0.5, y: c[1] + 0.5, wave: w });
+        }
+      }
+      if (R() < 0.5) for (const c of free.slice(6, 8)) traps.push({ room: ri, x: c[0], y: c[1] });
+    } else if (r.kind === 'boss') monsters.push({ id: mid++, room: ri, type: T.boss, boss: true, x: r.x + r.w / 2, y: r.y + r.h / 2, wave: 0 });
+    else if (r.kind === 'treasure') for (const c of free.slice(0, 2)) chests.push({ room: ri, x: c[0] + 0.5, y: c[1] + 0.5 });
+  });
+  const altarRoom = chain.length > 4 ? 2 + Math.floor(R() * (chain.length - 4)) : null;
+  const altar = altarRoom != null ? djCenter(chain[altarRoom]) : null;
+  const pris = rooms.find(r => r.kind === 'prisoner');
+  return { seed, lvl, theme: theme || 'mine', W, H, grid, rooms, start: djCenter(rooms[0]), monsters, traps, chests, altar,
+    prisoner: pris ? djCenter(pris) : null };
+}
+/* Cases atteignables depuis l'entrée (pour vérifier qu'aucune salle n'est coupée du reste). */
+function djReach(d) {
+  const seen = new Uint8Array(d.W * d.H), q = [d.start[1] * d.W + d.start[0]]; seen[q[0]] = 1;
+  for (let h = 0; h < q.length; h++) {
+    const i = q[h], x = i % d.W, y = (i / d.W) | 0;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = x + dx, ny = y + dy, ni = ny * d.W + nx; if (nx >= 0 && ny >= 0 && nx < d.W && ny < d.H && !seen[ni] && d.grid[ni]) { seen[ni] = 1; q.push(ni); } }
+  }
+  return seen;
+}
+
+/* ===================== DONJONS : combat (pur, sans DOM) =====================
+   20 pas par seconde. Le hasard vient de la graine : même départ et mêmes commandes = même combat.
+   Coordonnées en cases (x vers l'est, y vers le sud) ; une entité = un cercle de rayon r. */
+const DJ_DT = 0.05;
+const DJ_POTION = 0.4;                                             // une potion rend 40 % de la vie
+const djMul = lvl => Math.pow(1.1, Math.max(0, lvl - 1));          // héros : +10 % de vie et de dégâts par niveau
+const djMobMul = lvl => Math.pow(1.12, Math.max(0, lvl - 1)) * (lvl <= 1 ? 0.85 : lvl === 2 ? 0.93 : 1);   // monstres : +12 % par niveau (les héros ont aussi leurs compétences) ; les 2 premiers niveaux plus doux
+const djXpMul = lvl => 1 + 0.25 * (lvl - 1);                       // expérience selon le niveau du donjon
+const djLootMul = lvl => 1 + 0.2 * (lvl - 1);
+const DJ_CHEST = { pierre: 30, bois: 20 }, DJ_BOSS_LOOT = { pierre: 80, bois: 50, viande: 30 };
+const DJ_BLESS = { force: 'Force : +20 % de dégâts', vigueur: 'Vigueur : +20 % de vie, soins complets', celerite: 'Célérité : plus rapide, compétences plus vite prêtes' };
+/* Classes en donjon, au niveau 1 (cd : secondes entre deux attaques ; portée en cases). */
+const DJ_CLASS = {
+  guerrier: { hp: 340, dmg: 14, armor: 0.25, range: 1.5, cd: 1.0, speed: 4.0 },
+  paladin: { hp: 320, dmg: 13, armor: 0.22, range: 1.5, cd: 1.0, speed: 3.9 },
+  rodeur: { hp: 230, dmg: 10, armor: 0.05, range: 6.5, cd: 0.85, speed: 4.3, shot: 'arrow' },
+  mage: { hp: 200, dmg: 13, armor: 0, range: 6, cd: 1.1, speed: 4.0, shot: 'fire', splash: 1.3 },
+  voleur: { hp: 260, dmg: 8, armor: 0.15, range: 1.4, cd: 0.6, speed: 4.4, crit: 0.15, dodge: 0.1 },
+  pretre: { hp: 210, dmg: 10, armor: 0.05, range: 5.5, cd: 1.1, speed: 4.0, shot: 'holy' },
+  druide: { hp: 250, dmg: 10, armor: 0.1, range: 5, cd: 1.0, speed: 4.0, shot: 'thorn' },
+  necro: { hp: 200, dmg: 9, armor: 0.05, range: 6, cd: 1.2, speed: 4.0, shot: 'shadow' },
+};
+/* Compétences, dans l'ordre de CLASSES[cls].skills. Chaque rang au-dessus du 1er : +15 % de puissance, −5 % de recharge.
+   dmg : multiple des dégâts du héros ; rad : rayon ; range : portée (il faut une cible) ; dur : durée. */
+const DJ_SKILLS = {
+  guerrier: [{ id: 'charge', cd: 7, range: 7, dmg: 1.5, stun: 1.5 }, { id: 'tourbillon', cd: 8, rad: 2.2, dmg: 2 }, { id: 'cri', cd: 14, rad: 7, dur: 5, armor: 0.3, taunt: 4 }],
+  paladin: [{ id: 'marteau', cd: 6, range: 6, dmg: 1.6, stun: 1.5 }, { id: 'bouclier', cd: 12, abs: 0.35, dur: 6 }, { id: 'consecration', cd: 14, rad: 2.5, dur: 5, dps: 0.5, hps: 0.03 }],
+  rodeur: [{ id: 'roulade', cd: 6, dist: 3.5, dmg: 1, n: 2 }, { id: 'pluie', cd: 10, range: 7, rad: 2.5, dur: 3, dps: 1.2 }, { id: 'percant', cd: 8, range: 9, dmg: 2.5 }],
+  mage: [{ id: 'boule', cd: 6, range: 7, rad: 1.8, dmg: 1.8 }, { id: 'nova', cd: 10, rad: 3, dmg: 0.8, frz: 2.5 }, { id: 'tp', cd: 9, dist: 5 }],
+  voleur: [{ id: 'ombre', cd: 6, range: 7, dmg: 2.5 }, { id: 'poison', cd: 12, dur: 6, dps: 0.4, pt: 3 }, { id: 'fumee', cd: 14, dur: 3 }],
+  pretre: [{ id: 'lumiere', cd: 5, heal: 0.25 }, { id: 'chatiment', cd: 6, range: 7, dmg: 2.4 }, { id: 'priere', cd: 16, heal: 0.35 }],
+  druide: [{ id: 'ours', cd: 15, dur: 8 }, { id: 'loup', cd: 15, dur: 8 }, { id: 'racines', cd: 11, rad: 3.5, dmg: 0.6, root: 3 }],
+  necro: [{ id: 'squelettes', cd: 18, n: 3, dur: 15, hp: 0.35, dmg: 0.5 }, { id: 'drain', cd: 7, range: 7, dmg: 2 }, { id: 'cadavre', cd: 8, range: 7, rad: 2.2, dmg: 2.5 }],
+};
+const DJ_D4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], DJ_D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+/* ---------- outils ---------- */
+function djRnd(st) { const a = st.rs = (st.rs + 0x6D2B79F5) | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }
+const djDist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+function djWalk(st, x, y) { const d = st.d, cx = Math.floor(x), cy = Math.floor(y); if (cx < 0 || cy < 0 || cx >= d.W || cy >= d.H) return false; const k = cy * d.W + cx; return d.grid[k] === 1 && !st.door[k]; }
+/* Le cercle tient-il sur des cases libres ? (coins, et milieux des côtés pour les gros) */
+function djFree(st, x, y, r) {
+  const n = r > 0.45 ? 2 : 1;
+  for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) { if (i > 0 && i < n && j > 0 && j < n) continue; if (!djWalk(st, x - r + 2 * r * i / n, y - r + 2 * r * j / n)) return false; }
+  return true;
+}
+/* Déplacement qui glisse le long des murs (par petits pas, pour ne jamais en traverser un). */
+function djMove(st, e, dx, dy) {
+  const n = Math.max(1, Math.ceil(Math.max(Math.abs(dx), Math.abs(dy)) / 0.25)); let moved = false;
+  for (let i = 0; i < n; i++) {
+    const sx = dx / n, sy = dy / n;
+    if (sx && djFree(st, e.x + sx, e.y, e.r)) { e.x += sx; moved = true; }
+    if (sy && djFree(st, e.x, e.y + sy, e.r)) { e.y += sy; moved = true; }
+  }
+  return moved;
+}
+/* Ligne de vue (les grilles fermées n'arrêtent le regard que si doors est vrai). */
+function djLos(st, x0, y0, x1, y1, doors) {
+  const d = st.d, dx = x1 - x0, dy = y1 - y0, n = Math.ceil(Math.hypot(dx, dy) / 0.3);
+  for (let i = 1; i < n; i++) { const k = Math.floor(y0 + dy * i / n) * d.W + Math.floor(x0 + dx * i / n); if (!d.grid[k] || (doors && st.door[k])) return false; }
+  return true;
+}
+/* Dégage une entité coincée dans un mur ou une grille : vers la case libre la plus proche (de préférence dans la salle ri). */
+function djUnstick(st, e, ri) {
+  const cx = Math.floor(e.x), cy = Math.floor(e.y), W = st.d.W;
+  for (const strict of ri != null ? [true, false] : [false]) {
+    let best = null, bd = 1e9;
+    for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+      const x = cx + dx + 0.5, y = cy + dy + 0.5, d = Math.hypot(x - e.x, y - e.y);
+      if (d >= bd || (strict && st.roomAt[(cy + dy) * W + cx + dx] !== ri) || !djFree(st, x, y, e.r)) continue;
+      bd = d; best = [x, y];
+    }
+    if (best) { e.x = e.px = best[0]; e.y = e.py = best[1]; return true; }
+  }
+  return false;
+}
+/* Une case libre de la salle, loin des héros (pour faire sortir ou replacer un monstre). */
+function djRoomSpot(st, ri, r) {
+  const cells = st.d.rooms[ri].cells, n = cells.length, k0 = Math.floor(djRnd(st) * n);
+  let fallback = null;
+  for (let i = 0; i < n; i++) {
+    const c = cells[(k0 + i * 7) % n], x = c[0] + 0.5, y = c[1] + 0.5;
+    if (!djFree(st, x, y, r)) continue;
+    if (!st.heroes.some(h => !h.dead && Math.hypot(h.x - x, h.y - y) < 2.5)) return [x, y];
+    fallback = fallback || [x, y];
+  }
+  return fallback;
+}
+const djEnt = (st, id) => st.heroes.find(e => e.id === id) || st.mobs.find(e => e.id === id) || st.allies.find(e => e.id === id) || null;
+const djLiving = st => st.mobs.filter(m => m.hp > 0 && m.awake);
+const djAround = (st, x, y, r) => st.mobs.filter(m => m.hp > 0 && m.awake && Math.hypot(m.x - x, m.y - y) <= r + m.r);
+const djFoes = st => st.heroes.filter(h => !h.dead).concat(st.allies.filter(a => a.kind === 'skel' && a.hp > 0));
+const djWeakest = st => st.heroes.filter(h => !h.dead).sort((a, b) => a.hp / a.hpMax - b.hp / b.hpMax)[0] || null;
+const djHpMax = (st, h) => h.hpBase * (h.form === 'ours' ? 1.3 : 1) * (st.bless === 'vigueur' ? 1.2 : 1);
+function djNearest(st, e, max) {
+  let best = null, bd = max;
+  for (const m of st.mobs) { if (m.hp <= 0 || !m.awake) continue; const d = djDist(e, m) - m.r; if (d < bd && djLos(st, e.x, e.y, m.x, m.y)) { bd = d; best = m; } }
+  return best;
+}
+/* Cible d'un héros (attaque automatique et compétences) : d'abord les chamans à portée (sinon ils soignent tout le monde),
+   puis la même cible que tout à l'heure, sinon la plus proche (un monstre presque mort passe un peu devant). */
+function djTargetFor(st, h, range) {
+  const ok = m => m.hp > 0 && m.awake && djDist(h, m) - m.r <= range && djLos(st, h.x, h.y, m.x, m.y);
+  const cur = h.tgt && st.mobs.find(m => m.id === h.tgt), healer = st.mobs.some(m => m.heals && ok(m));
+  if (cur && ok(cur) && (cur.heals || !healer)) return cur;
+  let best = null, bs = 1e9;
+  for (const m of st.mobs) { if (!ok(m)) continue; const sc = djDist(h, m) - m.r - (m.heals ? 4 : 0) - (m.hp < m.hpMax * 0.3 ? 1 : 0); if (sc < bs) { bs = sc; best = m; } }
+  return best;
+}
+function djLootAdd(st, base, mul) { const got = {}; for (const k in base) { const n = Math.round(base[k] * mul); st.loot[k] = (st.loot[k] || 0) + n; got[k] = n; } return got; }
+
+/* ---------- départ ---------- */
+/* Un héros du village devient un combattant : statistiques selon la classe, le niveau, la race, les passifs et la spécialisation. */
+function djHero(h) {
+  const C = DJ_CLASS[h.cls] || DJ_CLASS.guerrier, lvl = Math.max(1, Math.min(HERO_MAX_LVL, h.lvl | 0)), pw = djMul(lvl), at = l => lvl >= l;
+  const cls = DJ_CLASS[h.cls] ? h.cls : 'guerrier', race = RACES[h.race] ? h.race : 'humain', sk = h.sk || {};
+  const sp = lvl >= SPEC_LVL && (h.spec === 0 || h.spec === 1) ? h.spec : null, spec = (c, s) => cls === c && sp === s;
+  const hp = C.hp * pw * (race === 'nain' ? 1.15 : 1);
+  let dmg = C.dmg * pw, armor = C.armor + (cls === 'guerrier' && at(4) ? 0.1 : 0);
+  if (spec('guerrier', 0)) { dmg *= 1.2; armor -= 0.05; }
+  if (spec('guerrier', 1)) armor += 0.1;
+  if (spec('paladin', 0)) dmg *= 1.15;
+  if (spec('rodeur', 0)) dmg *= 1.2;
+  if (spec('pretre', 1)) dmg *= 1.3;
+  return {
+    id: h.id, own: h.own || '', name: h.name || '', race, cls, sex: h.sex === 'f' ? 'f' : 'm', col: h.col || COLORS[0], lvl, spec: sp, kind: 'hero',
+    x: 0, y: 0, px: 0, py: 0, r: 0.35, fx: 1, fy: 0, hpBase: hp, hpMax: hp, hp, dmg, armor,
+    range: C.range * (cls === 'rodeur' && at(4) ? 1.1 : 1), cdAtk: C.cd,
+    speed: C.speed * (race === 'elfe' ? 1.1 : 1) * (cls === 'rodeur' && at(7) ? 1.1 : 1),
+    crit: (C.crit || 0.05) + (race === 'halfelin' ? 0.05 : 0) + (cls === 'voleur' && at(4) ? 0.1 : 0), critMul: spec('voleur', 0) ? 2.5 : 2,
+    dodge: (C.dodge || 0) + (race === 'elfe' ? 0.1 : 0) + (cls === 'voleur' && at(7) ? 0.1 : 0), taken: cls === 'mage' && at(7) ? 0.9 : 1,
+    cdMul: cls === 'mage' && at(4) ? 0.9 : 1,
+    heal: (cls === 'paladin' && at(4) ? 1.1 : 1) * (cls === 'pretre' && at(7) ? 1.15 : 1) * (spec('paladin', 1) ? 1.2 : 1) * (spec('pretre', 0) ? 1.25 : 1),
+    regen: cls === 'druide' && at(4) ? 0.01 : 0, instinct: cls === 'druide' && at(7), souffle: cls === 'guerrier' && at(7), moisson: cls === 'necro' && at(7), aura: cls === 'paladin' && at(7),
+    rank: [0, 1, 2].map(i => lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, sk['s' + i] | 0)) : 0),
+    cd: [0, 0, 0], cdMax: [1, 1, 1], atkT: 0, tgt: 0, pot: lvl >= 2 ? 4 : 3, potT: 0, b: {}, criA: 0, shield: 0, form: null,
+    dead: false, revived: false, mv: false, atkN: 0, castN: 0, lastCast: '',
+  };
+}
+function djMob(st, type, x, y, room, boss) {
+  const D = (boss ? DJ_BOSSES : DJ_MONSTERS)[type], mk = djMobMul(st.lvl);
+  return { id: st.nid++, type, kind: 'mob', room, x, y, px: x, py: y, r: boss ? 0.75 : D.big ? 0.6 : 0.38,
+    hp: D.hp * mk, hpMax: D.hp * mk, dmg: D.dmg * mk, range: D.range, rate: D.rate, speed: D.speed, xp: D.xp,
+    ranged: !!D.ranged, heals: !!D.heals, big: !!D.big, boss: !!boss, awake: false, wave: 0, hidden: false,
+    atkT: 0.4 + djRnd(st) * D.rate, wind: 0, act: null, actTgt: 0, tgt: 0, stun: 0, frz: 0, root: 0, poi: 0, poiD: 0, poiAcc: 0, taunt: 0, tauntBy: 0,
+    fx: 0, fy: 1, mv: false, atkN: 0,
+    sp: boss ? { slam: 4, charge: 8, phase: 0, enr: false, act: null, actT: 0, dx: 0, dy: 0, hit: [] } : null };
+}
+/* Début du combat. heroes : héros du village (un en solo, deux à deux). opts : { seed, dmgMul } (dmgMul : dégâts des monstres). */
+function djStart(d, heroes, opts) {
+  const o = opts || {}, W = d.W;
+  const st = {
+    d, lvl: d.lvl, t: 0, n: 0, rs: ((o.seed != null ? o.seed : d.seed) ^ 0x51ed270b) >>> 0, nid: 1, over: null, endT: 0, fled: false, dmgMul: o.dmgMul || 1,
+    heroes: heroes.map(djHero), mobs: [], allies: [], shots: [], zones: [], corpses: [], ev: [],
+    rooms: d.rooms.map(r => ({ st: r.kind === 'fight' || r.kind === 'boss' ? 'idle' : 'open', out: 0, wave: 0, waves: 1, waveT: 0 })),
+    door: new Uint8Array(W * d.H), roomAt: new Int16Array(W * d.H).fill(-1), doors: [],
+    chests: d.chests.map(c => ({ x: c.x, y: c.y, room: c.room, open: false })),
+    altar: d.altar ? { x: d.altar[0] + 0.5, y: d.altar[1] + 0.5, used: false } : null,
+    pris: d.prisoner ? { x: d.prisoner[0] + 0.5, y: d.prisoner[1] + 0.5, freed: false } : null,
+    traps: d.traps.map((t, i) => ({ x: t.x, y: t.y, ph: (i * 0.37) % 2.4, on: false, hit: {} })),
+    exit: null, bless: null, xp: 0, loot: {}, kills: 0, flow: null, flowN: -99, boss: 0, calmT: 0,
+  };
+  d.rooms.forEach((r, ri) => { for (const [x, y] of r.cells) st.roomAt[y * W + x] = ri; });
+  /* Grilles : les cases de couloir qui touchent une salle se ferment quand le combat y commence. */
+  st.doors = d.rooms.map(r => { const out = []; for (const [x, y] of r.cells) for (const [dx, dy] of DJ_D4) { const k = (y + dy) * W + x + dx; if (d.grid[k] && st.roomAt[k] < 0 && !out.includes(k)) out.push(k); } return out; });
+  for (const m of d.monsters) {
+    const mob = djMob(st, m.type, m.x, m.y, m.room, !!m.boss); mob.wave = m.wave || 0; mob.hidden = mob.wave > 0; st.mobs.push(mob);
+    if (mob.boss) st.boss = mob.id;
+    st.rooms[m.room].waves = Math.max(st.rooms[m.room].waves, mob.wave + 1);
+  }
+  if (st.heroes.some(h => h.cls === 'pretre' && h.lvl >= 4)) for (const h of st.heroes) { h.hpBase *= 1.1; h.hpMax = h.hp = h.hpBase; }   // Bénédiction
+  st.heroes.forEach((h, i) => { h.x = h.px = d.start[0] + 0.5 + (i ? 1.2 : 0); h.y = h.py = d.start[1] + 0.5 + (i ? 0.6 : 0); });
+  /* Le familier (niveau 6) : il suit son héros et mord sa cible ; les monstres ne s'en occupent pas. */
+  for (const h of st.heroes) if (h.lvl >= 6) st.allies.push({ id: st.nid++, kind: 'pet', own: h.id, x: h.x - 0.8, y: h.y + 0.8, px: h.x - 0.8, py: h.y + 0.8, r: 0.25, hp: 1, hpMax: 1,
+    dmg: h.dmg * 0.35 * (h.cls === 'rodeur' && h.spec === 1 ? 3 : 1), range: 1.1, rate: 1.2, speed: 5.5, atkT: 0, t: 1e9, inv: true, tgt: 0, mv: false, atkN: 0 });
+  return st;
+}
+
+/* ---------- dégâts, soins, effets ---------- */
+function djHurt(st, m, v, src, crit) {
+  if (!m || m.hp <= 0 || !(v > 0)) return 0;
+  const dealt = Math.min(v, m.hp);
+  m.hp -= v; st.ev.push({ k: 'hit', id: m.id, v: Math.round(v), crit: !!crit });
+  if (m.hp <= 0) djKill(st, m);
+  return dealt;
+}
+function djKill(st, m) {
+  m.hp = 0; st.kills++; st.xp += m.xp * djXpMul(st.lvl);
+  st.corpses.push({ x: m.x, y: m.y, t: st.t }); if (st.corpses.length > 12) st.corpses.shift();
+  st.ev.push({ k: 'die', id: m.id, x: m.x, y: m.y, boss: m.boss });
+  for (const h of st.heroes) {
+    if (h.dead) continue;
+    if (h.souffle) djHeal(st, h, h.hpMax * 0.03);                               // Second souffle
+    if (h.moisson) for (let i = 0; i < 3; i++) h.cd[i] = Math.max(0, h.cd[i] - 0.5);   // Moisson
+  }
+  if (m.boss) st.ev.push({ k: 'loot', got: djLootAdd(st, DJ_BOSS_LOOT, djLootMul(st.lvl)), x: m.x, y: m.y });
+}
+function djHeal(st, h, v) {
+  if (!h || h.dead || !(v > 0)) return 0;
+  const before = h.hp; h.hp = Math.min(h.hpMax, h.hp + v);
+  if (h.hp - before >= 1) st.ev.push({ k: 'heal', id: h.id, v: Math.round(h.hp - before) });
+  return h.hp - before;
+}
+/* Dégâts reçus par un héros, après esquive, armure et bouclier. */
+function djHurtHero(st, h, v) {
+  if (h.dead || h.b.inv > 0 || !(v > 0)) return 0;
+  if (djRnd(st) < h.dodge) { st.ev.push({ k: 'miss', id: h.id }); return 0; }
+  let ar = h.armor + (h.b.cri > 0 ? h.criA : 0) + (h.form === 'ours' ? 0.4 + (h.cls === 'druide' && h.spec === 0 ? 0.15 : 0) : 0);
+  if (st.heroes.some(p => p.aura && !p.dead && djDist(p, h) <= 4)) ar += 0.1;          // Aura du paladin
+  v *= (1 - Math.min(0.75, Math.max(0, ar))) * h.taken * st.dmgMul;
+  if (h.shield > 0) { const a = Math.min(h.shield, v); h.shield -= a; v -= a; if (a >= 1) st.ev.push({ k: 'block', id: h.id, v: Math.round(a) }); }
+  return djDamageHero(st, h, v);
+}
+function djDamageHero(st, h, v) {
+  if (h.dead || !(v > 0)) return 0;
+  h.hp -= v; st.ev.push({ k: 'hurt', id: h.id, v: Math.round(v) });
+  if (h.hp <= 0) {
+    if (h.race === 'mortvivant' && !h.revived) { h.revived = true; h.hp = h.hpMax * 0.4; h.b.inv = 1.5; st.ev.push({ k: 'revive', id: h.id }); }
+    else { h.hp = 0; h.dead = true; h.form = null; h.mv = false; st.ev.push({ k: 'down', id: h.id }); }
+  }
+  return v;
+}
+function djHit(st, t, v) {
+  if (t.kind === 'hero') return djHurtHero(st, t, v);
+  if (t.inv || t.hp <= 0) return 0;
+  t.hp -= v * st.dmgMul; st.ev.push({ k: 'hit', id: t.id, v: Math.round(v * st.dmgMul), ally: true });
+  if (t.hp <= 0) { t.hp = 0; st.ev.push({ k: 'die', id: t.id, x: t.x, y: t.y }); }
+  return v;
+}
+/* Étourdi, gelé (ne fait plus rien) ou enraciné (ne bouge plus). Le boss y résiste en partie ; ça interrompt ses attaques spéciales. */
+function djCC(st, m, kind, s) {
+  if (!m || m.hp <= 0) return;
+  m[kind] = Math.max(m[kind], s * (m.boss ? (kind === 'stun' ? 0.3 : 0.5) : 1));
+  if (kind !== 'root') { m.wind = 0; if (m.sp && m.sp.act) { m.sp.act = null; m.sp.slam = Math.max(m.sp.slam, 2.5); m.sp.charge = Math.max(m.sp.charge, 3); st.ev.push({ k: 'interrupt', id: m.id }); } }
+  st.ev.push({ k: 'cc', id: m.id, c: kind, t: m[kind] });
+}
+function djPoison(st, h, m) {
+  const S = DJ_SKILLS.voleur[1], P = 1 + 0.15 * ((h.rank[1] || 1) - 1);
+  if (m.hp > 0) { m.poi = S.pt; m.poiD = Math.max(m.poiD, h.dmg * S.dps * P); }
+}
+/* Dégâts d'un coup de héros : passifs, autel, forme animale, coup critique. */
+function djRoll(st, h, mult) {
+  let k = mult;
+  if (h.race === 'orque') k *= 1 + 0.25 * (1 - h.hp / h.hpMax);                     // Rage
+  if (st.bless === 'force') k *= 1.2;
+  if (h.form === 'ours') k *= 1.15 * (h.instinct ? 1.1 : 1);
+  if (h.form === 'loup') k *= (h.spec === 1 ? 1.25 : 1) * (h.instinct ? 1.1 : 1);
+  const crit = djRnd(st) < h.crit;
+  return { v: h.dmg * k * (crit ? h.critMul : 1), crit };
+}
+function djSetForm(st, h, f) {
+  h.form = f;
+  const old = h.hpMax; h.hpMax = djHpMax(st, h);
+  if (h.hpMax > old) h.hp += h.hpMax - old; else h.hp = Math.min(h.hp, h.hpMax);
+  st.ev.push({ k: 'form', id: h.id, f });
+}
+function djPotion(st, h) {
+  if (h.dead || h.pot <= 0 || h.potT > 0 || h.hp >= h.hpMax - 0.5) return false;
+  h.pot--; h.potT = 1; djHeal(st, h, h.hpMax * DJ_POTION); st.ev.push({ k: 'potion', id: h.id });
+  return true;
+}
+/* Endroit libre pour se téléporter, en ligne droite (sans traverser de mur ni de grille). */
+function djBlinkSpot(st, h, ux, uy, dist) {
+  for (let k = dist; k >= 1; k -= 0.25) { const x = h.x + ux * k, y = h.y + uy * k; if (djFree(st, x, y, h.r) && djLos(st, h.x, h.y, x, y, true)) return [x, y]; }
+  return null;
+}
+
+/* ---------- compétences ---------- */
+function djCast(st, h, i) {
+  const S = DJ_SKILLS[h.cls] && DJ_SKILLS[h.cls][i];
+  if (!S || h.dead || !h.rank[i] || h.cd[i] > 0) return false;
+  const r = h.rank[i], P = 1 + 0.15 * (r - 1), L = 1 + 0.1 * (r - 1), D = mult => djRoll(st, h, mult * P);
+  const shoot = (t, d, spd) => st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: spd || 14, dmg: d.v, crit: d.crit, life: 2 });
+  let ok = true;
+  switch (S.id) {
+    case 'charge': {
+      const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
+      const x0 = h.x, y0 = h.y, dx = t.x - h.x, dy = t.y - h.y, len = Math.hypot(dx, dy) || 1, go = Math.max(0, len - t.r - h.r - 0.15);
+      djMove(st, h, dx / len * go, dy / len * go); h.fx = dx / len; h.fy = dy / len; h.b.inv = 0.25;
+      st.ev.push({ k: 'dash', id: h.id, x0, y0, x1: h.x, y1: h.y });
+      if (djDist(h, t) <= t.r + h.r + 0.8) { const d = D(S.dmg); djHurt(st, t, d.v, h, d.crit); djCC(st, t, 'stun', S.stun); }
+      break;
+    }
+    case 'tourbillon':
+      for (const m of djAround(st, h.x, h.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); }
+      st.ev.push({ k: 'nova', id: h.id, x: h.x, y: h.y, r: S.rad, c: 'steel' }); break;
+    case 'cri':
+      for (const m of djAround(st, h.x, h.y, S.rad)) { m.taunt = S.taunt + (h.spec === 1 ? 2 : 0); m.tauntBy = h.id; }
+      h.b.cri = S.dur * L; h.criA = S.armor * P;
+      st.ev.push({ k: 'shout', id: h.id, x: h.x, y: h.y, r: S.rad }); break;
+    case 'marteau': case 'chatiment': {
+      const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
+      st.ev.push({ k: 'bolt', id: h.id, tgt: t.id, c: S.id });
+      const d = D(S.dmg); djHurt(st, t, d.v, h, d.crit); if (S.stun) djCC(st, t, 'stun', S.stun);
+      break;
+    }
+    case 'bouclier': {
+      const t = djWeakest(st); if (!t) { ok = false; break; }
+      t.shield = Math.max(t.shield, h.hpMax * S.abs * P * h.heal); t.b.shield = S.dur;
+      st.ev.push({ k: 'shield', id: t.id, by: h.id }); break;
+    }
+    case 'consecration':
+      st.zones.push({ id: st.nid++, k: 'cons', x: h.x, y: h.y, r: S.rad, t: S.dur, tick: 0, dps: h.dmg * S.dps * P, hps: S.hps * h.heal * P, own: h.id });
+      st.ev.push({ k: 'zone', z: 'cons', x: h.x, y: h.y, r: S.rad, t: S.dur }); break;
+    case 'roulade': {
+      const t = djNearest(st, h, 8), x0 = h.x, y0 = h.y, dx = t ? h.x - t.x : -h.fx, dy = t ? h.y - t.y : -h.fy, len = Math.hypot(dx, dy) || 1;
+      djMove(st, h, dx / len * S.dist, dy / len * S.dist); h.b.inv = 0.35;
+      st.ev.push({ k: 'dash', id: h.id, x0, y0, x1: h.x, y1: h.y, roll: true });
+      if (t) for (let n = 0; n < S.n; n++) shoot(t, D(S.dmg), 15 + n * 3);
+      break;
+    }
+    case 'pluie': {
+      const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
+      st.zones.push({ id: st.nid++, k: 'rain', x: t.x, y: t.y, r: S.rad, t: S.dur, tick: 0, dps: h.dmg * S.dps * P, own: h.id });
+      st.ev.push({ k: 'zone', z: 'rain', x: t.x, y: t.y, r: S.rad, t: S.dur, from: h.id }); break;
+    }
+    case 'percant': {
+      const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
+      const dx = t.x - h.x, dy = t.y - h.y, len0 = Math.hypot(dx, dy) || 1, ux = dx / len0, uy = dy / len0;
+      let len = 0; while (len < S.range && st.d.grid[Math.floor(h.y + uy * (len + 0.3)) * st.d.W + Math.floor(h.x + ux * (len + 0.3))]) len += 0.3;
+      for (const m of djLiving(st)) { const ax = m.x - h.x, ay = m.y - h.y, p = ax * ux + ay * uy; if (p >= 0 && p <= len && Math.abs(ax * uy - ay * ux) <= 0.6 + m.r) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); } }
+      st.ev.push({ k: 'line', id: h.id, x0: h.x, y0: h.y, x1: h.x + ux * len, y1: h.y + uy * len }); break;
+    }
+    case 'boule': {
+      const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
+      const x = t.x, y = t.y;
+      for (const m of djAround(st, x, y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); if (h.spec === 0 && m.hp > 0) { m.poi = 3; m.poiD = Math.max(m.poiD, h.dmg * 0.5); } }
+      st.ev.push({ k: 'boom', id: h.id, x, y, r: S.rad, c: 'fire' }); break;
+    }
+    case 'nova':
+      for (const m of djAround(st, h.x, h.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); djCC(st, m, 'frz', S.frz * (h.spec === 1 ? 1.5 : 1)); }
+      st.ev.push({ k: 'nova', id: h.id, x: h.x, y: h.y, r: S.rad, c: 'ice' }); break;
+    case 'tp': {
+      const t = djNearest(st, h, 10), dx = t ? h.x - t.x : h.fx, dy = t ? h.y - t.y : h.fy, len = Math.hypot(dx, dy) || 1;
+      const p = djBlinkSpot(st, h, dx / len, dy / len, S.dist); if (!p) { ok = false; break; }
+      st.ev.push({ k: 'blink', id: h.id, x0: h.x, y0: h.y, x1: p[0], y1: p[1] });
+      h.x = h.px = p[0]; h.y = h.py = p[1]; break;
+    }
+    case 'ombre': {
+      const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
+      const dx = t.x - h.x, dy = t.y - h.y, len = Math.hypot(dx, dy) || 1, k = t.r + h.r + 0.2;
+      let nx = t.x + dx / len * k, ny = t.y + dy / len * k;
+      if (!djFree(st, nx, ny, h.r)) { nx = h.x; ny = h.y; }
+      st.ev.push({ k: 'blink', id: h.id, x0: h.x, y0: h.y, x1: nx, y1: ny });
+      h.x = h.px = nx; h.y = h.py = ny; h.fx = -dx / len; h.fy = -dy / len;
+      const d = D(S.dmg); djHurt(st, t, d.v, h, d.crit); if (h.b.poison > 0) djPoison(st, h, t);
+      break;
+    }
+    case 'poison': h.b.poison = S.dur * L; st.ev.push({ k: 'buff', id: h.id, b: 'poison' }); break;
+    case 'fumee':
+      h.b.stealth = S.dur * L;
+      for (const m of st.mobs) if (m.tgt === h.id || m.actTgt === h.id) { m.tgt = 0; m.wind = 0; }
+      if (h.spec === 1) for (const m of djAround(st, h.x, h.y, 2.5)) djCC(st, m, 'stun', 1.5);
+      st.ev.push({ k: 'smoke', id: h.id, x: h.x, y: h.y }); break;
+    case 'lumiere': {
+      const t = djWeakest(st); if (!t) { ok = false; break; }
+      djHeal(st, t, t.hpMax * S.heal * P * h.heal); st.ev.push({ k: 'holy', id: t.id, by: h.id }); break;
+    }
+    case 'priere':
+      for (const t of st.heroes) if (!t.dead) { djHeal(st, t, t.hpMax * S.heal * P * h.heal); st.ev.push({ k: 'holy', id: t.id, by: h.id }); }
+      break;
+    case 'ours': case 'loup': djSetForm(st, h, S.id); h.b.form = S.dur * L; break;
+    case 'racines':
+      for (const m of djAround(st, h.x, h.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); djCC(st, m, 'root', S.root * L); }
+      st.ev.push({ k: 'nova', id: h.id, x: h.x, y: h.y, r: S.rad, c: 'root' }); break;
+    case 'squelettes': {
+      for (const a of st.allies) if (a.kind === 'skel' && a.own === h.id && a.hp > 0) { a.hp = 0; st.ev.push({ k: 'die', id: a.id, x: a.x, y: a.y }); }
+      const n = S.n + (h.spec === 0 ? 1 : 0), hp = h.hpMax * S.hp * (h.lvl >= 4 ? 1.2 : 1) * (h.spec === 0 ? 1.3 : 1);
+      for (let k = 0; k < n; k++) {
+        const a = k / n * 6.2832, x = h.x + Math.cos(a) * 1.1, y = h.y + Math.sin(a) * 1.1, free = djFree(st, x, y, 0.32);
+        st.allies.push({ id: st.nid++, kind: 'skel', own: h.id, x: free ? x : h.x, y: free ? y : h.y, px: free ? x : h.x, py: free ? y : h.y, r: 0.32, hp, hpMax: hp,
+          dmg: h.dmg * S.dmg * P, range: 1.2, rate: 1.0, speed: 3.8, atkT: 0.3, t: S.dur * L, tgt: 0, mv: false, atkN: 0 });
+      }
+      st.ev.push({ k: 'summon', id: h.id, x: h.x, y: h.y }); break;
+    }
+    case 'drain': {
+      const t = djTargetFor(st, h, S.range); if (!t) { ok = false; break; }
+      st.ev.push({ k: 'drain', id: h.id, tgt: t.id });
+      const d = D(S.dmg * (h.spec === 1 ? 1.3 : 1)); djHeal(st, h, djHurt(st, t, d.v, h, d.crit)); break;
+    }
+    case 'cadavre': {
+      const ref = djTargetFor(st, h, S.range) || h; let best = null, bd = 1e9;
+      for (const c of st.corpses) { const dd = Math.hypot(c.x - ref.x, c.y - ref.y); if (Math.hypot(c.x - h.x, c.y - h.y) <= S.range && dd < bd) { bd = dd; best = c; } }
+      if (!best) { ok = false; break; }
+      st.corpses.splice(st.corpses.indexOf(best), 1);
+      for (const m of djAround(st, best.x, best.y, S.rad)) { const d = D(S.dmg); djHurt(st, m, d.v, h, d.crit); }
+      st.ev.push({ k: 'boom', id: h.id, x: best.x, y: best.y, r: S.rad, c: 'bone' }); break;
+    }
+    default: ok = false;
+  }
+  if (!ok) { st.ev.push({ k: 'nocast', id: h.id, i }); return false; }
+  const cd = S.cd * (1 - 0.05 * (r - 1)) * h.cdMul * (st.bless === 'celerite' ? 0.85 : 1);
+  h.cd[i] = cd; h.cdMax[i] = cd; h.castN++; h.lastCast = S.id;
+  st.ev.push({ k: 'cast', id: h.id, i, s: S.id });
+  return true;
+}
+
+/* ---------- un pas de simulation ---------- */
+function djHeroStep(st, h, inp) {
+  const dt = DJ_DT;
+  for (const k in h.b) { h.b[k] -= dt; if (h.b[k] <= 0) { delete h.b[k]; if (k === 'shield') h.shield = 0; if (k === 'form' && !h.dead) djSetForm(st, h, null); } }
+  if (h.dead) return;
+  if (!djFree(st, h.x, h.y, h.r)) djUnstick(st, h);
+  for (let i = 0; i < 3; i++) if (h.cd[i] > 0) h.cd[i] = Math.max(0, h.cd[i] - dt);
+  h.atkT -= dt; h.potT -= dt;
+  if (h.regen) h.hp = Math.min(h.hpMax, h.hp + h.hpMax * h.regen * dt);   // Régénération (sans bulle)
+  if (st.calmT > 1) h.hp = Math.min(h.hpMax, h.hp + h.hpMax * 0.1 * dt);   // entre deux combats, on reprend son souffle (10 % par seconde)
+  if (inp.pot) djPotion(st, h);
+  if (inp.sk != null && inp.sk >= 0) djCast(st, h, inp.sk);
+  if (h.dead) return;
+  let mx = +inp.mx || 0, my = +inp.my || 0; const m = Math.hypot(mx, my);
+  if (m > 1) { mx /= m; my /= m; }
+  const spd = h.speed * (h.form === 'loup' ? 1.25 : 1) * (st.bless === 'celerite' ? 1.15 : 1);
+  const reach = h.form ? 1.6 : h.range;
+  if (m > 0.2) { h.mv = djMove(st, h, mx * spd * dt, my * spd * dt); h.fx = mx / Math.max(1, m); h.fy = my / Math.max(1, m); }
+  else {
+    h.mv = false;
+    /* Au contact, joystick lâché : le héros s'avance vers le monstre le plus proche. */
+    if (reach < 2) {
+      const t = djNearest(st, h, 4.5);
+      if (t && djDist(h, t) > reach + t.r) { const dx = t.x - h.x, dy = t.y - h.y, len = Math.hypot(dx, dy); h.mv = djMove(st, h, dx / len * spd * dt, dy / len * spd * dt); h.fx = dx / len; h.fy = dy / len; }
+    }
+  }
+  /* Attaque automatique (même en marchant), sur la cible la plus proche à portée. */
+  if (h.atkT <= 0) {
+    const t = djTargetFor(st, h, reach);
+    if (t) {
+      h.tgt = t.id;
+      const dx = t.x - h.x, dy = t.y - h.y, len = Math.hypot(dx, dy) || 1; if (!h.mv) { h.fx = dx / len; h.fy = dy / len; }
+      const d = djRoll(st, h, 1); let v = d.v;
+      if (h.b.stealth > 0) { v *= 2; delete h.b.stealth; st.ev.push({ k: 'unstealth', id: h.id }); }
+      h.atkT = h.form === 'loup' ? 0.5 : h.form === 'ours' ? 1.1 : h.cdAtk; h.atkN++;
+      st.ev.push({ k: 'atk', id: h.id, tgt: t.id });
+      if (reach < 2) { djHurt(st, t, v, h, d.crit); if (h.b.poison > 0) djPoison(st, h, t); }
+      else st.shots.push({ id: st.nid++, side: 'h', kind: DJ_CLASS[h.cls].shot || 'arrow', from: h.id, tgt: t.id, x: h.x, y: h.y, px: h.x, py: h.y, spd: 14, dmg: v, crit: d.crit, life: 2, splash: DJ_CLASS[h.cls].splash || 0 });
+    }
+  }
+}
+function djAllyStep(st, a) {
+  const dt = DJ_DT; if (!a.inv && a.hp <= 0) return;
+  a.t -= dt;
+  if (a.t <= 0) { a.hp = 0; st.ev.push({ k: 'die', id: a.id, x: a.x, y: a.y }); return; }
+  const o = st.heroes.find(h => h.id === a.own); a.atkT -= dt;
+  let t = null;
+  if (a.kind === 'pet') { const ht = o && !o.dead && o.tgt ? st.mobs.find(m => m.id === o.tgt && m.hp > 0 && m.awake) : null; if (ht && djDist(o, ht) < 7) t = ht; }
+  else t = djNearest(st, a, 7);
+  const goTo = (x, y) => { const dx = x - a.x, dy = y - a.y, len = Math.hypot(dx, dy) || 1; a.mv = djMove(st, a, dx / len * a.speed * dt, dy / len * a.speed * dt); a.fx = dx / len; a.fy = dy / len; };
+  if (t) {
+    if (djDist(a, t) > a.range + t.r + a.r) goTo(t.x, t.y);
+    else { a.mv = false; a.fx = t.x - a.x; a.fy = t.y - a.y; if (a.atkT <= 0) { a.atkT = a.rate; a.atkN++; st.ev.push({ k: 'atk', id: a.id, tgt: t.id }); djHurt(st, t, a.dmg, a, false); } }
+  } else if (o && !o.dead && djDist(a, o) > 1.8) goTo(o.x, o.y);
+  else a.mv = false;
+}
+/* Cible d'un monstre : celui qui l'a provoqué, sinon le plus proche (héros ou squelette ; il ne lâche pas sa cible pour un rien). */
+function djMobTarget(st, m) {
+  if (m.taunt > 0) { const h = st.heroes.find(x => x.id === m.tauntBy && !x.dead); if (h) return h; }
+  let best = null, bd = 1e9;
+  for (const e of djFoes(st)) { if (e.b && e.b.stealth > 0) continue; const d = djDist(m, e) - (e.id === m.tgt ? 1.5 : 0); if (d < bd) { bd = d; best = e; } }
+  return best;
+}
+/* Champ de distances vers les héros (recalculé 5 fois par seconde) : les monstres le suivent quand ils ne voient pas leur cible. */
+function djFlow(st) {
+  const d = st.d, W = d.W, N = W * d.H;
+  if (!st.flow || st.flow.length !== N) st.flow = new Float32Array(N);
+  const F = st.flow; F.fill(1e9);
+  const q = [];
+  for (const h of st.heroes) { if (h.dead || h.b.stealth > 0) continue; const k = Math.floor(h.y) * W + Math.floor(h.x); if (F[k]) { F[k] = 0; q.push(k); } }
+  const open = k => d.grid[k] && !st.door[k];
+  for (let i = 0; i < q.length; i++) {
+    const k = q[i], x = k % W, y = (k / W) | 0, nd = F[k] + 1;
+    for (const [dx, dy] of DJ_D8) {
+      const nx = x + dx, ny = y + dy, nk = ny * W + nx;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= d.H || F[nk] <= nd || !open(nk)) continue;
+      if (dx && dy && (!open(y * W + nx) || !open(ny * W + x))) continue;
+      F[nk] = nd; q.push(nk);
+    }
+  }
+  st.flowN = st.n;
+}
+/* Le passage est-il assez large pour ce monstre, en ligne droite jusqu'à (x, y) ? */
+function djFatLos(st, e, x, y) {
+  const dx = x - e.x, dy = y - e.y, n = Math.ceil(Math.hypot(dx, dy) / 0.25);
+  for (let i = 1; i <= n; i++) if (!djFree(st, e.x + dx * i / n, e.y + dy * i / n, e.r)) return false;
+  return true;
+}
+/* Suit le champ de distances sur quelques cases et vise la plus lointaine qu'on peut atteindre tout droit (contourne bien les piliers). */
+function djPathPoint(st, m) {
+  const W = st.d.W, F = st.flow; let cx = Math.floor(m.x), cy = Math.floor(m.y); const pts = [];
+  for (let s = 0; s < 5; s++) {
+    let best = F[cy * W + cx], bx = 0, by = 0;
+    for (const [ox, oy] of DJ_D8) { const k = (cy + oy) * W + cx + ox; if (F[k] < best) { best = F[k]; bx = ox; by = oy; } }
+    if (!bx && !by) break;
+    cx += bx; cy += by; pts.push([cx + 0.5, cy + 0.5]);
+  }
+  for (let i = pts.length - 1; i > 0; i--) if (djFatLos(st, m, pts[i][0], pts[i][1])) return pts[i];
+  return pts[0] || null;
+}
+function djSteer(st, m, t, away) {
+  let dx = t.x - m.x, dy = t.y - m.y;
+  if (away) { dx = -dx; dy = -dy; }
+  else if (!djLos(st, m.x, m.y, t.x, t.y) || (m.r > 0.45 && !djFatLos(st, m, m.x + dx * Math.min(1, 1.5 / (Math.hypot(dx, dy) || 1)), m.y + dy * Math.min(1, 1.5 / (Math.hypot(dx, dy) || 1))))) {
+    const p = djPathPoint(st, m);
+    if (!p) { m.mv = false; return; }
+    dx = p[0] - m.x; dy = p[1] - m.y;
+  }
+  if (m.root > 0) { m.mv = false; return; }
+  const len = Math.hypot(dx, dy) || 1, sp = m.speed * DJ_DT;
+  m.mv = djMove(st, m, dx / len * sp, dy / len * sp); m.fx = dx / len; m.fy = dy / len;
+}
+function djMobStep(st, m) {
+  const dt = DJ_DT;
+  if (m.poi > 0) {
+    m.poi -= dt; m.poiAcc += m.poiD * dt;
+    if (m.poiAcc >= 3 || m.poi <= 0) { const v = m.poiAcc; m.poiAcc = 0; djHurt(st, m, v, null, false); if (m.hp <= 0) return; }
+    if (m.poi <= 0) m.poiD = 0;
+  }
+  if (m.stun > 0) m.stun -= dt; if (m.frz > 0) m.frz -= dt; if (m.root > 0) m.root -= dt; if (m.taunt > 0) m.taunt -= dt;
+  if (!m.awake || m.hp <= 0) return;
+  m.atkT -= dt;
+  /* Sécurité : un monstre hors de sa salle fermée, ou bloqué depuis 5 s, est replacé dans la salle. */
+  const R = st.rooms[m.room];
+  if (!m.chk) m.chk = { x: m.x, y: m.y, t: st.t, a: m.atkN };
+  let stuck = false;
+  if (st.t - m.chk.t >= 4) { stuck = Math.hypot(m.x - m.chk.x, m.y - m.chk.y) < 0.6 && m.atkN === m.chk.a && !(m.sp && m.sp.act); m.chk = { x: m.x, y: m.y, t: st.t, a: m.atkN }; }
+  if (R && R.st === 'lock' && (stuck || st.roomAt[Math.floor(m.y) * st.d.W + Math.floor(m.x)] !== m.room)) {
+    const p = djRoomSpot(st, m.room, m.r); if (p) { m.x = m.px = p[0]; m.y = m.py = p[1]; st.ev.push({ k: 'spawn', id: m.id, x: m.x, y: m.y }); }
+  }
+  if (m.stun > 0 || m.frz > 0) { m.mv = false; m.wind = 0; return; }
+  if (m.boss && djBossStep(st, m)) return;
+  /* Coup en préparation : il part à la fin (on peut l'esquiver en s'éloignant). */
+  if (m.wind > 0) {
+    m.wind -= dt; m.mv = false;
+    if (m.wind > 0) return;
+    const tt = djEnt(st, m.actTgt);
+    if (m.act === 'melee') { if (tt && !tt.dead && tt.hp > 0 && djDist(m, tt) <= m.range + tt.r + m.r + 0.45) djHit(st, tt, m.dmg); }
+    else if (m.act === 'shot') { if (tt) { const ax = tt.x - m.x, ay = tt.y - m.y, len = Math.hypot(ax, ay) || 1, sp = m.heals ? 6 : 9; st.shots.push({ id: st.nid++, side: 'm', kind: m.heals ? 'curse' : 'arrow', from: m.id, x: m.x, y: m.y, px: m.x, py: m.y, vx: ax / len * sp, vy: ay / len * sp, dmg: m.dmg, life: (m.range + 2) / sp, r: 0.25 }); } }
+    else if (m.act === 'heal') { if (tt && tt.hp > 0) { tt.hp = Math.min(tt.hpMax, tt.hp + tt.hpMax * 0.15); st.ev.push({ k: 'mheal', id: tt.id, by: m.id }); } }
+    return;
+  }
+  const start = (act, tgt, wind, a) => { m.act = act; m.actTgt = tgt; m.wind = wind; m.atkT = m.rate; m.atkN++; st.ev.push({ k: 'matk', id: m.id, a, tgt }); };
+  /* Le chaman soigne d'abord les blessés autour de lui. */
+  if (m.heals && m.atkT <= 0) {
+    let best = null, bf = 0.7;
+    for (const o of st.mobs) if (o !== m && o.hp > 0 && o.awake && o.hp / o.hpMax < bf && djDist(m, o) < 5) { bf = o.hp / o.hpMax; best = o; }
+    if (best) { start('heal', best.id, 0.4, 'heal'); return; }
+  }
+  const t = djMobTarget(st, m);
+  if (!t) { m.mv = false; return; }
+  m.tgt = t.id;
+  const dx = t.x - m.x, dy = t.y - m.y, dd = Math.hypot(dx, dy) || 0.001;
+  if (m.ranged || m.heals) {
+    const los = djLos(st, m.x, m.y, t.x, t.y);
+    if (dd < 2.8 && los && m.root <= 0) { djSteer(st, m, t, true); if (m.mv || m.atkT > 0) return; }
+    else if (dd > m.range || !los) { djSteer(st, m, t, false); return; }
+    m.mv = false; m.fx = dx / dd; m.fy = dy / dd;
+    if (m.atkT <= 0) start('shot', t.id, 0.3, 'shot');
+    return;
+  }
+  if (dd > m.range + t.r + m.r) { djSteer(st, m, t, false); return; }
+  m.mv = false; m.fx = dx / dd; m.fy = dy / dd;
+  if (m.atkT <= 0) start('melee', t.id, m.big ? 0.55 : 0.35, 'melee');
+}
+/* Le chef troll : coup de massue en cercle, charge, renforts à 66 % et 33 % de vie, rage sous 25 %. */
+function djBossStep(st, m) {
+  const S = m.sp, dt = DJ_DT;
+  S.slam -= dt; S.charge -= dt;
+  if ((S.phase === 0 && m.hp < m.hpMax * 0.66) || (S.phase === 1 && m.hp < m.hpMax * 0.33)) {
+    S.phase++;
+    const R = st.d.rooms[m.room], c = djCenter(R);
+    ['gobelin', 'gobelin', 'archer'].forEach((type, k) => {
+      const a = k / 3 * 6.2832 + S.phase, x = m.x + Math.cos(a) * 2.4, y = m.y + Math.sin(a) * 2.4, ok = djFree(st, x, y, 0.38);
+      const n = djMob(st, type, ok ? x : c[0] + 0.5, ok ? y : c[1] + 0.5, m.room, false); n.awake = true; st.mobs.push(n);
+    });
+    st.ev.push({ k: 'summon', id: m.id, x: m.x, y: m.y, boss: true });
+  }
+  if (!S.enr && m.hp < m.hpMax * 0.25) { S.enr = true; m.rate *= 0.7; m.speed *= 1.2; st.ev.push({ k: 'enrage', id: m.id }); }
+  if (S.act === 'slam') {
+    S.actT -= dt; m.mv = false;
+    if (S.actT <= 0) { for (const t of djFoes(st)) if (djDist(m, t) <= 3 + t.r) djHit(st, t, m.dmg * 1.6); st.ev.push({ k: 'slam', id: m.id, x: m.x, y: m.y, r: 3 }); S.act = null; S.slam = 7; }
+    return true;
+  }
+  if (S.act === 'chargeW') { S.actT -= dt; m.mv = false; if (S.actT <= 0) { S.act = 'charge'; S.actT = 0.85; S.hit = []; st.ev.push({ k: 'charge', id: m.id }); } return true; }
+  if (S.act === 'charge') {
+    S.actT -= dt; const step = 11 * dt, x0 = m.x, y0 = m.y;
+    djMove(st, m, S.dx * step, S.dy * step); m.mv = true; m.fx = S.dx; m.fy = S.dy;
+    for (const t of djFoes(st)) if (!S.hit.includes(t.id) && djDist(m, t) <= m.r + t.r + 0.25) { S.hit.push(t.id); djHit(st, t, m.dmg * 1.5); if (t.kind === 'hero' && !t.dead) djMove(st, t, -S.dy * 1.4, S.dx * 1.4); }
+    const moved = Math.hypot(m.x - x0, m.y - y0);
+    if (S.actT <= 0 || moved < step * 0.3) {
+      S.act = null; S.charge = 11; m.mv = false;
+      if (moved < step * 0.3) { m.stun = Math.max(m.stun, 1.2); st.ev.push({ k: 'wall', id: m.id, x: m.x, y: m.y }); }   // il s'assomme contre le mur
+    }
+    return true;
+  }
+  if (m.wind > 0) return false;
+  const t = djMobTarget(st, m); if (!t) return false;
+  const dd = djDist(m, t);
+  if (S.slam <= 0 && dd <= 3.5) { S.act = 'slam'; S.actT = 1.0; st.ev.push({ k: 'tele', id: m.id, a: 'slam', x: m.x, y: m.y, r: 3, t: 1.0 }); return true; }
+  if (S.charge <= 0 && dd >= 3 && dd <= 10 && djLos(st, m.x, m.y, t.x, t.y)) {
+    S.dx = (t.x - m.x) / dd; S.dy = (t.y - m.y) / dd; S.act = 'chargeW'; S.actT = 0.8;
+    st.ev.push({ k: 'tele', id: m.id, a: 'charge', x: m.x, y: m.y, dx: S.dx, dy: S.dy, len: 9, t: 0.8 }); return true;
+  }
+  return false;
+}
+/* Les monstres s'écartent les uns des autres, et les héros les poussent (on ne reste pas coincé). */
+function djSeparate(st) {
+  const L = st.mobs.filter(m => m.hp > 0 && m.awake);
+  for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
+    const a = L[i], b = L[j]; let dx = b.x - a.x, dy = b.y - a.y; const R = a.r + b.r, d2 = dx * dx + dy * dy;
+    if (d2 >= R * R) continue;
+    let d = Math.sqrt(d2); if (d < 1e-4) { dx = Math.cos(a.id + b.id); dy = Math.sin(a.id + b.id); d = 1; }
+    const push = (R - Math.min(d, R)) / 2, ux = dx / d, uy = dy / d, wa = a.boss ? 0.15 : b.boss ? 1.85 : 1;
+    djMove(st, a, -ux * push * wa, -uy * push * wa); djMove(st, b, ux * push * (2 - wa), uy * push * (2 - wa));
+  }
+  for (const h of st.heroes) {
+    if (h.dead) continue;
+    for (const m of L) { const dx = m.x - h.x, dy = m.y - h.y, R = m.r + h.r, d = Math.hypot(dx, dy); if (d < R && d > 1e-4 && !m.boss) djMove(st, m, dx / d * (R - d), dy / d * (R - d)); }
+  }
+}
+function djShotStep(st, s) {
+  const dt = DJ_DT; s.life -= dt;
+  if (s.side === 'h') {
+    const t = st.mobs.find(m => m.id === s.tgt && m.hp > 0);
+    if (!t || s.life <= 0) { s.dead = true; return; }
+    const dx = t.x - s.x, dy = t.y - s.y, len = Math.hypot(dx, dy), step = s.spd * dt;
+    if (len <= step + t.r) {
+      s.dead = true; s.x = t.x; s.y = t.y; djHurt(st, t, s.dmg, djEnt(st, s.from), s.crit);
+      if (s.splash) for (const m of djAround(st, s.x, s.y, s.splash)) if (m !== t) djHurt(st, m, s.dmg * 0.4, null, false);   // la boule du mage éclabousse
+      return;
+    }
+    s.x += dx / len * step; s.y += dy / len * step;
+  } else {
+    s.x += s.vx * dt; s.y += s.vy * dt;
+    if (s.life <= 0 || !st.d.grid[Math.floor(s.y) * st.d.W + Math.floor(s.x)]) { s.dead = true; return; }
+    for (const t of djFoes(st)) if (Math.hypot(t.x - s.x, t.y - s.y) <= t.r + s.r) { s.dead = true; djHit(st, t, s.dmg); return; }
+  }
+}
+function djZoneStep(st, z) {
+  z.t -= DJ_DT; z.tick -= DJ_DT;
+  if (z.tick <= 0) {
+    z.tick += 0.5;
+    if (z.dps) for (const m of djAround(st, z.x, z.y, z.r)) djHurt(st, m, z.dps * 0.5, djEnt(st, z.own), false);
+    if (z.hps) for (const h of st.heroes) if (!h.dead && Math.hypot(h.x - z.x, h.y - z.y) <= z.r + h.r) djHeal(st, h, h.hpMax * z.hps * 0.5);
+  }
+  if (z.t <= 0) z.dead = true;
+}
+/* Un héros entre dans une salle : les grilles se ferment, les monstres se réveillent, l'autre héros le rejoint. */
+function djLock(st, ri, h) {
+  const R = st.rooms[ri], d = st.d;
+  if (!st.mobs.some(m => m.room === ri && m.hp > 0)) { R.st = 'clear'; return; }
+  R.st = 'lock';
+  for (const k of st.doors[ri]) st.door[k] = 1;
+  for (const m of st.mobs) if (m.room === ri && !m.hidden) m.awake = true;
+  for (const o of st.heroes.concat(st.allies)) {
+    if (o === h || o.dead || (o.kind !== 'hero' && !o.inv && o.hp <= 0)) continue;
+    if (st.roomAt[Math.floor(o.y) * d.W + Math.floor(o.x)] !== ri) { st.ev.push({ k: 'blink', id: o.id, x0: o.x, y0: o.y, x1: h.x, y1: h.y }); o.x = o.px = h.x; o.y = o.py = h.y; }
+  }
+  for (const e of st.heroes.concat(st.allies)) if (!djFree(st, e.x, e.y, e.r)) djUnstick(st, e, ri);
+  for (const m of st.mobs) if (m.room === ri && !m.hidden && !djFree(st, m.x, m.y, m.r)) { const p = djRoomSpot(st, ri, m.r); if (p) { m.x = m.px = p[0]; m.y = m.py = p[1]; } }
+  st.ev.push({ k: 'lock', room: ri, boss: d.rooms[ri].kind === 'boss' });
+}
+function djWorld(st) {
+  const d = st.d, W = d.W, cellRoom = e => st.roomAt[Math.floor(e.y) * W + Math.floor(e.x)];
+  for (const h of st.heroes) { if (h.dead) continue; const ri = cellRoom(h); if (ri >= 0 && st.rooms[ri].st === 'idle') djLock(st, ri, h); }
+  st.rooms.forEach((R, ri) => {
+    if (R.st !== 'lock' && R.st !== 'fight') return;
+    if (!st.mobs.some(m => m.room === ri && m.hp > 0)) {
+      R.st = 'clear'; for (const k of st.doors[ri]) st.door[k] = 0;
+      const boss = d.rooms[ri].kind === 'boss';
+      if (boss) { const c = djCenter(d.rooms[ri]); st.exit = { x: c[0] + 0.5, y: c[1] + 0.5 }; }
+      st.ev.push({ k: 'clear', room: ri, boss });
+      return;
+    }
+    /* Vague suivante : quand tous les monstres visibles sont vaincus, d'autres sortent des galeries (1,2 s plus tard). */
+    if (!st.mobs.some(m => m.room === ri && m.hp > 0 && !m.hidden)) {
+      if (!R.waveT) { R.waveT = 1.2; st.ev.push({ k: 'wavecome', room: ri, n: R.wave + 2, of: R.waves }); }
+      R.waveT -= DJ_DT;
+      if (R.waveT <= 0) {
+        R.waveT = 0; R.wave++;
+        for (const m of st.mobs) {
+          if (m.room !== ri || !m.hidden || m.wave > R.wave) continue;
+          /* jamais dans les pattes d'un héros, toujours dans la salle */
+          if (st.heroes.some(h => !h.dead && djDist(h, m) < 2.5) || !djFree(st, m.x, m.y, m.r) || st.roomAt[Math.floor(m.y) * d.W + Math.floor(m.x)] !== ri) {
+            const p = djRoomSpot(st, ri, m.r); if (p) { m.x = m.px = p[0]; m.y = m.py = p[1]; }
+          }
+          m.hidden = false; m.awake = true; m.atkT = 0.8 + djRnd(st) * 0.6;
+          st.ev.push({ k: 'spawn', id: m.id, x: m.x, y: m.y });
+        }
+        st.ev.push({ k: 'wave', room: ri, n: R.wave + 1, of: R.waves });
+      }
+    }
+    /* Sécurité : si plus aucun héros vivant n'est dans la salle, les grilles se rouvrent. */
+    if (R.st === 'lock') { R.out = st.heroes.some(h => !h.dead && cellRoom(h) === ri) ? 0 : R.out + DJ_DT; if (R.out > 3) { R.st = 'fight'; for (const k of st.doors[ri]) st.door[k] = 0; } }
+  });
+  for (const h of st.heroes) {
+    if (h.dead) continue;
+    for (const c of st.chests) if (!c.open && Math.hypot(c.x - h.x, c.y - h.y) < 1.1) {
+      c.open = true;
+      st.ev.push({ k: 'chest', x: c.x, y: c.y, got: djLootAdd(st, DJ_CHEST, djLootMul(st.lvl) * (st.heroes.some(p => p.race === 'halfelin') ? 1.5 : 1)) });
+    }
+    if (st.altar && !st.altar.used && Math.hypot(st.altar.x - h.x, st.altar.y - h.y) < 1.2) {
+      st.altar.used = true; st.bless = ['force', 'vigueur', 'celerite'][Math.floor(djRnd(st) * 3)];
+      if (st.bless === 'vigueur') for (const p of st.heroes) { p.hpMax = djHpMax(st, p); if (!p.dead) p.hp = p.hpMax; }
+      st.ev.push({ k: 'altar', b: st.bless, x: st.altar.x, y: st.altar.y });
+    }
+    if (st.pris && !st.pris.freed && Math.hypot(st.pris.x - h.x, st.pris.y - h.y) < 1.3) { st.pris.freed = true; st.ev.push({ k: 'free', x: st.pris.x, y: st.pris.y }); }
+    if (st.exit && !st.over && Math.hypot(st.exit.x - h.x, st.exit.y - h.y) < 1.0) { st.over = 'win'; st.ev.push({ k: 'win' }); }
+  }
+  /* Pièges à pointes : sortis 0,6 s toutes les 2,4 s ; 12 % de la vie à chaque fois. */
+  for (const tr of st.traps) {
+    const u = st.t + tr.ph, cyc = Math.floor(u / 2.4); tr.on = u - cyc * 2.4 < 0.6;
+    if (!tr.on) continue;
+    for (const h of st.heroes) if (!h.dead && h.b.inv === undefined && Math.floor(h.x) === tr.x && Math.floor(h.y) === tr.y && tr.hit[h.id] !== cyc) {
+      tr.hit[h.id] = cyc; st.ev.push({ k: 'trap', id: h.id, x: tr.x + 0.5, y: tr.y + 0.5 }); djDamageHero(st, h, h.hpMax * 0.12);
+    }
+  }
+  if (!st.over && st.heroes.every(h => h.dead)) { st.endT += DJ_DT; if (st.endT >= 1.8) { st.over = 'lose'; st.ev.push({ k: 'lose' }); } }
+}
+/* Avance d'un pas. inputs : { [id du héros]: { mx, my (joystick, -1 à 1), sk (compétence 0-2 ou -1), pot (potion) } }. */
+function djStep(st, inputs) {
+  if (st.over) return st;
+  st.n++; st.t += DJ_DT;
+  for (const L of [st.heroes, st.mobs, st.allies, st.shots]) for (const e of L) { e.px = e.x; e.py = e.y; }
+  if (st.n - st.flowN >= 4 || !st.flow) djFlow(st);
+  st.calmT = st.mobs.some(m => m.awake && m.hp > 0) ? 0 : st.calmT + DJ_DT;
+  for (const h of st.heroes) djHeroStep(st, h, (inputs && inputs[h.id]) || {});
+  for (const a of st.allies) djAllyStep(st, a);
+  for (const m of st.mobs) djMobStep(st, m);
+  djSeparate(st);
+  for (const s of st.shots) djShotStep(st, s);
+  for (const z of st.zones) djZoneStep(st, z);
+  djWorld(st);
+  st.mobs = st.mobs.filter(m => m.hp > 0);
+  st.allies = st.allies.filter(a => a.inv || a.hp > 0);
+  st.shots = st.shots.filter(s => !s.dead);
+  st.zones = st.zones.filter(z => !z.dead);
+  st.corpses = st.corpses.filter(c => st.t - c.t < 10);
+  return st;
+}
+function djFlee(st) { if (!st.over) { st.fled = true; st.over = 'lose'; st.ev.push({ k: 'lose', fled: true }); } }
+/* Bilan : victoire = tout ; défaite ou fuite = moitié de l'expérience et du butin. Le prisonnier délivré est sauvé dans tous les cas. */
+function djResult(st) {
+  const win = st.over === 'win', L = st.lvl, k = win ? 1 : 0.5, loot = {};
+  for (const r in st.loot) { const n = Math.round(st.loot[r] * k); if (n > 0) loot[r] = n; }
+  return { win, lvl: L, xp: Math.round((st.xp + (win ? 60 * djXpMul(L) : 0)) * k), loot, pris: !!(st.pris && st.pris.freed), kills: st.kills, secs: Math.round(st.t), fled: !!st.fled };
+}
+/* Où en est-on ? (pour l'interface) */
+function djProgress(st) {
+  const fights = st.d.rooms.map((r, i) => [r, i]).filter(([r]) => r.kind === 'fight');
+  const boss = st.mobs.find(m => m.boss), bi = st.d.rooms.findIndex(r => r.kind === 'boss');
+  const cur = st.rooms.findIndex(R => R.st === 'lock');
+  return { done: fights.filter(([, i]) => st.rooms[i].st === 'clear').length, total: fights.length, boss: boss && st.rooms[bi].st === 'lock' ? boss : null,
+    bossDead: !st.mobs.some(m => m.boss), fighting: cur >= 0, wave: cur >= 0 ? st.rooms[cur].wave + 1 : 0, waves: cur >= 0 ? st.rooms[cur].waves : 0 };
+}
 
 /* ===================== VUE 3D (three.js r128) ===================== */
 const V3 = (() => {
@@ -1514,12 +2447,12 @@ const V3 = (() => {
       if (!gest) return;
       if (gest.k === 'one' && ptrs.size === 1) {
         if (!gest.moved && Math.hypot(x - gest.x0, y - gest.y0) > 8) gest.moved = true;
-        if (gest.moved) { panBy(x - gest.lx, y - gest.ly); gest.lx = x; gest.ly = y; }
+        if (gest.moved) { if (!DJ) panBy(x - gest.lx, y - gest.ly); gest.lx = x; gest.ly = y; }
       } else if (gest.k === 'two' && ptrs.size >= 2) {
         const [a, b] = [...ptrs.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         cam.view = Math.max(VMIN, Math.min(VMAX, gest.v0 * gest.d0 / d)); frustum();
-        panBy(mx - gest.mx, my - gest.my); gest.mx = mx; gest.my = my;
+        if (!DJ) panBy(mx - gest.mx, my - gest.my); gest.mx = mx; gest.my = my;
       }
     });
     const up = e => {
@@ -2310,6 +3243,7 @@ const V3 = (() => {
   /* ---------- ambiances : chaude au village, sombre en attaque ---------- */
   const MOODS = {
     warm: { exp: 0.88, bg: 0xb7d0de, fog: 0xc8dae3, near: 75, far: 175, sun: 0xffeccc, sunI: 2.0, sunPos: [-26, 30, 18], hemiS: 0xcfe0f2, hemiG: 0x5e5032, hemiI: 0.55, ground: 0xffffff, win: 0xffd28a, glow: 0.18, embers: false, env: [0xbfd9ef, 0xf3e7cf, 0x6f6a4a], envI: 0.6, bio: 'green' },
+    donjon: { exp: 1.0, bg: 0x0a0b0f, fog: 0x0a0b0f, near: 64, far: 104, sun: 0xa9b8ff, sunI: 0.6, sunPos: [-14, 30, 10], hemiS: 0x5a6680, hemiG: 0x1c1814, hemiI: 0.62, ground: 0xffffff, win: 0xffa040, glow: 0.4, embers: false, env: [0x2a3040, 0x2a2826, 0x101010], envI: 0.35, bio: null },
     dark: { exp: 0.8, bg: 0x1a2032, fog: 0x1d2437, near: 58, far: 125, sun: 0xa9b8ff, sunI: 1.3, sunPos: [26, 32, -8], hemiS: 0x7d8cc6, hemiG: 0x2b2a36, hemiI: 0.8, ground: 0xe4e9f4, win: 0xffa040, glow: 0.55, embers: true, env: [0x2a3558, 0x3a4566, 0x1c1d26], envI: 0.5, bio: 'snow' },
   };
   let P_MOOD = MOODS.warm;
@@ -2333,7 +3267,7 @@ const V3 = (() => {
     hemi.color.copy(lin(Q.hemiS)); hemi.groundColor.copy(lin(Q.hemiG)); hemi.intensity = Q.hemiI;
     groundMat.color.copy(lin(Q.ground)); winMat.color.copy(lin(Q.win));
     renderer.toneMappingExposure = Q.exp;
-    try { scene.environment = makeEnv(m, Q.env); setBiome(m === 'warm' ? seasonBiome : Q.bio); } catch (e) { console.error('ambiance', e); }
+    try { scene.environment = makeEnv(m, Q.env); if (Q.bio !== null) setBiome(m === 'warm' ? seasonBiome : Q.bio); } catch (e) { console.error('ambiance', e); }
     if (!Q.embers) { for (const e of embers) fxGroup.remove(e.s); embers.length = 0; }
   }
 
@@ -2417,6 +3351,402 @@ const V3 = (() => {
     return out;
   }
 
+  /* ---------- donjon : décor simple (sols, murs, grilles), personnages et effets ----------
+     Une case du donjon (x, y) est dessinée en (x − half, y − half) : les effets du village (burst, wave, spark…) servent tels quels.
+     Visuels provisoires, en attendant les modèles Meshy (murs et sols peints, portes, coffres, torches). */
+  const djGroup = new THREE.Group();
+  let DJ = null;
+  const djHidden = () => [terrainGroup, decoGroup, forestGroup, decoProc, lifeGroup, bldGroup, unitGroup, wallGroup, rangeGroup];
+  const DJ_U = {
+    gobelin: { m: 'barbarian', tex: 'orc_barbarian', show: ['1H_Axe'], atk: '1H_Melee_Attack_Chop', h: 0.95, w: 1.05 },
+    archer: { m: 'rogue', tex: 'orc_rogue', show: ['2H_Crossbow'], atk: '2H_Ranged_Shoot', h: 0.95, w: 0.95 },
+    chaman: { m: 'rogue', tex: 'orc_rogue', tint: 0xd2b8ff, show: ['Throwable'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.95, w: 0.95 },
+    troll: { m: 'barbarian', tex: 'troll', show: ['2H_Axe'], atk: '2H_Melee_Attack_Chop', h: 1.9, w: 1.3 },
+    chefTroll: { m: 'barbarian', tex: 'troll', show: ['2H_Axe', 'Barbarian_Hat'], atk: '2H_Melee_Attack_Chop', h: 2.6, w: 1.45 },
+    skel: { m: 'knight', tint: 0xf2eee2, show: ['1H_Sword'], atk: '1H_Melee_Attack_Chop', h: 0.95, w: 0.9 },
+  };
+  const DJ_HERO_ATK = { guerrier: '1H_Melee_Attack_Chop', paladin: '1H_Melee_Attack_Chop', rodeur: '2H_Ranged_Shoot', voleur: '1H_Melee_Attack_Slice_Diagonal' };
+  const DJ_CAST_ANIM = { tourbillon: 'spin', cri: 'cheer', bouclier: 'cheer', consecration: 'cheer', poison: 'cheer', fumee: 'cheer', lumiere: 'cheer', priere: 'cheer', ours: 'cheer', loup: 'cheer', racines: 'cheer', squelettes: 'cheer', nova: 'cheer' };
+  const DJ_SHOT = { arrow: 0x3a2a1e, fire: 0xff7a2a, holy: 0xffe08a, thorn: 0x7bd36a, shadow: 0xa070ff, curse: 0xb05cff };
+  const DJ_FX = { steel: 0xe8e8e8, ice: 0x9fe3ff, root: 0x7bd36a, fire: 0xff7a2a, bone: 0xe8e0c8 };
+  function djSimple(color, h) {
+    const g = new THREE.Group(), body = new THREE.Group();
+    body.add(P('cyl8', color, 0.5 * h, 0.7 * h, 0.5 * h, 0, 0, 0)); body.add(P('sph', color, 0.42 * h, 0.42 * h, 0.42 * h, 0, 0.7 * h, 0));
+    g.add(body); g.userData = { body, A: {}, mixer: null };
+    return g;
+  }
+  function djModel(def) {
+    const src = LIB.ch[def.m];
+    if (!src || !THREE.SkeletonUtils) return djSimple(def.tex === 'troll' ? 0x6f7f9a : 0x6f8f3a, def.h);
+    const obj = THREE.SkeletonUtils.clone(src.scene), have = new Set();
+    obj.traverse(o => {
+      if (GEAR_NAMES.has(o.name)) { o.visible = def.show.includes(o.name); if (o.visible) have.add(o.name); }
+      if (o.isMesh) {
+        o.castShadow = true; o.receiveShadow = false; o.frustumCulled = false;
+        if (!GEAR_NAMES.has(o.name)) { if (def.tex && LIB.tex[def.tex]) o.material = skinMat(o.material, def.tex); if (def.tint) o.material = tintMat(o.material, def.tint); }
+      }
+    });
+    for (const n of def.show) { const G2 = LIB.gear[n]; if (have.has(n) || !G2) continue; let bone = null; obj.traverse(o => { if (!bone && o.name === G2.parent) bone = o; }); if (bone) { const c = G2.obj.clone(); c.visible = true; bone.add(c); } }
+    const k = def.h / src.h; obj.scale.set(k * def.w, k, k * def.w);
+    const g = new THREE.Group(), body = new THREE.Group(); body.add(obj); g.add(body);
+    const mixer = new THREE.AnimationMixer(obj), act = n => LIB.clips[n] ? mixer.clipAction(LIB.clips[n]) : null;
+    g.userData = { body, mixer, A: { idle: act('Idle'), walk: act('Walking_A'), atk: act(def.atk), death: act('Death_A') }, cur: null };
+    return g;
+  }
+  function djRing(color, s, op) { const m = new THREE.Mesh(geo('plane'), basic(color, { transparent: true, opacity: op || 0.6, depthWrite: false })); m.scale.set(s, 1, s); m.position.y = 0.03; m.renderOrder = 2; return m; }
+  function djPrepAnims(g) {
+    const A = g.userData.A || {};
+    if (A.death) { A.death.setLoop(THREE.LoopOnce); A.death.clampWhenFinished = true; }
+    for (const k of ['atk', 'spin', 'cheer']) if (A[k]) { A[k].setLoop(THREE.LoopOnce); A[k].clampWhenFinished = true; }
+  }
+  function djHeroRec(h) {
+    let g = LIB.ok ? makePerson({ kind: 'hero', race: h.race, cls: h.cls, sex: h.sex, col: h.col, name: h.name }) : null;
+    if (!g) { g = djSimple(0xd9c7a0, 1.1); g.add(djRing(h.col || COLORS[0], 0.85, 0.75)); }
+    const U = g.userData;
+    if (U.mixer) { const act = n => LIB.clips[n] ? U.mixer.clipAction(LIB.clips[n]) : null; U.A.atk = act(DJ_HERO_ATK[h.cls] || '1H_Melee_Attack_Slice_Diagonal'); U.A.death = act('Death_A'); U.A.spin = act('2H_Melee_Attack_Spin'); }
+    djPrepAnims(g);
+    const mats = []; g.traverse(o => { if (o.isMesh && o.material && !o.material.isSpriteMaterial && o.geometry !== geo('plane')) { o.material = o.material.clone(); mats.push(o.material); } });
+    const bar = makeBar(0.8, 0x6fd35a); bar.position.y = 1.72; g.add(bar);
+    return { g, kind: 'hero', bar, mats, atkN: 0, castN: 0, atkT: -9, castT: -9, cast: '', lx: h.x, ly: h.y, scale: 1 };
+  }
+  function djMobRec(m) {
+    const def = DJ_U[m.type] || DJ_U.gobelin, g = djModel(def);
+    djPrepAnims(g);
+    g.add(djRing(m.boss ? 0xff3a2a : 0xb8402e, m.r * 2.2, m.boss ? 0.7 : 0.5));
+    const bar = makeBar(m.boss ? 1.6 : m.big ? 1.1 : 0.7, m.boss ? 0xff5a3c : 0xd9483b); bar.position.y = def.h + 0.35; bar.visible = false; g.add(bar);
+    if (m.boss) { const gl2 = makeGlow(0xff4a2a, 3.2, 0.4); gl2.material.opacity = 0.35; g.add(gl2); g.userData.aura = gl2; }
+    return { g, kind: 'mob', bar, atkN: m.atkN, atkT: -9, lx: m.x, ly: m.y, h: def.h };
+  }
+  function djAllyRec(a) {
+    let g;
+    if (a.kind === 'skel') { g = djModel(DJ_U.skel); djPrepAnims(g); g.add(djRing(0xa070ff, 0.6, 0.45)); }
+    else {
+      /* le familier : une petite bête toute simple, en attendant son modèle */
+      g = new THREE.Group(); const body = new THREE.Group();
+      body.add(P('box', 0x8a7a66, 0.32, 0.22, 0.5, 0, 0.12, 0)); body.add(P('box', 0x8a7a66, 0.24, 0.22, 0.22, 0, 0.26, 0.3));
+      body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, -0.07, 0.48, 0.3)); body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, 0.07, 0.48, 0.3));
+      g.add(body); g.userData = { body, A: {}, mixer: null };
+    }
+    const bar = makeBar(0.5, 0xb48cff); bar.position.y = 1.3; bar.visible = false; g.add(bar);
+    return { g, kind: a.kind, bar, atkN: a.atkN, atkT: -9, lx: a.x, ly: a.y };
+  }
+  function djPlay(r, name, speed, restart) {
+    const U = r.g.userData, a = U.A && U.A[name]; if (!a) return;
+    if (speed) a.timeScale = speed;
+    if (U.cur === a && !restart) return;
+    if (U.cur && U.cur !== a) U.cur.fadeOut(0.12);
+    a.reset().fadeIn(0.12).play(); U.cur = a;
+  }
+  /* Position (entre deux pas de simulation), orientation, animation. */
+  function djPose(r, e, alpha, tNow) {
+    const x = e.px + (e.x - e.px) * alpha, y = e.py + (e.y - e.py) * alpha, dx = x - r.lx, dy = y - r.ly;
+    r.g.position.set(x - half, 0, y - half);
+    if (dx * dx + dy * dy > 1e-6 && e.mv) r.g.rotation.y = Math.atan2(dx, dy);
+    else if (e.fx || e.fy) { const want = Math.atan2(e.fx, e.fy); let d = want - r.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); r.g.rotation.y += d * 0.35; }
+    r.lx = x; r.ly = y;
+    if (e.atkN !== r.atkN) { r.atkN = e.atkN; r.atkT = tNow; if (r.g.userData.A && r.g.userData.A.atk) djPlay(r, 'atk', (r.g.userData.A.atk.getClip().duration / 0.55), true); }
+    if (e.dead) { if (!r.down) { r.down = true; djPlay(r, 'death', 1.2, true); } return; }
+    if (r.down) { r.down = false; djPlay(r, 'idle', 1, true); }
+    if (tNow - r.atkT < 0.55 || (r.castT != null && tNow - r.castT < 0.7)) return;
+    if (e.mv) djPlay(r, 'walk', e.kind === 'hero' ? 0.9 : e.big ? 0.55 : 0.75); else djPlay(r, 'idle', 1);
+  }
+  function djBar(r, f, show) { r.bar.visible = show; if (show) { setBar(r.bar, f); r.bar.quaternion.copy(r.g.quaternion).invert().multiply(camera.quaternion); } }   // face à la caméra malgré la rotation du personnage
+
+  /* Entrée dans le donjon : le village disparaît, le décor du donjon est construit. me = id du héros suivi par la caméra. */
+  function djEnter(st, me) {
+    if (!ok) return;
+    if (DJ) djExit();
+    const d = st.d, W = d.W, H = d.H;
+    DJ = { st, me, ents: new Map(), shots: new Map(), zones: new Map(), dying: [], nums: [], teles: [], torches: [], frame: 0, doorSig: '', doorCells: [], disp: [], exit: null, t: 0, rain: 0 };
+    for (const g of djHidden()) g.visible = false;
+    selMesh.visible = false; ghostMesh.visible = false; zoneMesh.visible = false; gridMesh.visible = false;
+    if (!djGroup.parent) scene.add(djGroup);
+    djGroup.visible = true;
+    const keep = o => { DJ.disp.push(o); return o; };
+    const isFloor = (x, y) => x >= 0 && y >= 0 && x < W && y < H && d.grid[y * W + x] === 1;
+    /* Sol : une dalle par case, nuances au hasard (les couloirs un peu plus sombres). */
+    const floors = [], tall = [], low = [];
+    const roomAt = st.roomAt;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (isFloor(x, y)) { floors.push([x, y, roomAt[y * W + x] >= 0]); continue; }
+      let near = false; for (const [ox, oy] of DJ_D8) if (isFloor(x + ox, y + oy)) { near = true; break; }
+      if (!near) continue;
+      /* Murs côté caméra (au sud et à l'est d'un sol) : bas, pour ne pas cacher les héros. */
+      (isFloor(x - 1, y) || isFloor(x, y - 1) || isFloor(x - 1, y - 1) ? low : tall).push([x, y]);
+    }
+    const m4 = new THREE.Matrix4(), col = new THREE.Color(), q0 = new THREE.Quaternion(), v3 = new THREE.Vector3(), s3 = new THREE.Vector3();
+    const inst = (g, material, list, place, colorOf, shadow) => {
+      const im = new THREE.InstancedMesh(g, material, list.length);
+      list.forEach((it, i) => { place(it, v3, s3); m4.compose(v3, q0, s3); im.setMatrixAt(i, m4); if (colorOf) im.setColorAt(i, colorOf(it, i, col)); });
+      im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.castShadow = !!shadow; im.receiveShadow = true; djGroup.add(keep(im)); return im;
+    };
+    const fMat = keep(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 }));
+    inst(geo('box'), fMat, floors, (f, p, s) => { p.set(f[0] + 0.5 - half, -0.2, f[1] + 0.5 - half); s.set(0.98, 0.2, 0.98); },
+      (f, i, c) => { const n = hash2(f[0] * 7, f[1] * 13); return c.copy(lin(f[2] ? (n < 0.5 ? 0x6b645a : n < 0.85 ? 0x625b52 : 0x736b5f) : (n < 0.6 ? 0x4f4a44 : 0x57514a))); });
+    const wMat = keep(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 }));
+    const wallCol = (w, i, c) => c.copy(lin(hash2(w[0] * 5, w[1] * 3) < 0.5 ? 0x5d564d : 0x534d45));
+    if (tall.length) inst(geo('box'), wMat, tall, (w, p, s) => { p.set(w[0] + 0.5 - half, 0, w[1] + 0.5 - half); s.set(1, 1.5, 1); }, wallCol, true);
+    if (low.length) inst(geo('box'), wMat, low, (w, p, s) => { p.set(w[0] + 0.5 - half, 0, w[1] + 0.5 - half); s.set(1, 0.35, 1); }, wallCol, false);
+    /* Torches sur les murs du fond (de simples lueurs qui vacillent). */
+    tall.forEach(([x, y], i) => {
+      if (hash2(x * 31, y * 17) > 0.12) return;
+      const fx = isFloor(x + 1, y) ? 0.55 : isFloor(x, y + 1) ? 0 : 0.5, fz = isFloor(x, y + 1) ? 0.55 : 0;
+      const t = makeGlow(0xffa040, 1.6, 1.15); t.position.set(x + 0.5 - half + fx, 1.15, y + 0.5 - half + fz); djGroup.add(t);
+      const f = P('cone6', fireMat, 0.12, 0.26, 0.12, t.position.x, 1.0, t.position.z, 0, true); djGroup.add(f);
+      DJ.torches.push({ s: t, f, ph: i * 1.7 });
+    });
+    /* Grilles magiques sur les entrées des salles (visibles quand le combat les ferme). */
+    const cells = []; st.doors.forEach(list => list.forEach(k => { if (!cells.includes(k)) cells.push(k); }));
+    DJ.doorCells = cells;
+    if (cells.length) {
+      const dm = keep(new THREE.MeshBasicMaterial({ color: lin(0xff8a3a), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false }));
+      DJ.doorMesh = inst(geo('box'), dm, cells, (k, p, s) => { p.set(k % W + 0.5 - half, 0, Math.floor(k / W) + 0.5 - half); s.set(0, 0, 0); }, null, false);
+      DJ.doorMat = dm;
+    }
+    /* Pièges à pointes. */
+    if (st.traps.length) {
+      inst(geo('box'), mat(0x3d3934), st.traps, (t, p, s) => { p.set(t.x + 0.5 - half, -0.02, t.y + 0.5 - half); s.set(0.82, 0.05, 0.82); }, null, false);
+      const spikes = []; st.traps.forEach((t, i) => { for (const [ox, oz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2], [0, 0]]) spikes.push([i, t.x + 0.5 + ox, t.y + 0.5 + oz]); });
+      DJ.spikes = spikes; DJ.spikeMesh = inst(geo('cone6'), mat(0xb8bcc0), spikes, (sp, p, s) => { p.set(sp[1] - half, -0.5, sp[2] - half); s.set(0.12, 0.45, 0.12); }, null, false);
+    }
+    /* Coffres, autel, prisonnier. */
+    DJ.chests = st.chests.map(c => {
+      const g = new THREE.Group(); g.position.set(c.x - half, 0, c.y - half); g.rotation.y = Math.PI / 4;
+      g.add(P('box', 0x7a5230, 0.62, 0.38, 0.44, 0, 0, 0)); g.add(P('box', 0xd9b54c, 0.64, 0.06, 0.46, 0, 0.18, 0, 0, true));
+      const lid = piv(0, 0.38, -0.22, [P('box', 0x6a4426, 0.64, 0.16, 0.46, 0, 0, 0.22)]); g.add(lid);
+      const glow = makeGlow(0xffd27a, 1.3, 0.45); g.add(glow); djGroup.add(g);
+      return { g, lid, glow, open: false };
+    });
+    if (st.altar) {
+      const g = new THREE.Group(); g.position.set(st.altar.x - half, 0, st.altar.y - half);
+      g.add(P('cyl8', 0x8a857c, 0.7, 0.25, 0.7, 0, 0, 0)); g.add(P('cyl8', 0x9c968c, 0.42, 0.75, 0.42, 0, 0.25, 0));
+      const orb = makeGlow(0x7ab8ff, 1.6, 1.25); g.add(orb); const core = P('sph', basic(0xbfe0ff), 0.28, 0.28, 0.28, 0, 1.12, 0, 0, true); g.add(core);
+      djGroup.add(g); DJ.altar = { g, orb, core };
+    }
+    if (st.pris) {
+      const g = (LIB.ok && makePerson({ kind: 'vil', race: 'humain', sex: hash2(d.seed, 3) < 0.5 ? 'm' : 'f', job: null, name: '' })) || djSimple(0xc9a27a, 1);
+      g.position.set(st.pris.x - half, 0, st.pris.y - half); g.rotation.y = Math.PI / 4;
+      const chains = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.05, 6, 16), mat(0x3c3c40)); chains.rotation.x = Math.PI / 2; chains.position.y = 0.55; g.add(chains);
+      const mark = makeGlow(0xfff0a0, 0.9, 1.9); g.add(mark);
+      djGroup.add(g); DJ.pris = { g, chains, mark, t: 0 };
+    }
+    /* Lumière chaude qui suit le héros. */
+    DJ.light = new THREE.PointLight(0xffb066, 1.5, 13, 1.6); djGroup.add(DJ.light);
+    setMood('donjon');
+    cam.view = aspect < 0.8 ? 17 : 12.5; frustum();
+    const hh = st.heroes.find(x => x.id === me) || st.heroes[0];
+    if (hh) { cam.tx = hh.x - half; cam.tz = hh.y - half; }
+  }
+  function djExit() {
+    if (!DJ) return;
+    clearGroup(djGroup);
+    for (const o of DJ.disp) { if (o.dispose) o.dispose(); if (o.geometry && o.geometry !== geo('box') && o.geometry !== geo('cone6')) o.geometry.dispose(); }
+    for (const s of shots) fxGroup.remove(s.m); shots.length = 0;
+    DJ = null; djGroup.visible = false;
+    for (const g of djHidden()) g.visible = true;
+    sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld();
+    mood = ''; setMood('warm'); resetCamera();
+  }
+  function djNum(x, y, text, color, big) {
+    if (!DJ) return;
+    let n = DJ.nums.find(q => !q.on);
+    if (!n) {
+      if (DJ.nums.length >= 24) n = DJ.nums.reduce((a, b) => (a.t > b.t ? a : b));
+      else {
+        const c = document.createElement('canvas'); c.width = 128; c.height = 48;
+        const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+        sp.renderOrder = 12; djGroup.add(sp); n = { sp, c, tex }; DJ.nums.push(n);
+      }
+    }
+    const g2 = n.c.getContext('2d'); g2.clearRect(0, 0, 128, 48);
+    g2.font = (big ? '800 34px' : '800 27px') + ' system-ui, sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle';
+    g2.lineWidth = 6; g2.strokeStyle = 'rgba(0,0,0,0.7)'; g2.strokeText(text, 64, 25); g2.fillStyle = color; g2.fillText(text, 64, 25);
+    n.tex.needsUpdate = true; n.on = true; n.t = 0;
+    const k = big ? 1.5 : 1.1; n.sp.scale.set(k, k * 0.375, 1); n.sp.visible = true; n.sp.material.opacity = 1;
+    n.sp.position.set(x - half + (Math.random() - 0.5) * 0.4, 1.7 + (big ? 0.3 : 0), y - half + (Math.random() - 0.5) * 0.4);
+  }
+  function djTele(e) {
+    const red = basic(0xff3020, { transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide });
+    let m;
+    if (e.a === 'slam') { const g2 = new THREE.CircleGeometry(e.r, 40); g2.rotateX(-Math.PI / 2); m = new THREE.Mesh(g2, red); m.position.set(e.x - half, 0.04, e.y - half); }
+    else { const g2 = new THREE.PlaneGeometry(1.6, e.len); g2.rotateX(-Math.PI / 2); g2.translate(0, 0, e.len / 2); m = new THREE.Mesh(g2, red); m.position.set(e.x - half, 0.04, e.y - half); m.rotation.y = Math.atan2(e.dx, e.dy); }
+    m.renderOrder = 3; djGroup.add(m); DJ.teles.push({ m, t: 0, T: e.t, id: e.id });
+  }
+  const djEntPos = (st, id) => { const e = st.heroes.find(q => q.id === id) || st.mobs.find(q => q.id === id) || st.allies.find(q => q.id === id); if (e) return [e.x, e.y]; const r = DJ && DJ.ents.get(id); return r ? [r.lx, r.ly] : null; };
+  /* Effets des événements de la simulation (dégâts, compétences, coffres…). */
+  function djFx(e, st) {
+    if (!DJ) return;
+    const P2 = id => djEntPos(st, id);
+    switch (e.k) {
+      case 'hit': { const p = P2(e.id); if (p) { spark(p[0], 0.8, p[1], e.crit ? 0xffd27a : 0xfff0d0); djNum(p[0], p[1], String(e.v), e.ally ? '#c9b3ff' : e.crit ? '#ffd23f' : '#ffffff', e.crit); } break; }
+      case 'hurt': { const p = P2(e.id); if (p) djNum(p[0], p[1], String(e.v), '#ff6b5b', false); if (e.id === DJ.me && e.v > 25) shake(0.15); break; }
+      case 'heal': { const p = P2(e.id); if (p && e.v >= 2) djNum(p[0], p[1], '+' + e.v, '#7dff8a', false); break; }
+      case 'miss': { const p = P2(e.id); if (p) djNum(p[0], p[1], 'esquive', '#e8f4ff', false); break; }
+      case 'block': { const p = P2(e.id); if (p) djNum(p[0], p[1], String(e.v), '#8ec8ff', false); break; }
+      case 'die': burst(e.x, e.y, 0.4, e.boss ? 0xff7a3a : 0xbfb8a8, e.boss ? 14 : 5); if (e.boss) { shake(0.5); debris(e.x, e.y, 2, true, 16); } break;
+      case 'potion': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0x7dff8a, 1.4, 0.5); for (let i = 0; i < 5; i++) spark(p[0], 0.6 + i * 0.25, p[1], 0x9dff9a); } break; }
+      case 'nova': wave(e.x, e.y, DJ_FX[e.c] || 0xffffff, e.r, 0.5); wave(e.x, e.y, DJ_FX[e.c] || 0xffffff, e.r * 0.6, 0.35); for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; spark(e.x + Math.cos(a) * e.r * 0.7, 0.5, e.y + Math.sin(a) * e.r * 0.7, DJ_FX[e.c]); } break;
+      case 'boom': burst(e.x, e.y, 0.5, DJ_FX[e.c] || 0xff7a2a, 9); wave(e.x, e.y, DJ_FX[e.c] || 0xff7a2a, e.r, 0.45); shake(0.18); break;
+      case 'dash': for (let i = 0; i <= 4; i++) dustRing(e.x0 + (e.x1 - e.x0) * i / 4, e.y0 + (e.y1 - e.y0) * i / 4, 0.2); break;
+      case 'blink': for (let i = 0; i < 4; i++) { spark(e.x0, 0.4 + i * 0.3, e.y0, 0xc9a0ff); spark(e.x1, 0.4 + i * 0.3, e.y1, 0xc9a0ff); } break;
+      case 'bolt': { const a = P2(e.id), b = P2(e.tgt); if (a && b) { const c = e.c === 'marteau' ? 0xffd27a : 0xfff4c0; const s = makeGlow(c, 0.9, 1); s.position.set(a[0] - half, 1, a[1] - half); djGroup.add(s); DJ.teles.push({ m: s, t: 0, T: 0.18, fly: [a[0], a[1], b[0], b[1]] }); setTimeout(() => { if (DJ) { const p = djEntPos(st, e.tgt) || b; burst(p[0], p[1], 0.8, c, 4); } }, 180); } break; }
+      case 'line': { const L = Math.hypot(e.x1 - e.x0, e.y1 - e.y0), g2 = new THREE.PlaneGeometry(0.35, L); g2.rotateX(-Math.PI / 2); g2.translate(0, 0, L / 2); const m = new THREE.Mesh(g2, basic(0xfff0b0, { transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })); m.position.set(e.x0 - half, 0.9, e.y0 - half); m.rotation.y = Math.atan2(e.x1 - e.x0, e.y1 - e.y0); djGroup.add(m); DJ.teles.push({ m, t: 0, T: 0.3, fade: true }); break; }
+      case 'shout': wave(e.x, e.y, 0xff7a3a, Math.min(e.r, 4), 0.6); break;
+      case 'smoke': for (let i = 0; i < 6; i++) smokeAt(e.x - half + (Math.random() - 0.5), 0.4, e.y - half + (Math.random() - 0.5), true); break;
+      case 'holy': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xffe08a, 1.2, 0.5); for (let i = 0; i < 5; i++) spark(p[0] + (Math.random() - 0.5) * 0.6, 0.4 + i * 0.3, p[1] + (Math.random() - 0.5) * 0.6, 0xffe08a); } break; }
+      case 'drain': { const a = P2(e.tgt), b = P2(e.id); if (a && b) for (let i = 0; i <= 5; i++) spark(a[0] + (b[0] - a[0]) * i / 5, 0.9, a[1] + (b[1] - a[1]) * i / 5, 0xff4a6a); break; }
+      case 'summon': wave(e.x, e.y, e.boss ? 0xff3a2a : 0xa070ff, e.boss ? 3 : 2, 0.6); for (let i = 0; i < 6; i++) smokeAt(e.x - half + (Math.random() - 0.5) * 2, 0.3, e.y - half + (Math.random() - 0.5) * 2, true); break;
+      case 'form': { const p = P2(e.id); if (p) { burst(p[0], p[1], 0.6, e.f === 'ours' ? 0x8a6a4a : e.f === 'loup' ? 0x9a9a9a : 0x7bd36a, 6); } break; }
+      case 'tele': djTele(e); break;
+      case 'slam': wave(e.x, e.y, 0xff6a3a, e.r, 0.5); debris(e.x, e.y, 2.5, true, 12); shake(0.45); break;
+      case 'charge': dustRing(P2(e.id) ? P2(e.id)[0] : 0, P2(e.id) ? P2(e.id)[1] : 0, 0.6); break;
+      case 'wall': shake(0.4); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5), 2.4 + Math.random() * 0.4, e.y + (Math.random() - 0.5), 0xfff07a); break;
+      case 'interrupt': { const p = P2(e.id); if (p) djNum(p[0], p[1], 'interrompu !', '#ffd23f', false); break; }
+      case 'enrage': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xff2a1a, 3, 0.7); djNum(p[0], p[1], 'enragé !', '#ff5a3c', true); } break; }
+      case 'spawn': dustRing(e.x, e.y, 0.4); smokeAt(e.x - half, 0.3, e.y - half, true); break;
+      case 'chest': for (let i = 0; i < 10; i++) spark(e.x + (Math.random() - 0.5) * 0.6, 0.5 + Math.random(), e.y + (Math.random() - 0.5) * 0.6, 0xffd27a); break;
+      case 'altar': wave(e.x, e.y, 0x7ab8ff, 3, 0.8); for (let i = 0; i < 10; i++) spark(e.x + (Math.random() - 0.5), 0.5 + Math.random() * 1.5, e.y + (Math.random() - 0.5), 0x9fd0ff); break;
+      case 'free': for (let i = 0; i < 12; i++) spark(e.x + (Math.random() - 0.5), 0.5 + Math.random() * 1.6, e.y + (Math.random() - 0.5), 0xfff0a0); if (DJ.pris) DJ.pris.t = 0.001; break;
+      case 'lock': shake(0.12); break;
+      case 'clear': { const c = djCenter(st.d.rooms[e.room]); wave(c[0] + 0.5, c[1] + 0.5, 0xffd27a, 4, 0.9); break; }
+      case 'trap': spark(e.x, 0.4, e.y, 0xff5a3c); break;
+      case 'revive': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xb8ffcf, 2, 0.8); djNum(p[0], p[1], 'se relève !', '#b8ffcf', true); } break; }
+      case 'cast': { const r = DJ.ents.get(e.id); if (r) { r.castT = performance.now() / 1000; const an = DJ_CAST_ANIM[e.s] || 'atk'; if (r.g.userData.A && r.g.userData.A[an]) djPlay(r, an, an === 'spin' ? 1.4 : 1.2, true); } break; }
+    }
+  }
+  /* Mise à jour de l'affichage d'après l'état du combat (appelée à chaque image ; alpha = entre deux pas). */
+  function djSync(st, alpha, dt, tNow) {
+    if (!DJ) return;
+    DJ.frame++; DJ.t += dt;
+    const fr = DJ.frame, Q = camera.quaternion;
+    const upd = (map, e, make) => { let r = map.get(e.id); if (!r) { r = make(e); map.set(e.id, r); djGroup.add(r.g); } r.seen = fr; return r; };
+    for (const h of st.heroes) {
+      const r = upd(DJ.ents, h, djHeroRec);
+      djPose(r, h, alpha, tNow);
+      djBar(r, h.hp / h.hpMax, !h.dead && (st.heroes.length > 1 || h.hp < h.hpMax));
+      const sc = h.form === 'ours' ? 1.3 : h.form === 'loup' ? 0.85 : 1; r.scale += (sc - r.scale) * Math.min(1, dt * 8); r.g.userData.body.scale.setScalar(r.scale);
+      const ghost = h.b.stealth > 0, inv = h.b.inv > 0 && !h.dead;
+      for (const m of r.mats) { const op = ghost ? 0.35 : inv ? 0.6 + 0.4 * Math.sin(tNow * 30) : 1; if (m.opacity !== op) { m.transparent = op < 1; m.opacity = op; m.needsUpdate = true; } }
+      if (h.shield > 0 && !r.bubble) { r.bubble = new THREE.Mesh(geo('sph'), basic(0x8ec8ff, { transparent: true, opacity: 0.22, depthWrite: false })); r.bubble.scale.set(1.3, 1.9, 1.3); r.bubble.position.y = -0.1; r.g.add(r.bubble); }
+      if (r.bubble) r.bubble.visible = h.shield > 0 && !h.dead;
+    }
+    for (const m of st.mobs) {
+      if (m.hidden) continue;
+      const r = upd(DJ.ents, m, djMobRec);
+      djPose(r, m, alpha, tNow);
+      djBar(r, m.hp / m.hpMax, m.awake && (m.hp < m.hpMax || m.boss));
+      if (m.frz > 0 && !r.ice) { r.ice = makeGlow(0x9fe3ff, (r.h || 1) * 1.6, (r.h || 1) * 0.5); r.ice.material.opacity = 0.55; r.g.add(r.ice); }
+      if (r.ice) r.ice.visible = m.frz > 0;
+      if (m.stun > 0 && !r.stars) { r.stars = makeGlow(0xfff07a, 0.6, (r.h || 1) + 0.25); r.g.add(r.stars); }
+      if (r.stars) { r.stars.visible = m.stun > 0; if (m.stun > 0) r.stars.position.x = Math.sin(tNow * 9) * 0.25; }
+      if (m.root > 0 && !r.roots) { r.roots = djRing(0x5fbf4a, m.r * 2.8, 0.7); r.g.add(r.roots); }
+      if (r.roots) r.roots.visible = m.root > 0;
+      if (r.g.userData.aura) r.g.userData.aura.material.opacity = (m.sp && m.sp.enr ? 0.6 : 0.3) + 0.12 * Math.sin(tNow * 6);
+      if (r.g.userData.mixer && (m.frz > 0 || m.stun > 0)) r.frozen = true; else r.frozen = false;
+    }
+    for (const a of st.allies) {
+      if (!a.inv && a.hp <= 0) continue;
+      const r = upd(DJ.ents, a, djAllyRec);
+      djPose(r, a, alpha, tNow);
+      djBar(r, a.hp / a.hpMax, !a.inv && a.hp < a.hpMax);
+      if (!r.g.userData.mixer) r.g.userData.body.position.y = a.mv ? Math.abs(Math.sin(tNow * 14)) * 0.06 : 0;
+    }
+    for (const [id, r] of DJ.ents) if (r.seen !== fr) {
+      DJ.ents.delete(id);
+      if (r.g.userData.A && r.g.userData.A.death) { r.bar.visible = false; djPlay(r, 'death', 1.3, true); DJ.dying.push({ r, t: 0 }); }
+      else { djGroup.remove(r.g); burst(r.lx, r.ly, 0.3, 0xd8d0c0, 4); }
+    }
+    for (const [, r] of DJ.ents) { const U = r.g.userData; if (U.mixer) U.mixer.update(r.frozen ? 0 : dt); }
+    /* Projectiles */
+    for (const s of st.shots) {
+      let r = DJ.shots.get(s.id);
+      if (!r) {
+        const arrow = s.kind === 'arrow', m = arrow ? P('box', DJ_SHOT.arrow, 0.05, 0.05, 0.5, 0, 0, 0, 0, true) : makeGlow(DJ_SHOT[s.kind] || 0xffffff, s.kind === 'fire' ? 0.9 : 0.7, 0);
+        if (!arrow) { const core = P('sph', basic(DJ_SHOT[s.kind] || 0xffffff), 0.16, 0.16, 0.16, 0, -0.08, 0, 0, true); m.add(core); }
+        r = { m, arrow }; DJ.shots.set(s.id, r); djGroup.add(m);
+      }
+      r.seen = fr;
+      const x = s.px + (s.x - s.px) * alpha, y = s.py + (s.y - s.py) * alpha;
+      r.m.position.set(x - half, 0.95, y - half);
+      if (r.arrow) r.m.rotation.y = Math.atan2(s.x - s.px, s.y - s.py);
+    }
+    for (const [id, r] of DJ.shots) if (r.seen !== fr) { DJ.shots.delete(id); djGroup.remove(r.m); if (!r.arrow) spark(r.m.position.x + half, 0.9, r.m.position.z + half, 0xffd0a0); }
+    /* Zones (consécration, pluie de flèches) */
+    for (const z of st.zones) {
+      let r = DJ.zones.get(z.id);
+      if (!r) {
+        const c = z.k === 'cons' ? 0xffd27a : 0x9be37a, g2 = new THREE.CircleGeometry(z.r, 40); g2.rotateX(-Math.PI / 2);
+        const m = new THREE.Mesh(g2, basic(c, { transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending })); m.position.set(z.x - half, 0.05, z.y - half); m.renderOrder = 3;
+        r = { m, k: z.k }; DJ.zones.set(z.id, r); djGroup.add(m);
+      }
+      r.seen = fr; r.m.material.opacity = 0.18 + 0.1 * Math.sin(tNow * 8);
+      if (z.k === 'rain' && Math.random() < dt * 14) { const tx = z.x + (Math.random() - 0.5) * z.r * 1.6, ty = z.y + (Math.random() - 0.5) * z.r * 1.6; spawnShot('arrow', tx - 0.6, 4, ty - 0.6, () => [tx, 0.1, ty], 0.3, 0.2); }
+    }
+    for (const [id, r] of DJ.zones) if (r.seen !== fr) { DJ.zones.delete(id); djGroup.remove(r.m); r.m.geometry.dispose(); }
+    /* Grilles : affichées seulement quand elles sont fermées. */
+    if (DJ.doorMesh) {
+      let sig = ''; for (const k of DJ.doorCells) sig += st.door[k] ? '1' : '0';
+      if (sig !== DJ.doorSig) {
+        DJ.doorSig = sig; const m4 = new THREE.Matrix4(), W = st.d.W;
+        DJ.doorCells.forEach((k, i) => { const on = st.door[k]; m4.compose(new THREE.Vector3(k % W + 0.5 - half, 0, Math.floor(k / W) + 0.5 - half), new THREE.Quaternion(), on ? new THREE.Vector3(0.96, 1.1, 0.96) : new THREE.Vector3(0, 0, 0)); DJ.doorMesh.setMatrixAt(i, m4); });
+        DJ.doorMesh.instanceMatrix.needsUpdate = true;
+      }
+      DJ.doorMat.opacity = 0.35 + 0.12 * Math.sin(tNow * 5);
+    }
+    if (DJ.spikeMesh) {
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(0.12, 0.45, 0.12), p = new THREE.Vector3();
+      DJ.spikes.forEach((sp, i) => { const on = st.traps[sp[0]].on; p.set(sp[1] - half, on ? -0.02 : -0.5, sp[2] - half); m4.compose(p, q, s); DJ.spikeMesh.setMatrixAt(i, m4); });
+      DJ.spikeMesh.instanceMatrix.needsUpdate = true;
+    }
+    st.chests.forEach((c, i) => { const r = DJ.chests[i]; if (!r) return; if (c.open && !r.open) { r.open = true; r.glow.visible = false; } r.lid.rotation.x += ((r.open ? -1.15 : 0) - r.lid.rotation.x) * Math.min(1, dt * 8); if (!r.open) r.glow.material.opacity = 0.3 + 0.15 * Math.sin(tNow * 3 + i); });
+    if (DJ.altar) { const used = st.altar.used; DJ.altar.orb.visible = !used; DJ.altar.core.visible = !used; if (!used) DJ.altar.orb.material.opacity = 0.4 + 0.2 * Math.sin(tNow * 2.5); }
+    if (DJ.pris) {
+      const P3 = DJ.pris, U = P3.g.userData;
+      if (U.mixer) U.mixer.update(dt);
+      if (st.pris.freed && P3.t > 0) {
+        if (!P3.cheer) { P3.cheer = true; P3.chains.visible = false; P3.mark.visible = false; if (U.A && U.A.cheer) { U.A.cheer.reset().play(); if (U.cur && U.cur !== U.A.cheer) U.cur.stop(); U.cur = U.A.cheer; } }
+        P3.t += dt; if (P3.t > 2.5) { const k = Math.max(0, 1 - (P3.t - 2.5) / 0.6); P3.g.scale.setScalar(k); if (k <= 0) { djGroup.remove(P3.g); DJ.pris = null; } }
+      } else P3.mark.material.opacity = 0.35 + 0.25 * Math.sin(tNow * 4);
+    }
+    if (st.exit && !DJ.exit) {
+      const g = new THREE.Group(); g.position.set(st.exit.x - half, 0, st.exit.y - half);
+      const rg = new THREE.RingGeometry(0.55, 0.85, 40); rg.rotateX(-Math.PI / 2);
+      g.add(new THREE.Mesh(rg, basic(0xffd27a, { transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide })));
+      const beam = new THREE.Mesh(geo('cyl12'), basic(0xffe9a8, { transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false })); beam.scale.set(1.2, 4, 1.2); g.add(beam);
+      g.add(makeGlow(0xffd27a, 2.4, 0.6)); djGroup.add(g); DJ.exit = { g, beam };
+    }
+    if (DJ.exit) { DJ.exit.beam.material.opacity = 0.18 + 0.1 * Math.sin(tNow * 4); DJ.exit.g.rotation.y += dt; }
+    /* Caméra et lumière sur le héros suivi */
+    const me = st.heroes.find(h => h.id === DJ.me) || st.heroes[0];
+    if (me) {
+      const r = DJ.ents.get(me.id), x = r ? r.g.position.x : me.x - half, z = r ? r.g.position.z : me.y - half;
+      const k = Math.min(1, dt * 6); cam.tx += (x - cam.tx) * k; cam.tz += (z - cam.tz) * k;
+      DJ.light.position.set(x, 2.4, z);
+    }
+  }
+  /* Ce qui vit sans la simulation : chiffres qui montent, alertes au sol, morts, torches, soleil qui suit la caméra. */
+  function djTick(dt, tNow) {
+    for (const n of DJ.nums) if (n.on) { n.t += dt; n.sp.position.y += dt * 1.1; n.sp.material.opacity = Math.max(0, 1 - Math.pow(n.t / 0.9, 2)); if (n.t > 0.9) { n.on = false; n.sp.visible = false; } }
+    for (const t of DJ.teles) {
+      t.t += dt; const k = Math.min(1, t.t / t.T);
+      if (t.fly) t.m.position.set(t.fly[0] + (t.fly[2] - t.fly[0]) * k - half, 1, t.fly[1] + (t.fly[3] - t.fly[1]) * k - half);
+      else if (t.fade) t.m.material.opacity = 0.85 * (1 - k);
+      else t.m.material.opacity = 0.15 + 0.4 * k;
+      if (t.t >= t.T) { t.done = true; djGroup.remove(t.m); if (t.m.geometry && t.m.geometry !== geo('sph')) t.m.geometry.dispose(); }
+    }
+    DJ.teles = DJ.teles.filter(t => !t.done);
+    for (const d of DJ.dying) {
+      d.t += dt; const U = d.r.g.userData; if (U.mixer) U.mixer.update(dt);
+      if (d.t > 1.5) { const k = Math.max(0, 1 - (d.t - 1.5) / 0.5); d.r.g.scale.setScalar(k); if (k <= 0) { d.done = true; djGroup.remove(d.r.g); } }
+    }
+    DJ.dying = DJ.dying.filter(d => !d.done);
+    for (const t of DJ.torches) { const f = 0.85 + 0.1 * Math.sin(tNow * 13 + t.ph) + 0.06 * Math.sin(tNow * 31 + t.ph); t.s.material.opacity = 0.42 * f; t.f.scale.y = 0.26 * f; }
+    const sp = P_MOOD.sunPos;
+    sun.position.set(cam.tx + sp[0], sp[1], cam.tz + sp[2]); sun.target.position.set(cam.tx, 0, cam.tz); sun.target.updateMatrixWorld();
+  }
+
   /* ---------- boucle ---------- */
   let lastFrame = 0, emitClock = 0, emberClock = 0;
   const camQ = new THREE.Quaternion();
@@ -2431,7 +3761,7 @@ const V3 = (() => {
     camQ.copy(camera.quaternion);
     for (const [, bar] of wallBars) bar.quaternion.copy(camQ);
     if (waterNormal && waterMesh.visible) { waterNormal.offset.x = (tNow * 0.012) % 1; waterNormal.offset.y = (tNow * 0.007) % 1; }
-    for (const [, r] of blds) {
+    if (!DJ) for (const [, r] of blds) {
       if (r.bar) { r.bar.quaternion.copy(camQ); const up = r.item.up; if (up) setBar(r.bar, up.frac != null ? up.frac : (Date.now() - up.t0) / Math.max(1, up.t1 - up.t0)); }
       if (r.hp) r.hp.quaternion.copy(camQ);
       if (r.glow) r.glow.material.opacity = P_MOOD.glow * (0.85 + 0.15 * Math.sin(tNow * 6 + r.ph) + 0.06 * Math.sin(tNow * 17 + r.ph));
@@ -2452,7 +3782,7 @@ const V3 = (() => {
     }
     anims = anims.filter(a => !a.done);
     emitClock += dt;
-    if (emitClock > 0.55) {
+    if (emitClock > 0.55 && !DJ) {
       emitClock = 0;
       for (const [, r] of blds) {
         if (r.item.dead) { if (Math.random() < 0.5) smokeAt(r.g.position.x, 0.4, r.g.position.z, true); continue; }
@@ -2470,8 +3800,8 @@ const V3 = (() => {
         fxGroup.add(s); embers.push({ s, vy: 0.5 + Math.random() * 0.7, vx: (Math.random() - 0.5) * 0.4, age: 0, life: 1.6 + Math.random() * 1.4 });
       }
     }
-    stepPeople(dt, tNow);
-    for (const [, r] of blds) {
+    if (!DJ) stepPeople(dt, tNow);
+    if (!DJ) for (const [, r] of blds) {
       if (r.burnT > 0) r.burnT -= dt;
       const on = r.burn || r.burnT > 0;
       if (on && !r.fireGlow) { r.fireGlow = makeGlow(0xff7a2a, BLD[r.item.type].size * 2.2, 0.6); r.fireGlow.material.toneMapped = false; r.g.add(r.fireGlow); }
@@ -2526,6 +3856,7 @@ const V3 = (() => {
       if (k >= 1) { sp.done = true; fxGroup.remove(sp.s); sp.s.material.dispose(); }
     }
     for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].done) sparks.splice(i, 1);
+    if (DJ) djTick(dt, tNow);
     renderer.render(scene, camera);
   }
 
@@ -2538,6 +3869,7 @@ const V3 = (() => {
     _bench: () => { const t0 = performance.now(); paintBase(biome); const t1 = performance.now(); paintGround(lastGroundItems); return { base: Math.round(t1 - t0), ground: Math.round(performance.now() - t1) }; },
     _fx: () => ({ flames: flames.length, burning: [...blds.values()].filter(r => r.burn).length, people: people.size, mood, biome }),
     onFrame: f => { frameHook = f; }, onTap: f => { tapHook = f; },
+    dj: { enter: djEnter, exit: djExit, sync: djSync, fx: djFx, active: () => !!DJ },
   };
 })();
 
@@ -2925,6 +4257,236 @@ const SND = (() => {
   };
 })();
 
+/* ===================== DONJONS : interface (entrée, joystick, compétences, bilan) =====================
+   Solo pour l'instant : le combat tourne sur le téléphone (20 pas par seconde) ; le bilan est enregistré au retour au village.
+   Ce fichier ne fait que définir des fonctions : l'application (p4_app) les appelle. */
+let dj = null;
+const DJ_IC = {
+  sword: '<svg viewBox="0 0 24 24"><path d="M14.5 3H21v6.5L10.7 19.8l-2.1-2.1L18.4 8V5.6H16L6.3 15.4l-2.1-2.1z" fill="currentColor"/><path d="m3 17.6 3.4 3.4M6.6 14.6l2.8 2.8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
+  shield: '<svg viewBox="0 0 24 24"><path d="M12 2.5 20 5.5v6c0 5-3.4 8.6-8 10-4.6-1.4-8-5-8-10v-6z" fill="currentColor"/><path d="M12 6v12" stroke="#fff" stroke-opacity=".35" stroke-width="1.6"/></svg>',
+  bolt: '<svg viewBox="0 0 24 24"><path d="M13.5 2 5 13.5h5.5L9.5 22 19 9.5h-5.6z" fill="currentColor"/></svg>',
+  star: '<svg viewBox="0 0 24 24"><path d="m12 2.8 2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z" fill="currentColor"/></svg>',
+  feather: '<svg viewBox="0 0 24 24"><path d="M20.5 3.5C12 3.5 6 9 5.5 17.5l-2 3 1.4.8 1.8-2.9c8.5-.6 13.8-6.5 13.8-14.9z" fill="currentColor"/><path d="M7.5 16.5 15 9" stroke="#fff" stroke-opacity=".45" stroke-width="1.4"/></svg>',
+  arrow: '<svg viewBox="0 0 24 24"><path d="M4 20 18 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M13 4.5h6.5V11z" fill="currentColor"/><path d="M4 16v4h4M6.5 14.5 4 17" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>',
+  flame: '<svg viewBox="0 0 24 24"><path d="M12 2.5c1 3.6 5.5 5.6 5.5 11a5.5 5.5 0 0 1-11 0c0-2.6 1.3-4.3 2.6-5.5.2 1.8 1 2.9 2.2 3.4-.4-3.3.1-6.2.7-8.9z" fill="currentColor"/></svg>',
+  snow: '<svg viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v19M3.8 7.2l16.4 9.6M3.8 16.8l16.4-9.6M9 4.5l3 2.4 3-2.4M9 19.5l3-2.4 3 2.4"/></g></svg>',
+  drop: '<svg viewBox="0 0 24 24"><path d="M12 2.8c3.6 4.6 6.5 8.3 6.5 12a6.5 6.5 0 0 1-13 0c0-3.7 2.9-7.4 6.5-12z" fill="currentColor"/></svg>',
+  eye: '<svg viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z" fill="currentColor"/><circle cx="12" cy="12" r="3.2" fill="#fff" opacity=".7"/></svg>',
+  heart: '<svg viewBox="0 0 20 20"><path d="M10 17.2S2.5 12.6 2.5 7.4C2.5 5 4.3 3.2 6.6 3.2c1.5 0 2.7.8 3.4 2 .7-1.2 1.9-2 3.4-2 2.3 0 4.1 1.8 4.1 4.2 0 5.2-7.5 9.8-7.5 9.8z" fill="currentColor"/></svg>',
+  paw: '<svg viewBox="0 0 24 24"><g fill="currentColor"><ellipse cx="12" cy="16" rx="5" ry="4.2"/><ellipse cx="6" cy="10" rx="2" ry="2.6"/><ellipse cx="18" cy="10" rx="2" ry="2.6"/><ellipse cx="9.3" cy="6.3" rx="2" ry="2.6"/><ellipse cx="14.7" cy="6.3" rx="2" ry="2.6"/></g></svg>',
+  leaf: '<svg viewBox="0 0 24 24"><path d="M20 3C9 3 4 8.5 4 15c0 2 .6 3.7 1.4 5L9 16.4C12.3 13 15 11 18 9.6 14.6 12 12 14.4 9.6 18c1 .5 2.1.8 3.4.8C19 18.8 21 12 20 3z" fill="currentColor"/></svg>',
+  skull: '<svg viewBox="0 0 24 24"><path d="M12 2.5c4.7 0 8 3.3 8 7.6 0 2.5-1.2 4.4-3 5.5V19a1.5 1.5 0 0 1-1.5 1.5h-7A1.5 1.5 0 0 1 7 19v-3.4c-1.8-1.1-3-3-3-5.5 0-4.3 3.3-7.6 8-7.6z" fill="currentColor"/><circle cx="8.8" cy="11" r="2" fill="#000" opacity=".55"/><circle cx="15.2" cy="11" r="2" fill="#000" opacity=".55"/></svg>',
+  potion: '<svg viewBox="0 0 24 24"><path d="M9.5 2.5h5v2h-1v4.2c3 1 5 3.6 5 6.8a6.5 6.5 0 0 1-13 0c0-3.2 2-5.8 5-6.8V4.5h-1z" fill="currentColor"/><path d="M6.6 14h10.8a5.4 5.4 0 0 1-10.8 0z" fill="#fff" opacity=".35"/></svg>',
+};
+const djIco = k => `<span class="ic">${DJ_IC[k] || ''}</span>`;
+const DJ_SK_ICON = { charge: 'sword', tourbillon: 'sword', cri: 'shield', marteau: 'bolt', bouclier: 'shield', consecration: 'star', roulade: 'feather', pluie: 'arrow', percant: 'arrow', boule: 'flame', nova: 'snow', tp: 'feather', ombre: 'feather', poison: 'drop', fumee: 'eye', lumiere: 'heart', chatiment: 'bolt', priere: 'heart', ours: 'paw', loup: 'paw', racines: 'leaf', squelettes: 'skull', drain: 'drop', cadavre: 'skull' };
+
+/* ---------- le menu Donjon ---------- */
+function sheetDonjon() {
+  const v = me, hh = activeHero(v, uid);
+  if (!hh) return '<p class="note">Crée d’abord ton héros.</p><button class="btn primary" data-act="heroForm">Créer mon héros</button>';
+  const top = Math.max(1, hh.dj || 1), pick = Math.min(top, Math.max(1, +sheetArg || top));
+  const lvls = []; for (let l = Math.max(1, top - 5); l <= top; l++) lvls.push(l);
+  let h = `<div class="item feature"><div class="head"><b class="row">${ico('crown', 'c-tro')}${esc(hh.name)}</b><small>${esc(heroLine(hh))}</small></div>
+    <p>${heroesOf(v, uid).length > 1 ? 'C’est ton héros actif. Pour en envoyer un autre, choisis-le dans le menu Héros.' : 'C’est lui qui part. Les donjons à deux arrivent bientôt.'}${hh.sp ? ` <b>${hh.sp} point${hh.sp > 1 ? 's' : ''} de compétence à dépenser</b> (menu Héros).` : ''}</p></div>`;
+  h += `<div class="sec"><h4>La mine des gobelins</h4><div class="item">
+    <p>Des galeries pleines de gobelins, d’archers, de chamans et de trolls, avec leur chef au fond. Chaque victoire ouvre le niveau suivant.</p>
+    <div class="row djlv">${lvls.map(l => `<button class="btn small${l === pick ? ' primary' : ''}" data-act="sheet" data-s="donjon" data-k="${l}" aria-pressed="${l === pick}">Niveau ${l}</button>`).join('')}</div>
+    <p class="note">Niveau ${pick} : conseillé pour un héros de niveau ${pick}${hh.lvl < pick ? ' (le tien est plus faible : prudence)' : ''}. Récompenses : de l’expérience pour ${esc(hh.name)}, de la pierre et du bois pour le village.</p>
+    <button class="btn primary" data-act="djGo" data-k="${pick}">${djIco('sword')}Entrer dans la mine (niveau ${pick})</button></div></div>`;
+  h += `<div class="sec"><h4>Comment ça marche</h4><ul class="help">
+    <li>Pose le pouce sur la gauche de l’écran pour te déplacer. Ton héros attaque tout seul le monstre le plus proche (les chamans d’abord, sinon ils soignent les autres).</li>
+    <li>À droite : tes compétences et ta potion. Une compétence se recharge après usage.</li>
+    <li>En entrant dans une salle, les grilles se ferment jusqu’à la fin des vagues de monstres. Entre deux salles, ton héros reprend son souffle.</li>
+    <li>Le chef troll prévient avant de frapper : sors du cercle rouge et écarte-toi de sa charge (s’il percute un mur, il est sonné).</li>
+    <li>En chemin : des coffres, l’autel des anciens rois, et parfois un prisonnier à délivrer, qui rejoindra le village.</li>
+    <li>Défaite ou fuite : on garde la moitié de l’expérience et du butin.</li></ul></div>`;
+  return h;
+}
+
+/* ---------- entrée et sortie ---------- */
+function djBegin(lvl) {
+  if (!me || dj) return;
+  const hh = activeHero(me, uid); if (!hh) { toast('Crée d’abord ton héros.'); return; }
+  if (!gl) { toast('Les donjons ont besoin de la 3D, indisponible sur cet appareil.'); return; }
+  lvl = Math.max(1, Math.min(hh.dj || 1, lvl | 0 || 1));
+  const seed = hash((Math.floor(now()) ^ hashStr(hh.id)) >>> 0) || 1;
+  const d = genDungeon(seed, lvl, 'mine'), st = djStart(d, [hh], { seed });
+  dj = { st, d, lvl, seed, hid: hh.id, acc: 0, inp: { mx: 0, my: 0, sk: -1, pot: false }, joy: null, keys: {}, els: {}, ended: false, res: null, nocastT: 0 };
+  closeSheet(true); sel = null; selP = null; place = null; modal = null;
+  mode = 'donjon';
+  V3.dj.enter(st, hh.id);
+  djHudBuild();
+  SND.music('battle', 1); SND.sfx('hero');
+  renderAll();
+  toast('La mine des gobelins, niveau ' + lvl + '. Pose le pouce à gauche pour bouger : ' + hh.name + ' attaque tout seul.');
+}
+function djLeave() {
+  if (!dj) return;
+  V3.dj.exit();
+  const el = $('#djHud'); if (el) el.hidden = true;
+  dj = null; modal = null; mode = 'home';
+  SND.music('village', 1);
+  refreshScene(); renderAll();
+}
+function djBack() {
+  if (!dj) return;
+  const r = dj.res || djResult(dj.st), hid = dj.hid, name = (me && me.heroes[hid] || {}).name || 'Ton héros';
+  const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: r.loot, pris: r.pris }, { quiet: true });
+  djLeave();
+  if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
+  else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
+  else if (!res) toast('Le retour n’a pas pu être enregistré.');
+}
+function djEnded() {
+  dj.ended = true; dj.res = djResult(dj.st);
+  const r = dj.res;
+  setTimeout(() => { if (!dj) return; SND.sfx(r.win ? 'victory' : 'defeat'); modal = { kind: 'djres' }; renderAll(); }, r.win ? 900 : 1700);
+}
+function djResHTML() {
+  const r = dj.res || djResult(dj.st), hh = me && me.heroes[dj.hid];
+  const title = r.win ? 'Victoire !' : r.fled ? 'Repli' : 'Défaite…';
+  const lead = r.win ? 'Le chef troll est vaincu et la mine est nettoyée.' : r.fled ? 'Tu as quitté la mine avant la fin : la moitié de l’expérience et du butin.' : 'Ton héros est tombé : il rentre au village avec la moitié de l’expérience et du butin.';
+  const xpH = hh && hh.race === 'humain' ? Math.round(r.xp * 1.1) : r.xp;
+  let up = 0, lv = hh ? hh.lvl : 1, xp = hh ? (hh.xp || 0) + xpH : 0;
+  while (hh && lv < HERO_MAX_LVL && xp >= heroXpNeed(lv)) { xp -= heroXpNeed(lv); lv++; up++; }
+  const mm = Math.floor(r.secs / 60), ss = String(r.secs % 60).padStart(2, '0');
+  return `<p class="eyebrow">La mine des gobelins · niveau ${r.lvl}</p><h2>${title}</h2><p>${lead}</p>
+    <div class="item"><div class="row split"><b>Expérience</b><span class="chip plus">+${fmtN(xpH)}</span></div>
+      ${up ? `<p><b>${esc(hh.name)} passe au niveau ${lv} !</b> ${up > 1 ? up + ' niveaux d’un coup.' : ''} De nouveaux points de compétence l’attendent.</p>` : hh ? `<div class="bar"><i style="width:${Math.min(100, xp / heroXpNeed(lv) * 100).toFixed(0)}%"></i></div>` : ''}
+      <div class="row split"><b>Butin pour le village</b><span class="chips2">${Object.keys(r.loot).length ? rewChips(r.loot) : '<span class="note">rien</span>'}</span></div>
+      ${r.pris ? '<p><b>Un prisonnier délivré</b> : il vous attendra au village, prêt à s’installer.</p>' : ''}
+      <p class="note">${r.kills} monstres vaincus · ${mm} min ${ss}${r.win ? ' · niveau ' + (r.lvl + 1) + ' ouvert' : ''}</p></div>
+    <button class="btn primary" data-act="djBack">Retour au village</button>`;
+}
+
+/* ---------- l'écran de combat : barre de vie, joystick, boutons ---------- */
+function djHudBuild() {
+  let el = $('#djHud');
+  if (!el) { el = document.createElement('div'); el.id = 'djHud'; el.className = 'djhud'; $('#app').appendChild(el); djBind(el); }
+  const h = dj.st.heroes.find(x => x.id === dj.hid), C = CLASSES[h.cls], sk = DJ_SKILLS[h.cls];
+  el.innerHTML = `<div class="djtop">
+      <div class="glass djme"><span class="crest" style="background:${safeColor(h.col)}">${esc(initial(h.name))}</span>
+        <div class="djmet"><b>${esc(h.name)} <small>niv. ${h.lvl}</small></b><div class="djhp"><i id="djHp"></i><em id="djHpT"></em></div></div></div>
+      <div class="glass djinfo" id="djInfo"></div>
+      <button class="glass chipb djflee" data-act="djFlee">Fuir</button></div>
+    <div class="glass djboss" id="djBoss" hidden><b>Chef troll</b><div class="djhp boss"><i id="djBossHp"></i></div></div>
+    <div class="djjoy" id="djJoy"><p class="djhint" id="djHint">Pose le pouce ici pour te déplacer</p></div>
+    <div class="djbase" id="djBase" hidden><div class="djknob" id="djKnob"></div></div>
+    <div class="djbtns">${[0, 1, 2].map(i => { const on = h.rank[i] > 0, name = C.skills[i][0]; return `<button class="djsk${on ? '' : ' lock'}" data-djsk="${i}" aria-label="${esc(name)}"${on ? '' : ' disabled'}>
+        <span class="djico">${djIco(DJ_SK_ICON[sk[i].id])}</span><span class="djcd" id="djCd${i}"></span><small>${on ? esc(name) : 'niv. ' + SKILL_LVLS[i]}</small></button>`; }).join('')}
+      <button class="djsk pot" data-djpot="1" aria-label="Potion"><span class="djico">${djIco('potion')}</span><span class="djcd" id="djCdP"></span><b class="djn" id="djPot"></b><small>Potion</small></button></div>`;
+  dj.els = {};
+  el.hidden = false;
+}
+/* Point touché, dans le repère de l'appli (qui peut être tournée d'un quart de tour). */
+function djPt(e) {
+  const W = window.innerWidth, H = window.innerHeight, r = applyOrientation.rot || 0;
+  return r === 90 ? [e.clientY, W - e.clientX] : r === -90 ? [H - e.clientY, e.clientX] : [e.clientX, e.clientY];
+}
+/* Joystick (repère de l'écran) → direction dans le donjon (la caméra regarde en biais, à 45°). */
+function djJoyVec(jx, jy) { return [0.7071 * (jx - jy), -0.7071 * (jx + jy)]; }
+function djBind(el) {
+  const R = 52;
+  el.addEventListener('pointerdown', e => {
+    if (!dj) return;
+    const b = e.target.closest('[data-djsk],[data-djpot]');
+    if (b) { e.preventDefault(); if (b.disabled) return; if (b.dataset.djpot) dj.inp.pot = true; else dj.inp.sk = +b.dataset.djsk; b.classList.add('press'); setTimeout(() => b.classList.remove('press'), 140); SND.unlock(); return; }
+    if (!e.target.closest('#djJoy') || dj.joy) return;
+    e.preventDefault(); SND.unlock();
+    try { el.setPointerCapture(e.pointerId); } catch (x) { /* rien */ }
+    const [x, y] = djPt(e), base = $('#djBase'), hint = $('#djHint');
+    dj.joy = { id: e.pointerId, x0: x, y0: y };
+    base.hidden = false; base.style.left = x + 'px'; base.style.top = y + 'px'; $('#djKnob').style.transform = '';
+    if (hint) hint.hidden = true;
+  });
+  el.addEventListener('pointermove', e => {
+    if (!dj || !dj.joy || e.pointerId !== dj.joy.id) return;
+    const [x, y] = djPt(e); let dx = x - dj.joy.x0, dy = y - dj.joy.y0; const L = Math.hypot(dx, dy);
+    if (L > R) { dx *= R / L; dy *= R / L; }
+    $('#djKnob').style.transform = `translate(${dx.toFixed(0)}px, ${dy.toFixed(0)}px)`;
+    const k = L < 6 ? 0 : 1, [mx, my] = djJoyVec(dx / R * k, -dy / R * k);
+    dj.inp.mx = mx; dj.inp.my = my;
+  });
+  const up = e => { if (!dj || !dj.joy || e.pointerId !== dj.joy.id) return; dj.joy = null; dj.inp.mx = 0; dj.inp.my = 0; const base = $('#djBase'); if (base) base.hidden = true; };
+  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+}
+/* Clavier (ordinateur) : flèches ou ZQSD/WASD pour bouger, 1 2 3 pour les compétences, 4 ou P pour la potion. */
+const DJ_KEYS = { ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], z: [0, 1], w: [0, 1], s: [0, -1], q: [-1, 0], a: [-1, 0], d: [1, 0] };
+document.addEventListener('keydown', e => {
+  if (!dj || e.target.closest && e.target.closest('input,textarea')) return;
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  if (DJ_KEYS[k]) { dj.keys[k] = 1; e.preventDefault(); }
+  else if (k === '1' || k === '2' || k === '3') dj.inp.sk = +k - 1;
+  else if (k === '4' || k === 'p') dj.inp.pot = true;
+});
+document.addEventListener('keyup', e => { if (!dj) return; const k = e.key.length === 1 ? e.key.toLowerCase() : e.key; delete dj.keys[k]; });
+function djKeyVec() {
+  let jx = 0, jy = 0; for (const k in dj.keys) { const v = DJ_KEYS[k]; if (v) { jx += v[0]; jy += v[1]; } }
+  const L = Math.hypot(jx, jy); if (!L) return null;
+  return djJoyVec(jx / L, jy / L);
+}
+function djHudUpdate() {
+  const st = dj.st, h = st.heroes.find(x => x.id === dj.hid); if (!h) return;
+  const E = id => dj.els[id] || (dj.els[id] = document.getElementById(id));
+  const set = (id, kind, val) => { const el = E(id); if (!el || el['_' + kind] === val) return; el['_' + kind] = val; if (kind === 'w') el.style.width = val; else if (kind === 'cd') el.style.setProperty('--cd', val); else el.textContent = val; };
+  set('djHp', 'w', Math.max(0, h.hp / h.hpMax * 100).toFixed(1) + '%');
+  set('djHpT', 't', h.dead ? 'à terre' : Math.ceil(h.hp) + ' / ' + Math.round(h.hpMax) + (h.shield > 0 ? ' (+' + Math.round(h.shield) + ')' : ''));
+  for (let i = 0; i < 3; i++) set('djCd' + i, 'cd', h.rank[i] && h.cd[i] > 0 ? (h.cd[i] / h.cdMax[i] * 360).toFixed(0) + 'deg' : '0deg');
+  set('djPot', 't', String(h.pot));
+  set('djCdP', 'cd', h.pot <= 0 ? '360deg' : h.potT > 0 ? (h.potT * 360).toFixed(0) + 'deg' : '0deg');
+  const pr = djProgress(st);
+  set('djInfo', 't', st.exit ? 'Sortie ouverte : rejoins la lumière' : pr.boss ? 'Le chef troll' : pr.fighting ? `Salle ${pr.done + 1} sur ${pr.total} · vague ${pr.wave} sur ${pr.waves}` : pr.done >= pr.total ? 'Au fond : le chef troll' : `Salles nettoyées : ${pr.done} sur ${pr.total}`);
+  const bb = E('djBoss'); if (bb && bb.hidden === !!pr.boss) bb.hidden = !pr.boss;
+  if (pr.boss) set('djBossHp', 'w', Math.max(0, pr.boss.hp / pr.boss.hpMax * 100).toFixed(1) + '%');
+}
+const DJ_SFX_ATK = { rodeur: 'shoot', mage: 'bolt', pretre: 'bolt', druide: 'shoot', necro: 'bolt' };
+function djEvents(st) {
+  for (const e of st.ev) {
+    if (gl) V3.dj.fx(e, st);
+    const mine = e.id === dj.hid;
+    switch (e.k) {
+      case 'atk': if (mine) { const h = st.heroes.find(x => x.id === e.id); SND.sfx(h && DJ_SFX_ATK[h.cls] && !h.form ? DJ_SFX_ATK[h.cls] : 'chop'); } break;
+      case 'die': SND.sfx(e.boss ? 'collapse' : 'death'); break;
+      case 'cast': if (mine) SND.sfx('power'); break;
+      case 'nocast': if (mine && performance.now() - dj.nocastT > 1200) { dj.nocastT = performance.now(); toast('Pas de cible à portée pour cette compétence.'); } break;
+      case 'potion': if (mine) SND.sfx('built'); break;
+      case 'chest': SND.sfx('coin'); toast('Coffre : ' + rewTxt(e.got) + '.'); break;
+      case 'loot': toast('Butin du chef : ' + rewTxt(e.got) + '.'); break;
+      case 'altar': SND.sfx('star'); toast('Autel des anciens rois · ' + DJ_BLESS[e.b] + ', jusqu’à la sortie.'); break;
+      case 'free': SND.sfx('invite'); toast('Prisonnier délivré ! Il vous attendra au village.'); break;
+      case 'lock': SND.sfx(e.boss ? 'alarm' : 'wallhit'); if (e.boss) toast('Le chef troll ! Sors du cercle rouge et écarte-toi de sa charge.'); break;
+      case 'wavecome': toast('D’autres monstres sortent des galeries… (vague ' + e.n + ' sur ' + e.of + ')'); break;
+      case 'clear': SND.sfx('star'); if (e.boss) toast('Le chef troll est vaincu ! La sortie est ouverte.'); break;
+      case 'slam': case 'boom': SND.sfx('boom'); break;
+      case 'wall': SND.sfx('wallbreak'); break;
+      case 'trap': if (mine) SND.sfx('wallhit'); break;
+      case 'revive': toast('Increvable : ton héros se relève !'); SND.sfx('power'); break;
+      case 'enrage': SND.sfx('alarm'); break;
+    }
+  }
+  st.ev.length = 0;
+}
+/* À chaque image : la simulation avance par pas de 1/20 s, puis l'affichage suit. */
+function djFrame(dt, tNow) {
+  if (!dj) return;
+  const st = dj.st;
+  if (!st.over) {
+    const kv = djKeyVec(), mx = kv ? kv[0] : dj.inp.mx, my = kv ? kv[1] : dj.inp.my;
+    dj.acc = Math.min(dj.acc + dt, 0.25);
+    let n = 0;
+    while (dj.acc >= DJ_DT && n < 5 && !st.over) {
+      djStep(st, { [dj.hid]: { mx, my, sk: dj.inp.sk, pot: dj.inp.pot } });
+      dj.inp.sk = -1; dj.inp.pot = false; dj.acc -= DJ_DT; n++;
+      djEvents(st);
+    }
+  }
+  V3.dj.sync(st, st.over ? 1 : dj.acc / DJ_DT, dt, tNow);
+  djHudUpdate();
+  if (st.over && !dj.ended) djEnded();
+}
+V3.onFrame(djFrame);
+
 /* ===================== APPLICATION (village commun) ===================== */
 const $ = s => document.querySelector(s);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -3027,7 +4589,7 @@ function act(a, opts) {
   if (!test.ok) { if (!(opts && opts.quiet)) { toast(test.err); SND.sfx('error'); } return null; }
   pending.push(a); recompute(); renderAll(); refreshScene();
   scheduleCommit(150);
-  const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click' }[a.type];
+  const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click', skill: 'star', spec: 'hero' }[a.type];
   if (fx && !(opts && opts.quiet)) SND.sfx(fx);
   return test;
 }
@@ -3077,7 +4639,7 @@ function onVillage(snap) {
   if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
-const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal']);
+const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj']);
 const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal']);
 /* Nouvelles du journal pendant qu'on joue : une bulle pour la plus récente. */
 function newsCheck() {
@@ -3120,7 +4682,7 @@ function peopleOf(v) {
 }
 const placeValid = () => place && fits(me, place.type, place.gx, place.gz, place.kind === 'move' ? place.id : undefined);
 function refreshScene() {
-  if (!gl) return;
+  if (!gl || mode === 'donjon') return;
   V3.setMood('warm');
   const v = me || demoVillage, editable = !!me && mode === 'home';
   V3.setSeason(seasonIdx(v, me ? now() : v.born));
@@ -3303,7 +4865,8 @@ function navBar() {
   return `<nav class="glass nav" aria-label="Menus">
     <button data-act="sheet" data-s="build">${ico('hammer', '')}Construire${canBuild ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="people">${ico('people', '')}Villageois${v.cands.length || idle ? '<span class="dot"></span>' : ''}</button>
-    <button data-act="sheet" data-s="hero">${ico('crown', '')}${myHero ? esc(myHero.name) : 'Héros'}</button>
+    <button data-act="sheet" data-s="hero">${ico('crown', '')}${myHero ? esc(myHero.name) : 'Héros'}${myHero && myHero.sp ? '<span class="dot"></span>' : ''}</button>
+    <button data-act="sheet" data-s="donjon">${djIco('sword')}Donjon</button>
     <button data-act="sheet" data-s="journal">${ico('scroll', '')}Journal${unseen ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="village">${ico('house', '')}Village</button></nav>`;
 }
@@ -3438,13 +5001,14 @@ function heroDetail(v, hh, own) {
   let h = `<div class="sec"><h4>Fiche de ${esc(hh.name)}</h4><div class="item feature">
     <div class="head"><b>${esc(heroLine(hh))}</b><small>${esc(C.role)}</small></div>
     <div class="bar"><i style="width:${xp.toFixed(0)}%"></i></div>
-    <p class="note">Expérience : ${fmtN(hh.xp || 0)} sur ${fmtN(need)}. Elle se gagnera dans les donjons.</p>
+    <p class="note">${hh.lvl >= HERO_MAX_LVL ? 'Niveau maximum atteint.' : 'Expérience : ' + fmtN(hh.xp || 0) + ' sur ' + fmtN(need) + '. Elle se gagne en donjon.'}${hh.runs ? ' Donjons : ' + (hh.wins || 0) + ' victoire' + ((hh.wins || 0) > 1 ? 's' : '') + ' sur ' + hh.runs + '.' : ''}</p>
     <p><b>Race :</b> ${esc(R.desc)} Au village : +25 % en ${esc(SPEC_LABEL[R.spec].toLowerCase())}, +10 % ailleurs. En combat : ${esc(R.passive)}</p>
     <p><b>Classe :</b> ${esc(C.desc)}</p>
     ${own && !act ? `<div class="row"><button class="btn small primary" data-act="heroAct" data-id="${hh.id}">Partir en donjon avec ${esc(hh.name)}</button></div>` : act ? `<p class="note">C’est ${own ? 'ton' : 'le'} héros actif : celui qui part en donjon.</p>` : ''}</div>
-    <div class="item"><b>Compétences</b>${C.skills.map((s, i) => `<p class="${lock(SKILL_LVLS[i])}"><b>${esc(s[0])}</b> · niveau ${SKILL_LVLS[i]} : ${esc(s[1])}</p>`).join('')}
+    <div class="item"><div class="row split"><b>Compétences</b>${own && hh.sp ? `<span class="chip plus">${hh.sp} point${hh.sp > 1 ? 's' : ''} à dépenser</span>` : ''}</div>${C.skills.map((s, i) => { const rk = skillRank(hh, i); return `<div class="row split skrow"><p class="${lock(SKILL_LVLS[i])}"><b>${esc(s[0])}</b>${rk ? ' · rang ' + rk + ' sur 5' : ' · niveau ' + SKILL_LVLS[i]} : ${esc(s[1])}</p>${own && rk && rk < 5 && hh.sp ? `<button class="btn small primary" data-act="skill" data-id="${hh.id}" data-i="${i}" aria-label="Renforcer ${esc(s[0])}">+1</button>` : ''}</div>`; }).join('')}
+    ${own && hh.sp ? '<p class="note">Chaque rang : +15 % de puissance et une recharge un peu plus rapide.</p>' : ''}
     <b>Passifs de classe</b>${C.passives.map((s, i) => `<p class="${lock(PASSIVE_LVLS[i])}"><b>${esc(s[0])}</b> · niveau ${PASSIVE_LVLS[i]} : ${esc(s[1])}</p>`).join('')}
-    <b>Spécialisation au niveau ${SPEC_LVL}</b><p class="${lock(SPEC_LVL)}">${C.specs.map(s => `<b>${esc(s[0])}</b> (${esc(s[1].replace(/\.$/, '').toLowerCase())})`).join(' ou ')}.</p></div>
+    <b>Spécialisation au niveau ${SPEC_LVL}</b>${hh.spec === 0 || hh.spec === 1 ? `<p><b>${esc(C.specs[hh.spec][0])}</b> : ${esc(C.specs[hh.spec][1])}</p>` : own && hh.lvl >= SPEC_LVL ? `<p>Choisis ta voie (pour de bon) :</p><div class="row">${C.specs.map((s, i) => `<button class="btn small primary" data-act="spec" data-id="${hh.id}" data-i="${i}">${esc(s[0])}</button>`).join('')}</div>` : `<p class="${lock(SPEC_LVL)}">${C.specs.map(s => `<b>${esc(s[0])}</b> (${esc(s[1].replace(/\.$/, '').toLowerCase())})`).join(' ou ')}.</p>`}</div>
     <details class="help"><summary>Ce que chaque niveau débloque</summary><ul>${Object.keys(LEVELS).map(l => `<li>Niveau ${l} : ${esc(LEVELS[l])}</li>`).join('')}</ul><p class="note">À chaque niveau : plus de vie et de dégâts, et 1 point pour renforcer la compétence de son choix.</p></details></div>`;
   if (own) {
     const takenBy = to => { const o = heroesAt(v, to).filter(x => x.id !== hh.id); return o.length >= HERO_CAP(to) ? (o.length > 1 ? 'complet' : 'pris : ' + o[0].name) : ''; };
@@ -3470,7 +5034,7 @@ function sheetHero() {
   if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
-const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble' };
+const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown' };
 function sheetJournal() {
   const v = me;
   if (!v.log.length) return '<p class="note">Rien pour l’instant.</p>';
@@ -3517,14 +5081,15 @@ function sheetHelp() {
     + sec('Les villageois', ['Chacun a une note sur 10 dans six spécialités. Sa note dans son métier décide de ce qu’il produit : 1 donne 60 %, 5 normal, 10 donne 50 % de plus.', 'Ils progressent en pratiquant, de plus en plus lentement.', 'Leur caractère compte : un travailleur produit plus, un joyeux remonte le moral, un gourmand mange plus.', 'Des voyageurs se présentent s’il y a une place libre dans les maisons, à manger et un bon moral. Vous avez un jour pour les accueillir.'])
     + sec('Nourriture et saisons', ['Chaque villageois mange une ration par heure : du pain ou de la viande. Des repas variés remontent le moral.', 'Une saison dure 2 jours. En hiver, les champs ne donnent rien : faites des réserves en automne.', 'Sans nourriture, le moral s’effondre, et au bout d’un jour quelqu’un quitte le village.', 'Touchez un champ pour choisir sa culture : blé ou orge. L’orge devient bière à la brasserie ; servie à la taverne, la bière remonte le moral, et il en faut pour les fêtes.'])
     + sec('Construire', ['Les bâtisseurs font avancer les chantiers, plus vite s’ils sont doués en construction. Sans bâtisseur, ça avance quand même un peu.', 'Agrandir la halle débloque des bâtiments, plus de bâtisseurs et plus de chantiers à la fois.'])
-    + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10. Les donjons arrivent à l’étape suivante.']);
+    + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence (menu Héros, bouton +1) ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10.'])
+    + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Le chef troll prévient avant ses coups : sors du cercle rouge.', 'Au retour : de l’expérience pour le héros, de la pierre et du bois pour le village, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs' };
+  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals }[sheet];
+  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon }[sheet];
   setHTML(els.sheetBody, f ? f() : '');
   if (sheet === 'village' && sheetArg === 'feast' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#feastSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
@@ -3596,6 +5161,7 @@ function renderModal() {
   else if (M && M.kind === 'denied') h = `<h2>Accès refusé</h2><p>Le serveur a refusé l’accès au village. Les règles de la base de données ne sont peut-être pas encore à jour, ou ce village a déjà ses deux habitants.</p><button class="btn primary" data-act="reload">Réessayer</button>`;
   else if (M && M.kind === 'info') h = `<h2>${esc(M.title)}</h2><p>${esc(M.text)}</p><button class="btn primary" data-act="closeModal">Compris</button>`;
   else if (M && M.kind === 'newhero' && me) h = heroHTML(true);
+  else if (M && M.kind === 'djres' && dj) h = djResHTML();
   else if (M && M.kind === 'nogl') h = `<h2>La 3D ne s’affiche pas</h2><p>Cet appareil ou ce navigateur ne permet pas l’affichage 3D. Les menus marchent quand même, mais la carte du village reste vide.</p><button class="btn primary" data-act="closeModal">Compris</button>`;
   else if (M && M.kind === 'cand' && me) {
     const c = me.cands.find(x => x.id === M.id);
@@ -3670,6 +5236,11 @@ const ACT = {
   heroForm: () => { closeSheet(true); setMode('hero'); },
   feast: () => { if (act({ type: 'feast' })) toast('C’est la fête à la taverne !'); },
   claim: b => act({ type: 'claim', id: b.dataset.id }),
+  djGo: b => djBegin(+b.dataset.k || 1),
+  djBack: () => djBack(),
+  djFlee: () => { if (dj && !dj.st.over && confirm('Quitter la mine ? Tu gardes la moitié de l’expérience et du butin.')) djFlee(dj.st); },
+  skill: b => { const hh = me.heroes[b.dataset.id], i = +b.dataset.i, r = act({ type: 'skill', hid: b.dataset.id, i }); if (r && hh) toast(CLASSES[hh.cls].skills[i][0] + ' passe au rang ' + r.rank + '.'); },
+  spec: b => { const hh = me.heroes[b.dataset.id], i = +b.dataset.i; if (!hh || !confirm('Choisir la voie « ' + CLASSES[hh.cls].specs[i][0] + ' » ? C’est pour de bon.')) return; if (act({ type: 'spec', hid: hh.id, s: i })) toast(hh.name + ' devient ' + CLASSES[hh.cls].specs[i][0].toLowerCase() + '.'); },
   crop: b => { if (act({ type: 'crop', id: +b.dataset.id, c: b.dataset.c })) toast(b.dataset.c === 'orge' ? 'On sème de l’orge : pour la bière de la brasserie.' : 'On sème du blé : pour la farine et le pain.'); },
   goalsToggle: () => { if (goalsForcedMin()) { sel = null; selP = null; place = null; LS.set('mk2.goalsMin', 0); refreshScene(); } else LS.set('mk2.goalsMin', LS.get('mk2.goalsMin') ? 0 : 1); renderAll(); },
   copyLink: () => { const l = inviteLink(); (navigator.clipboard ? navigator.clipboard.writeText(l) : Promise.reject()).then(() => toast('Lien copié : envoie-le à ta partenaire.')).catch(() => { const i = $('.linkbox'); if (i) { i.select(); try { document.execCommand('copy'); toast('Lien copié.'); } catch (e) { toast('Sélectionne le lien et copie-le.'); } } }); },
@@ -3681,7 +5252,7 @@ const ACT = {
   install: () => { const e = installEvt; if (!e) return; installEvt = null; e.prompt(); (e.userChoice || Promise.resolve()).finally(() => renderAll()); },
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
-const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop']);
+const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (!QUIET.has(b.dataset.act)) SND.sfx('click');
@@ -3722,7 +5293,7 @@ function goalCheck() {
 }
 function tick() {
   if (vsim) {
-    simulateVillage(vsim, now()); recompute(); newsCheck(); goalCheck();
+    simulateVillage(vsim, now()); recompute(); if (mode !== 'donjon') newsCheck(); goalCheck();
     if (!pending.length && !committing && vraw && now() - Math.max(vraw.t, lastSync) > 20 * 60000) { pending.push({ type: 'sync' }); scheduleCommit(50); }
     candCheck();
   }
@@ -3826,7 +5397,7 @@ async function joinVillage(pname) {
   } catch (e) { formErr('#jErr', e && e.code === 'not_granted' ? 'Impossible de rejoindre : ce village a peut-être déjà ses deux habitants.' : 'Ça n’a pas marché. Réessaie.'); }
   busy = false; renderAll();
 }
-if (window.MK_TEST) window.__mk = { get me() { return me; }, get mode() { return mode; }, get vid() { return vid; }, toScreen: (x, z) => gl ? V3.toScreen(x, z) : null, act: (a, o) => act(a, o), fx: () => gl ? V3._fx() : null, simAt: T => vraw ? JSON.stringify(simulateVillage(clone(vraw), T)) : null, now: () => now(), get busy() { return pending.length + (committing ? 1 : 0); } };
+if (window.MK_TEST) window.__mk = { get me() { return me; }, get mode() { return mode; }, get vid() { return vid; }, toScreen: (x, z) => gl ? V3.toScreen(x, z) : null, act: (a, o) => act(a, o), fx: () => gl ? V3._fx() : null, simAt: T => vraw ? JSON.stringify(simulateVillage(clone(vraw), T)) : null, now: () => now(), get busy() { return pending.length + (committing ? 1 : 0); }, get dj() { return dj; }, djBegin: l => djBegin(l) };
 async function boot() {
   const cv = $('#gl');
   gl = typeof THREE !== 'undefined' && V3.init(cv);

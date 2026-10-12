@@ -263,6 +263,18 @@ function heroBonus(v, target, spec) {
   return k;
 }
 const heroesAt = (v, target) => Object.values(v.heroes || {}).filter(h => h && h.at === target);
+/* Rang d'une compétence (0 = pas encore ouverte, puis 1 à 5) ; points dépensés dans hero.sk = { s0, s1, s2 }. */
+const skillRank = (h, i) => h.lvl >= SKILL_LVLS[i] ? 1 + Math.max(0, Math.min(4, (h.sk && h.sk['s' + i]) | 0)) : 0;
+const DJ_XP_CAP = lvl => Math.round(1500 * (1 + 0.25 * (lvl - 1)));      // garde-fou : expérience maximale d'un donjon
+/* Prisonnier délivré : un villageois expérimenté (9 dans sa spécialité, au moins 5 ailleurs) qui voudrait s'installer. */
+function prisonerOf(v, t) {
+  const taken = new Set(v.vil.map(x => x.name).concat(v.cands.map(x => x.name)));
+  const p = genVillager(hash((v.seed ^ Math.imul(v.nid + 13, 2654435761)) >>> 0), t, v.nid++, taken);
+  const fav = bestSpec(p);
+  for (const s of SPEC) p.st[s] = Math.max(p.st[s], 5);
+  p.st[fav] = Math.max(p.st[fav], 9); p.pris = 1;
+  return p;
+}
 
 /* ---------- villageois ---------- */
 function genVillager(seed, t, id, taken) {
@@ -473,7 +485,7 @@ function applyV(v, a, who) {
       if (!RACES[a.race] || !CLASSES[a.cls]) return fail('Choisis une race et une classe.');
       const name = String(a.name || '').trim().slice(0, 18); if (!name) return fail('Donne un nom à ton héros.');
       const n = v.nid++, id = 'h' + n, sex = a.sex === 'f' ? 'f' : 'm';
-      v.heroes[id] = { id, n, own: who.uid, name, race: a.race, cls: a.cls, sex, col: COLORS.includes(a.col) ? a.col : COLORS[0], lvl: 1, xp: 0, sp: 0, sk: {}, spec: null, at: null };
+      v.heroes[id] = { id, n, own: who.uid, name, race: a.race, cls: a.cls, sex, col: COLORS.includes(a.col) ? a.col : COLORS[0], lvl: 1, xp: 0, sp: 0, sk: {}, spec: null, at: null, dj: 1 };
       if (!activeHero(v, who.uid) || !v.members[who.uid].hero) v.members[who.uid].hero = id;
       addLog(v, t, name + ', ' + raceName(a.race, sex).toLowerCase() + ' ' + className(a.cls, sex).toLowerCase() + ', ' + (mine.length ? 'rejoint la compagnie de ' + nm : 'arrive au village') + '.', 'hero');
       return { ok: true, id };
@@ -583,6 +595,50 @@ function applyV(v, a, who) {
       if (cropOf(b) === a.c) return { ok: true };
       b.crop = a.c;
       addLog(v, t, nm + ' sème ' + (a.c === 'orge' ? 'de l’orge' : 'du blé') + ' dans un champ.', 'crop');
+      return { ok: true };
+    }
+    case 'djEnd': {
+      /* Retour de donjon : expérience (et niveaux) pour le héros, butin pour le village, niveau suivant ouvert, prisonnier délivré. */
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      const L = Math.max(1, Math.min(99, a.lvl | 0)), win = !!a.win;
+      let xp = Math.max(0, Math.min(DJ_XP_CAP(L), Math.round(+a.xp || 0)));
+      if (hh.race === 'humain') xp = Math.round(xp * 1.1);                 // Apprend vite
+      const lv0 = hh.lvl;
+      hh.xp = (hh.xp || 0) + xp;
+      while (hh.lvl < HERO_MAX_LVL && hh.xp >= heroXpNeed(hh.lvl)) { hh.xp -= heroXpNeed(hh.lvl); hh.lvl++; hh.sp = (hh.sp || 0) + (hh.lvl === 9 ? 2 : 1); }
+      if (hh.lvl >= HERO_MAX_LVL) hh.xp = Math.min(hh.xp, heroXpNeed(hh.lvl));
+      if (win) hh.dj = Math.max(hh.dj || 1, Math.min(99, L + 1));
+      hh.runs = (hh.runs || 0) + 1; if (win) hh.wins = (hh.wins || 0) + 1;
+      const cap = capOf(v), got = {};
+      for (const k of ['bois', 'pierre', 'viande', 'pain', 'biere']) {
+        const n = Math.max(0, Math.min(3000, Math.round(+((a.loot || {})[k]) || 0))); if (!n) continue;
+        const before = v.r[k] || 0; v.r[k] = Math.min(Math.max(cap, before), before + n); got[k] = Math.round(v.r[k] - before);
+        if (!got[k]) delete got[k];
+      }
+      const pris = a.pris ? prisonerOf(v, t) : null;
+      if (pris) v.cands.push(pris);
+      const up = hh.lvl - lv0;
+      addLog(v, t, hh.name + (win ? ' revient vainqueur de la mine des gobelins' : ' a dû fuir la mine des gobelins') + ' (niveau ' + L + ') : +' + xp + ' d’expérience' + (Object.keys(got).length ? ', ' + rewTxt(got) : '') + '.' + (up ? ' ' + hh.name + ' passe au niveau ' + hh.lvl + ' !' : ''), 'dj');
+      if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + ' du cachot de la mine, voudrait s’installer au village.', 'cand');
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj };
+    }
+    case 'skill': {
+      /* Un point de compétence : +1 rang (5 au plus) à une compétence déjà ouverte. */
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      const i = a.i | 0; if (i < 0 || i > 2) return fail('Compétence inconnue.');
+      if (hh.lvl < SKILL_LVLS[i]) return fail('Cette compétence s’ouvre au niveau ' + SKILL_LVLS[i] + '.');
+      if ((hh.sp || 0) < 1) return fail('Plus de point de compétence : il faut gagner un niveau.');
+      const k = 's' + i, cur = (hh.sk && hh.sk[k]) || 0; if (cur >= 4) return fail('Cette compétence est déjà au rang maximum (5).');
+      hh.sk = Object.assign({}, hh.sk, { [k]: cur + 1 }); hh.sp -= 1;
+      return { ok: true, rank: cur + 2 };
+    }
+    case 'spec': {
+      /* Spécialisation, au niveau 10 : une des deux voies de la classe, pour de bon. */
+      const hh = v.heroes[a.hid]; if (!hh || hh.own !== who.uid) return fail('Ce héros n’est pas à toi.');
+      if (hh.lvl < SPEC_LVL) return fail('La spécialisation s’ouvre au niveau ' + SPEC_LVL + '.');
+      if (hh.spec === 0 || hh.spec === 1) return fail('Spécialisation déjà choisie.');
+      const sIdx = a.s === 1 ? 1 : 0; hh.spec = sIdx;
+      addLog(v, t, hh.name + ' choisit sa voie : ' + CLASSES[hh.cls].specs[sIdx][0].toLowerCase() + '.', 'hero');
       return { ok: true };
     }
     case 'claim': {

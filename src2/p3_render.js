@@ -782,12 +782,12 @@ const V3 = (() => {
       if (!gest) return;
       if (gest.k === 'one' && ptrs.size === 1) {
         if (!gest.moved && Math.hypot(x - gest.x0, y - gest.y0) > 8) gest.moved = true;
-        if (gest.moved) { panBy(x - gest.lx, y - gest.ly); gest.lx = x; gest.ly = y; }
+        if (gest.moved) { if (!DJ) panBy(x - gest.lx, y - gest.ly); gest.lx = x; gest.ly = y; }
       } else if (gest.k === 'two' && ptrs.size >= 2) {
         const [a, b] = [...ptrs.values()];
         const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
         cam.view = Math.max(VMIN, Math.min(VMAX, gest.v0 * gest.d0 / d)); frustum();
-        panBy(mx - gest.mx, my - gest.my); gest.mx = mx; gest.my = my;
+        if (!DJ) panBy(mx - gest.mx, my - gest.my); gest.mx = mx; gest.my = my;
       }
     });
     const up = e => {
@@ -1578,6 +1578,7 @@ const V3 = (() => {
   /* ---------- ambiances : chaude au village, sombre en attaque ---------- */
   const MOODS = {
     warm: { exp: 0.88, bg: 0xb7d0de, fog: 0xc8dae3, near: 75, far: 175, sun: 0xffeccc, sunI: 2.0, sunPos: [-26, 30, 18], hemiS: 0xcfe0f2, hemiG: 0x5e5032, hemiI: 0.55, ground: 0xffffff, win: 0xffd28a, glow: 0.18, embers: false, env: [0xbfd9ef, 0xf3e7cf, 0x6f6a4a], envI: 0.6, bio: 'green' },
+    donjon: { exp: 1.0, bg: 0x0a0b0f, fog: 0x0a0b0f, near: 64, far: 104, sun: 0xa9b8ff, sunI: 0.6, sunPos: [-14, 30, 10], hemiS: 0x5a6680, hemiG: 0x1c1814, hemiI: 0.62, ground: 0xffffff, win: 0xffa040, glow: 0.4, embers: false, env: [0x2a3040, 0x2a2826, 0x101010], envI: 0.35, bio: null },
     dark: { exp: 0.8, bg: 0x1a2032, fog: 0x1d2437, near: 58, far: 125, sun: 0xa9b8ff, sunI: 1.3, sunPos: [26, 32, -8], hemiS: 0x7d8cc6, hemiG: 0x2b2a36, hemiI: 0.8, ground: 0xe4e9f4, win: 0xffa040, glow: 0.55, embers: true, env: [0x2a3558, 0x3a4566, 0x1c1d26], envI: 0.5, bio: 'snow' },
   };
   let P_MOOD = MOODS.warm;
@@ -1601,7 +1602,7 @@ const V3 = (() => {
     hemi.color.copy(lin(Q.hemiS)); hemi.groundColor.copy(lin(Q.hemiG)); hemi.intensity = Q.hemiI;
     groundMat.color.copy(lin(Q.ground)); winMat.color.copy(lin(Q.win));
     renderer.toneMappingExposure = Q.exp;
-    try { scene.environment = makeEnv(m, Q.env); setBiome(m === 'warm' ? seasonBiome : Q.bio); } catch (e) { console.error('ambiance', e); }
+    try { scene.environment = makeEnv(m, Q.env); if (Q.bio !== null) setBiome(m === 'warm' ? seasonBiome : Q.bio); } catch (e) { console.error('ambiance', e); }
     if (!Q.embers) { for (const e of embers) fxGroup.remove(e.s); embers.length = 0; }
   }
 
@@ -1685,6 +1686,402 @@ const V3 = (() => {
     return out;
   }
 
+  /* ---------- donjon : décor simple (sols, murs, grilles), personnages et effets ----------
+     Une case du donjon (x, y) est dessinée en (x − half, y − half) : les effets du village (burst, wave, spark…) servent tels quels.
+     Visuels provisoires, en attendant les modèles Meshy (murs et sols peints, portes, coffres, torches). */
+  const djGroup = new THREE.Group();
+  let DJ = null;
+  const djHidden = () => [terrainGroup, decoGroup, forestGroup, decoProc, lifeGroup, bldGroup, unitGroup, wallGroup, rangeGroup];
+  const DJ_U = {
+    gobelin: { m: 'barbarian', tex: 'orc_barbarian', show: ['1H_Axe'], atk: '1H_Melee_Attack_Chop', h: 0.95, w: 1.05 },
+    archer: { m: 'rogue', tex: 'orc_rogue', show: ['2H_Crossbow'], atk: '2H_Ranged_Shoot', h: 0.95, w: 0.95 },
+    chaman: { m: 'rogue', tex: 'orc_rogue', tint: 0xd2b8ff, show: ['Throwable'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.95, w: 0.95 },
+    troll: { m: 'barbarian', tex: 'troll', show: ['2H_Axe'], atk: '2H_Melee_Attack_Chop', h: 1.9, w: 1.3 },
+    chefTroll: { m: 'barbarian', tex: 'troll', show: ['2H_Axe', 'Barbarian_Hat'], atk: '2H_Melee_Attack_Chop', h: 2.6, w: 1.45 },
+    skel: { m: 'knight', tint: 0xf2eee2, show: ['1H_Sword'], atk: '1H_Melee_Attack_Chop', h: 0.95, w: 0.9 },
+  };
+  const DJ_HERO_ATK = { guerrier: '1H_Melee_Attack_Chop', paladin: '1H_Melee_Attack_Chop', rodeur: '2H_Ranged_Shoot', voleur: '1H_Melee_Attack_Slice_Diagonal' };
+  const DJ_CAST_ANIM = { tourbillon: 'spin', cri: 'cheer', bouclier: 'cheer', consecration: 'cheer', poison: 'cheer', fumee: 'cheer', lumiere: 'cheer', priere: 'cheer', ours: 'cheer', loup: 'cheer', racines: 'cheer', squelettes: 'cheer', nova: 'cheer' };
+  const DJ_SHOT = { arrow: 0x3a2a1e, fire: 0xff7a2a, holy: 0xffe08a, thorn: 0x7bd36a, shadow: 0xa070ff, curse: 0xb05cff };
+  const DJ_FX = { steel: 0xe8e8e8, ice: 0x9fe3ff, root: 0x7bd36a, fire: 0xff7a2a, bone: 0xe8e0c8 };
+  function djSimple(color, h) {
+    const g = new THREE.Group(), body = new THREE.Group();
+    body.add(P('cyl8', color, 0.5 * h, 0.7 * h, 0.5 * h, 0, 0, 0)); body.add(P('sph', color, 0.42 * h, 0.42 * h, 0.42 * h, 0, 0.7 * h, 0));
+    g.add(body); g.userData = { body, A: {}, mixer: null };
+    return g;
+  }
+  function djModel(def) {
+    const src = LIB.ch[def.m];
+    if (!src || !THREE.SkeletonUtils) return djSimple(def.tex === 'troll' ? 0x6f7f9a : 0x6f8f3a, def.h);
+    const obj = THREE.SkeletonUtils.clone(src.scene), have = new Set();
+    obj.traverse(o => {
+      if (GEAR_NAMES.has(o.name)) { o.visible = def.show.includes(o.name); if (o.visible) have.add(o.name); }
+      if (o.isMesh) {
+        o.castShadow = true; o.receiveShadow = false; o.frustumCulled = false;
+        if (!GEAR_NAMES.has(o.name)) { if (def.tex && LIB.tex[def.tex]) o.material = skinMat(o.material, def.tex); if (def.tint) o.material = tintMat(o.material, def.tint); }
+      }
+    });
+    for (const n of def.show) { const G2 = LIB.gear[n]; if (have.has(n) || !G2) continue; let bone = null; obj.traverse(o => { if (!bone && o.name === G2.parent) bone = o; }); if (bone) { const c = G2.obj.clone(); c.visible = true; bone.add(c); } }
+    const k = def.h / src.h; obj.scale.set(k * def.w, k, k * def.w);
+    const g = new THREE.Group(), body = new THREE.Group(); body.add(obj); g.add(body);
+    const mixer = new THREE.AnimationMixer(obj), act = n => LIB.clips[n] ? mixer.clipAction(LIB.clips[n]) : null;
+    g.userData = { body, mixer, A: { idle: act('Idle'), walk: act('Walking_A'), atk: act(def.atk), death: act('Death_A') }, cur: null };
+    return g;
+  }
+  function djRing(color, s, op) { const m = new THREE.Mesh(geo('plane'), basic(color, { transparent: true, opacity: op || 0.6, depthWrite: false })); m.scale.set(s, 1, s); m.position.y = 0.03; m.renderOrder = 2; return m; }
+  function djPrepAnims(g) {
+    const A = g.userData.A || {};
+    if (A.death) { A.death.setLoop(THREE.LoopOnce); A.death.clampWhenFinished = true; }
+    for (const k of ['atk', 'spin', 'cheer']) if (A[k]) { A[k].setLoop(THREE.LoopOnce); A[k].clampWhenFinished = true; }
+  }
+  function djHeroRec(h) {
+    let g = LIB.ok ? makePerson({ kind: 'hero', race: h.race, cls: h.cls, sex: h.sex, col: h.col, name: h.name }) : null;
+    if (!g) { g = djSimple(0xd9c7a0, 1.1); g.add(djRing(h.col || COLORS[0], 0.85, 0.75)); }
+    const U = g.userData;
+    if (U.mixer) { const act = n => LIB.clips[n] ? U.mixer.clipAction(LIB.clips[n]) : null; U.A.atk = act(DJ_HERO_ATK[h.cls] || '1H_Melee_Attack_Slice_Diagonal'); U.A.death = act('Death_A'); U.A.spin = act('2H_Melee_Attack_Spin'); }
+    djPrepAnims(g);
+    const mats = []; g.traverse(o => { if (o.isMesh && o.material && !o.material.isSpriteMaterial && o.geometry !== geo('plane')) { o.material = o.material.clone(); mats.push(o.material); } });
+    const bar = makeBar(0.8, 0x6fd35a); bar.position.y = 1.72; g.add(bar);
+    return { g, kind: 'hero', bar, mats, atkN: 0, castN: 0, atkT: -9, castT: -9, cast: '', lx: h.x, ly: h.y, scale: 1 };
+  }
+  function djMobRec(m) {
+    const def = DJ_U[m.type] || DJ_U.gobelin, g = djModel(def);
+    djPrepAnims(g);
+    g.add(djRing(m.boss ? 0xff3a2a : 0xb8402e, m.r * 2.2, m.boss ? 0.7 : 0.5));
+    const bar = makeBar(m.boss ? 1.6 : m.big ? 1.1 : 0.7, m.boss ? 0xff5a3c : 0xd9483b); bar.position.y = def.h + 0.35; bar.visible = false; g.add(bar);
+    if (m.boss) { const gl2 = makeGlow(0xff4a2a, 3.2, 0.4); gl2.material.opacity = 0.35; g.add(gl2); g.userData.aura = gl2; }
+    return { g, kind: 'mob', bar, atkN: m.atkN, atkT: -9, lx: m.x, ly: m.y, h: def.h };
+  }
+  function djAllyRec(a) {
+    let g;
+    if (a.kind === 'skel') { g = djModel(DJ_U.skel); djPrepAnims(g); g.add(djRing(0xa070ff, 0.6, 0.45)); }
+    else {
+      /* le familier : une petite bête toute simple, en attendant son modèle */
+      g = new THREE.Group(); const body = new THREE.Group();
+      body.add(P('box', 0x8a7a66, 0.32, 0.22, 0.5, 0, 0.12, 0)); body.add(P('box', 0x8a7a66, 0.24, 0.22, 0.22, 0, 0.26, 0.3));
+      body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, -0.07, 0.48, 0.3)); body.add(P('cone4', 0x5e5144, 0.08, 0.12, 0.08, 0.07, 0.48, 0.3));
+      g.add(body); g.userData = { body, A: {}, mixer: null };
+    }
+    const bar = makeBar(0.5, 0xb48cff); bar.position.y = 1.3; bar.visible = false; g.add(bar);
+    return { g, kind: a.kind, bar, atkN: a.atkN, atkT: -9, lx: a.x, ly: a.y };
+  }
+  function djPlay(r, name, speed, restart) {
+    const U = r.g.userData, a = U.A && U.A[name]; if (!a) return;
+    if (speed) a.timeScale = speed;
+    if (U.cur === a && !restart) return;
+    if (U.cur && U.cur !== a) U.cur.fadeOut(0.12);
+    a.reset().fadeIn(0.12).play(); U.cur = a;
+  }
+  /* Position (entre deux pas de simulation), orientation, animation. */
+  function djPose(r, e, alpha, tNow) {
+    const x = e.px + (e.x - e.px) * alpha, y = e.py + (e.y - e.py) * alpha, dx = x - r.lx, dy = y - r.ly;
+    r.g.position.set(x - half, 0, y - half);
+    if (dx * dx + dy * dy > 1e-6 && e.mv) r.g.rotation.y = Math.atan2(dx, dy);
+    else if (e.fx || e.fy) { const want = Math.atan2(e.fx, e.fy); let d = want - r.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); r.g.rotation.y += d * 0.35; }
+    r.lx = x; r.ly = y;
+    if (e.atkN !== r.atkN) { r.atkN = e.atkN; r.atkT = tNow; if (r.g.userData.A && r.g.userData.A.atk) djPlay(r, 'atk', (r.g.userData.A.atk.getClip().duration / 0.55), true); }
+    if (e.dead) { if (!r.down) { r.down = true; djPlay(r, 'death', 1.2, true); } return; }
+    if (r.down) { r.down = false; djPlay(r, 'idle', 1, true); }
+    if (tNow - r.atkT < 0.55 || (r.castT != null && tNow - r.castT < 0.7)) return;
+    if (e.mv) djPlay(r, 'walk', e.kind === 'hero' ? 0.9 : e.big ? 0.55 : 0.75); else djPlay(r, 'idle', 1);
+  }
+  function djBar(r, f, show) { r.bar.visible = show; if (show) { setBar(r.bar, f); r.bar.quaternion.copy(r.g.quaternion).invert().multiply(camera.quaternion); } }   // face à la caméra malgré la rotation du personnage
+
+  /* Entrée dans le donjon : le village disparaît, le décor du donjon est construit. me = id du héros suivi par la caméra. */
+  function djEnter(st, me) {
+    if (!ok) return;
+    if (DJ) djExit();
+    const d = st.d, W = d.W, H = d.H;
+    DJ = { st, me, ents: new Map(), shots: new Map(), zones: new Map(), dying: [], nums: [], teles: [], torches: [], frame: 0, doorSig: '', doorCells: [], disp: [], exit: null, t: 0, rain: 0 };
+    for (const g of djHidden()) g.visible = false;
+    selMesh.visible = false; ghostMesh.visible = false; zoneMesh.visible = false; gridMesh.visible = false;
+    if (!djGroup.parent) scene.add(djGroup);
+    djGroup.visible = true;
+    const keep = o => { DJ.disp.push(o); return o; };
+    const isFloor = (x, y) => x >= 0 && y >= 0 && x < W && y < H && d.grid[y * W + x] === 1;
+    /* Sol : une dalle par case, nuances au hasard (les couloirs un peu plus sombres). */
+    const floors = [], tall = [], low = [];
+    const roomAt = st.roomAt;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      if (isFloor(x, y)) { floors.push([x, y, roomAt[y * W + x] >= 0]); continue; }
+      let near = false; for (const [ox, oy] of DJ_D8) if (isFloor(x + ox, y + oy)) { near = true; break; }
+      if (!near) continue;
+      /* Murs côté caméra (au sud et à l'est d'un sol) : bas, pour ne pas cacher les héros. */
+      (isFloor(x - 1, y) || isFloor(x, y - 1) || isFloor(x - 1, y - 1) ? low : tall).push([x, y]);
+    }
+    const m4 = new THREE.Matrix4(), col = new THREE.Color(), q0 = new THREE.Quaternion(), v3 = new THREE.Vector3(), s3 = new THREE.Vector3();
+    const inst = (g, material, list, place, colorOf, shadow) => {
+      const im = new THREE.InstancedMesh(g, material, list.length);
+      list.forEach((it, i) => { place(it, v3, s3); m4.compose(v3, q0, s3); im.setMatrixAt(i, m4); if (colorOf) im.setColorAt(i, colorOf(it, i, col)); });
+      im.instanceMatrix.needsUpdate = true; if (im.instanceColor) im.instanceColor.needsUpdate = true;
+      im.castShadow = !!shadow; im.receiveShadow = true; djGroup.add(keep(im)); return im;
+    };
+    const fMat = keep(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 }));
+    inst(geo('box'), fMat, floors, (f, p, s) => { p.set(f[0] + 0.5 - half, -0.2, f[1] + 0.5 - half); s.set(0.98, 0.2, 0.98); },
+      (f, i, c) => { const n = hash2(f[0] * 7, f[1] * 13); return c.copy(lin(f[2] ? (n < 0.5 ? 0x6b645a : n < 0.85 ? 0x625b52 : 0x736b5f) : (n < 0.6 ? 0x4f4a44 : 0x57514a))); });
+    const wMat = keep(new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0 }));
+    const wallCol = (w, i, c) => c.copy(lin(hash2(w[0] * 5, w[1] * 3) < 0.5 ? 0x5d564d : 0x534d45));
+    if (tall.length) inst(geo('box'), wMat, tall, (w, p, s) => { p.set(w[0] + 0.5 - half, 0, w[1] + 0.5 - half); s.set(1, 1.5, 1); }, wallCol, true);
+    if (low.length) inst(geo('box'), wMat, low, (w, p, s) => { p.set(w[0] + 0.5 - half, 0, w[1] + 0.5 - half); s.set(1, 0.35, 1); }, wallCol, false);
+    /* Torches sur les murs du fond (de simples lueurs qui vacillent). */
+    tall.forEach(([x, y], i) => {
+      if (hash2(x * 31, y * 17) > 0.12) return;
+      const fx = isFloor(x + 1, y) ? 0.55 : isFloor(x, y + 1) ? 0 : 0.5, fz = isFloor(x, y + 1) ? 0.55 : 0;
+      const t = makeGlow(0xffa040, 1.6, 1.15); t.position.set(x + 0.5 - half + fx, 1.15, y + 0.5 - half + fz); djGroup.add(t);
+      const f = P('cone6', fireMat, 0.12, 0.26, 0.12, t.position.x, 1.0, t.position.z, 0, true); djGroup.add(f);
+      DJ.torches.push({ s: t, f, ph: i * 1.7 });
+    });
+    /* Grilles magiques sur les entrées des salles (visibles quand le combat les ferme). */
+    const cells = []; st.doors.forEach(list => list.forEach(k => { if (!cells.includes(k)) cells.push(k); }));
+    DJ.doorCells = cells;
+    if (cells.length) {
+      const dm = keep(new THREE.MeshBasicMaterial({ color: lin(0xff8a3a), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false }));
+      DJ.doorMesh = inst(geo('box'), dm, cells, (k, p, s) => { p.set(k % W + 0.5 - half, 0, Math.floor(k / W) + 0.5 - half); s.set(0, 0, 0); }, null, false);
+      DJ.doorMat = dm;
+    }
+    /* Pièges à pointes. */
+    if (st.traps.length) {
+      inst(geo('box'), mat(0x3d3934), st.traps, (t, p, s) => { p.set(t.x + 0.5 - half, -0.02, t.y + 0.5 - half); s.set(0.82, 0.05, 0.82); }, null, false);
+      const spikes = []; st.traps.forEach((t, i) => { for (const [ox, oz] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2], [0, 0]]) spikes.push([i, t.x + 0.5 + ox, t.y + 0.5 + oz]); });
+      DJ.spikes = spikes; DJ.spikeMesh = inst(geo('cone6'), mat(0xb8bcc0), spikes, (sp, p, s) => { p.set(sp[1] - half, -0.5, sp[2] - half); s.set(0.12, 0.45, 0.12); }, null, false);
+    }
+    /* Coffres, autel, prisonnier. */
+    DJ.chests = st.chests.map(c => {
+      const g = new THREE.Group(); g.position.set(c.x - half, 0, c.y - half); g.rotation.y = Math.PI / 4;
+      g.add(P('box', 0x7a5230, 0.62, 0.38, 0.44, 0, 0, 0)); g.add(P('box', 0xd9b54c, 0.64, 0.06, 0.46, 0, 0.18, 0, 0, true));
+      const lid = piv(0, 0.38, -0.22, [P('box', 0x6a4426, 0.64, 0.16, 0.46, 0, 0, 0.22)]); g.add(lid);
+      const glow = makeGlow(0xffd27a, 1.3, 0.45); g.add(glow); djGroup.add(g);
+      return { g, lid, glow, open: false };
+    });
+    if (st.altar) {
+      const g = new THREE.Group(); g.position.set(st.altar.x - half, 0, st.altar.y - half);
+      g.add(P('cyl8', 0x8a857c, 0.7, 0.25, 0.7, 0, 0, 0)); g.add(P('cyl8', 0x9c968c, 0.42, 0.75, 0.42, 0, 0.25, 0));
+      const orb = makeGlow(0x7ab8ff, 1.6, 1.25); g.add(orb); const core = P('sph', basic(0xbfe0ff), 0.28, 0.28, 0.28, 0, 1.12, 0, 0, true); g.add(core);
+      djGroup.add(g); DJ.altar = { g, orb, core };
+    }
+    if (st.pris) {
+      const g = (LIB.ok && makePerson({ kind: 'vil', race: 'humain', sex: hash2(d.seed, 3) < 0.5 ? 'm' : 'f', job: null, name: '' })) || djSimple(0xc9a27a, 1);
+      g.position.set(st.pris.x - half, 0, st.pris.y - half); g.rotation.y = Math.PI / 4;
+      const chains = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.05, 6, 16), mat(0x3c3c40)); chains.rotation.x = Math.PI / 2; chains.position.y = 0.55; g.add(chains);
+      const mark = makeGlow(0xfff0a0, 0.9, 1.9); g.add(mark);
+      djGroup.add(g); DJ.pris = { g, chains, mark, t: 0 };
+    }
+    /* Lumière chaude qui suit le héros. */
+    DJ.light = new THREE.PointLight(0xffb066, 1.5, 13, 1.6); djGroup.add(DJ.light);
+    setMood('donjon');
+    cam.view = aspect < 0.8 ? 17 : 12.5; frustum();
+    const hh = st.heroes.find(x => x.id === me) || st.heroes[0];
+    if (hh) { cam.tx = hh.x - half; cam.tz = hh.y - half; }
+  }
+  function djExit() {
+    if (!DJ) return;
+    clearGroup(djGroup);
+    for (const o of DJ.disp) { if (o.dispose) o.dispose(); if (o.geometry && o.geometry !== geo('box') && o.geometry !== geo('cone6')) o.geometry.dispose(); }
+    for (const s of shots) fxGroup.remove(s.m); shots.length = 0;
+    DJ = null; djGroup.visible = false;
+    for (const g of djHidden()) g.visible = true;
+    sun.target.position.set(0, 0, 0); sun.target.updateMatrixWorld();
+    mood = ''; setMood('warm'); resetCamera();
+  }
+  function djNum(x, y, text, color, big) {
+    if (!DJ) return;
+    let n = DJ.nums.find(q => !q.on);
+    if (!n) {
+      if (DJ.nums.length >= 24) n = DJ.nums.reduce((a, b) => (a.t > b.t ? a : b));
+      else {
+        const c = document.createElement('canvas'); c.width = 128; c.height = 48;
+        const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false }));
+        sp.renderOrder = 12; djGroup.add(sp); n = { sp, c, tex }; DJ.nums.push(n);
+      }
+    }
+    const g2 = n.c.getContext('2d'); g2.clearRect(0, 0, 128, 48);
+    g2.font = (big ? '800 34px' : '800 27px') + ' system-ui, sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle';
+    g2.lineWidth = 6; g2.strokeStyle = 'rgba(0,0,0,0.7)'; g2.strokeText(text, 64, 25); g2.fillStyle = color; g2.fillText(text, 64, 25);
+    n.tex.needsUpdate = true; n.on = true; n.t = 0;
+    const k = big ? 1.5 : 1.1; n.sp.scale.set(k, k * 0.375, 1); n.sp.visible = true; n.sp.material.opacity = 1;
+    n.sp.position.set(x - half + (Math.random() - 0.5) * 0.4, 1.7 + (big ? 0.3 : 0), y - half + (Math.random() - 0.5) * 0.4);
+  }
+  function djTele(e) {
+    const red = basic(0xff3020, { transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide });
+    let m;
+    if (e.a === 'slam') { const g2 = new THREE.CircleGeometry(e.r, 40); g2.rotateX(-Math.PI / 2); m = new THREE.Mesh(g2, red); m.position.set(e.x - half, 0.04, e.y - half); }
+    else { const g2 = new THREE.PlaneGeometry(1.6, e.len); g2.rotateX(-Math.PI / 2); g2.translate(0, 0, e.len / 2); m = new THREE.Mesh(g2, red); m.position.set(e.x - half, 0.04, e.y - half); m.rotation.y = Math.atan2(e.dx, e.dy); }
+    m.renderOrder = 3; djGroup.add(m); DJ.teles.push({ m, t: 0, T: e.t, id: e.id });
+  }
+  const djEntPos = (st, id) => { const e = st.heroes.find(q => q.id === id) || st.mobs.find(q => q.id === id) || st.allies.find(q => q.id === id); if (e) return [e.x, e.y]; const r = DJ && DJ.ents.get(id); return r ? [r.lx, r.ly] : null; };
+  /* Effets des événements de la simulation (dégâts, compétences, coffres…). */
+  function djFx(e, st) {
+    if (!DJ) return;
+    const P2 = id => djEntPos(st, id);
+    switch (e.k) {
+      case 'hit': { const p = P2(e.id); if (p) { spark(p[0], 0.8, p[1], e.crit ? 0xffd27a : 0xfff0d0); djNum(p[0], p[1], String(e.v), e.ally ? '#c9b3ff' : e.crit ? '#ffd23f' : '#ffffff', e.crit); } break; }
+      case 'hurt': { const p = P2(e.id); if (p) djNum(p[0], p[1], String(e.v), '#ff6b5b', false); if (e.id === DJ.me && e.v > 25) shake(0.15); break; }
+      case 'heal': { const p = P2(e.id); if (p && e.v >= 2) djNum(p[0], p[1], '+' + e.v, '#7dff8a', false); break; }
+      case 'miss': { const p = P2(e.id); if (p) djNum(p[0], p[1], 'esquive', '#e8f4ff', false); break; }
+      case 'block': { const p = P2(e.id); if (p) djNum(p[0], p[1], String(e.v), '#8ec8ff', false); break; }
+      case 'die': burst(e.x, e.y, 0.4, e.boss ? 0xff7a3a : 0xbfb8a8, e.boss ? 14 : 5); if (e.boss) { shake(0.5); debris(e.x, e.y, 2, true, 16); } break;
+      case 'potion': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0x7dff8a, 1.4, 0.5); for (let i = 0; i < 5; i++) spark(p[0], 0.6 + i * 0.25, p[1], 0x9dff9a); } break; }
+      case 'nova': wave(e.x, e.y, DJ_FX[e.c] || 0xffffff, e.r, 0.5); wave(e.x, e.y, DJ_FX[e.c] || 0xffffff, e.r * 0.6, 0.35); for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283; spark(e.x + Math.cos(a) * e.r * 0.7, 0.5, e.y + Math.sin(a) * e.r * 0.7, DJ_FX[e.c]); } break;
+      case 'boom': burst(e.x, e.y, 0.5, DJ_FX[e.c] || 0xff7a2a, 9); wave(e.x, e.y, DJ_FX[e.c] || 0xff7a2a, e.r, 0.45); shake(0.18); break;
+      case 'dash': for (let i = 0; i <= 4; i++) dustRing(e.x0 + (e.x1 - e.x0) * i / 4, e.y0 + (e.y1 - e.y0) * i / 4, 0.2); break;
+      case 'blink': for (let i = 0; i < 4; i++) { spark(e.x0, 0.4 + i * 0.3, e.y0, 0xc9a0ff); spark(e.x1, 0.4 + i * 0.3, e.y1, 0xc9a0ff); } break;
+      case 'bolt': { const a = P2(e.id), b = P2(e.tgt); if (a && b) { const c = e.c === 'marteau' ? 0xffd27a : 0xfff4c0; const s = makeGlow(c, 0.9, 1); s.position.set(a[0] - half, 1, a[1] - half); djGroup.add(s); DJ.teles.push({ m: s, t: 0, T: 0.18, fly: [a[0], a[1], b[0], b[1]] }); setTimeout(() => { if (DJ) { const p = djEntPos(st, e.tgt) || b; burst(p[0], p[1], 0.8, c, 4); } }, 180); } break; }
+      case 'line': { const L = Math.hypot(e.x1 - e.x0, e.y1 - e.y0), g2 = new THREE.PlaneGeometry(0.35, L); g2.rotateX(-Math.PI / 2); g2.translate(0, 0, L / 2); const m = new THREE.Mesh(g2, basic(0xfff0b0, { transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })); m.position.set(e.x0 - half, 0.9, e.y0 - half); m.rotation.y = Math.atan2(e.x1 - e.x0, e.y1 - e.y0); djGroup.add(m); DJ.teles.push({ m, t: 0, T: 0.3, fade: true }); break; }
+      case 'shout': wave(e.x, e.y, 0xff7a3a, Math.min(e.r, 4), 0.6); break;
+      case 'smoke': for (let i = 0; i < 6; i++) smokeAt(e.x - half + (Math.random() - 0.5), 0.4, e.y - half + (Math.random() - 0.5), true); break;
+      case 'holy': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xffe08a, 1.2, 0.5); for (let i = 0; i < 5; i++) spark(p[0] + (Math.random() - 0.5) * 0.6, 0.4 + i * 0.3, p[1] + (Math.random() - 0.5) * 0.6, 0xffe08a); } break; }
+      case 'drain': { const a = P2(e.tgt), b = P2(e.id); if (a && b) for (let i = 0; i <= 5; i++) spark(a[0] + (b[0] - a[0]) * i / 5, 0.9, a[1] + (b[1] - a[1]) * i / 5, 0xff4a6a); break; }
+      case 'summon': wave(e.x, e.y, e.boss ? 0xff3a2a : 0xa070ff, e.boss ? 3 : 2, 0.6); for (let i = 0; i < 6; i++) smokeAt(e.x - half + (Math.random() - 0.5) * 2, 0.3, e.y - half + (Math.random() - 0.5) * 2, true); break;
+      case 'form': { const p = P2(e.id); if (p) { burst(p[0], p[1], 0.6, e.f === 'ours' ? 0x8a6a4a : e.f === 'loup' ? 0x9a9a9a : 0x7bd36a, 6); } break; }
+      case 'tele': djTele(e); break;
+      case 'slam': wave(e.x, e.y, 0xff6a3a, e.r, 0.5); debris(e.x, e.y, 2.5, true, 12); shake(0.45); break;
+      case 'charge': dustRing(P2(e.id) ? P2(e.id)[0] : 0, P2(e.id) ? P2(e.id)[1] : 0, 0.6); break;
+      case 'wall': shake(0.4); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5), 2.4 + Math.random() * 0.4, e.y + (Math.random() - 0.5), 0xfff07a); break;
+      case 'interrupt': { const p = P2(e.id); if (p) djNum(p[0], p[1], 'interrompu !', '#ffd23f', false); break; }
+      case 'enrage': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xff2a1a, 3, 0.7); djNum(p[0], p[1], 'enragé !', '#ff5a3c', true); } break; }
+      case 'spawn': dustRing(e.x, e.y, 0.4); smokeAt(e.x - half, 0.3, e.y - half, true); break;
+      case 'chest': for (let i = 0; i < 10; i++) spark(e.x + (Math.random() - 0.5) * 0.6, 0.5 + Math.random(), e.y + (Math.random() - 0.5) * 0.6, 0xffd27a); break;
+      case 'altar': wave(e.x, e.y, 0x7ab8ff, 3, 0.8); for (let i = 0; i < 10; i++) spark(e.x + (Math.random() - 0.5), 0.5 + Math.random() * 1.5, e.y + (Math.random() - 0.5), 0x9fd0ff); break;
+      case 'free': for (let i = 0; i < 12; i++) spark(e.x + (Math.random() - 0.5), 0.5 + Math.random() * 1.6, e.y + (Math.random() - 0.5), 0xfff0a0); if (DJ.pris) DJ.pris.t = 0.001; break;
+      case 'lock': shake(0.12); break;
+      case 'clear': { const c = djCenter(st.d.rooms[e.room]); wave(c[0] + 0.5, c[1] + 0.5, 0xffd27a, 4, 0.9); break; }
+      case 'trap': spark(e.x, 0.4, e.y, 0xff5a3c); break;
+      case 'revive': { const p = P2(e.id); if (p) { wave(p[0], p[1], 0xb8ffcf, 2, 0.8); djNum(p[0], p[1], 'se relève !', '#b8ffcf', true); } break; }
+      case 'cast': { const r = DJ.ents.get(e.id); if (r) { r.castT = performance.now() / 1000; const an = DJ_CAST_ANIM[e.s] || 'atk'; if (r.g.userData.A && r.g.userData.A[an]) djPlay(r, an, an === 'spin' ? 1.4 : 1.2, true); } break; }
+    }
+  }
+  /* Mise à jour de l'affichage d'après l'état du combat (appelée à chaque image ; alpha = entre deux pas). */
+  function djSync(st, alpha, dt, tNow) {
+    if (!DJ) return;
+    DJ.frame++; DJ.t += dt;
+    const fr = DJ.frame, Q = camera.quaternion;
+    const upd = (map, e, make) => { let r = map.get(e.id); if (!r) { r = make(e); map.set(e.id, r); djGroup.add(r.g); } r.seen = fr; return r; };
+    for (const h of st.heroes) {
+      const r = upd(DJ.ents, h, djHeroRec);
+      djPose(r, h, alpha, tNow);
+      djBar(r, h.hp / h.hpMax, !h.dead && (st.heroes.length > 1 || h.hp < h.hpMax));
+      const sc = h.form === 'ours' ? 1.3 : h.form === 'loup' ? 0.85 : 1; r.scale += (sc - r.scale) * Math.min(1, dt * 8); r.g.userData.body.scale.setScalar(r.scale);
+      const ghost = h.b.stealth > 0, inv = h.b.inv > 0 && !h.dead;
+      for (const m of r.mats) { const op = ghost ? 0.35 : inv ? 0.6 + 0.4 * Math.sin(tNow * 30) : 1; if (m.opacity !== op) { m.transparent = op < 1; m.opacity = op; m.needsUpdate = true; } }
+      if (h.shield > 0 && !r.bubble) { r.bubble = new THREE.Mesh(geo('sph'), basic(0x8ec8ff, { transparent: true, opacity: 0.22, depthWrite: false })); r.bubble.scale.set(1.3, 1.9, 1.3); r.bubble.position.y = -0.1; r.g.add(r.bubble); }
+      if (r.bubble) r.bubble.visible = h.shield > 0 && !h.dead;
+    }
+    for (const m of st.mobs) {
+      if (m.hidden) continue;
+      const r = upd(DJ.ents, m, djMobRec);
+      djPose(r, m, alpha, tNow);
+      djBar(r, m.hp / m.hpMax, m.awake && (m.hp < m.hpMax || m.boss));
+      if (m.frz > 0 && !r.ice) { r.ice = makeGlow(0x9fe3ff, (r.h || 1) * 1.6, (r.h || 1) * 0.5); r.ice.material.opacity = 0.55; r.g.add(r.ice); }
+      if (r.ice) r.ice.visible = m.frz > 0;
+      if (m.stun > 0 && !r.stars) { r.stars = makeGlow(0xfff07a, 0.6, (r.h || 1) + 0.25); r.g.add(r.stars); }
+      if (r.stars) { r.stars.visible = m.stun > 0; if (m.stun > 0) r.stars.position.x = Math.sin(tNow * 9) * 0.25; }
+      if (m.root > 0 && !r.roots) { r.roots = djRing(0x5fbf4a, m.r * 2.8, 0.7); r.g.add(r.roots); }
+      if (r.roots) r.roots.visible = m.root > 0;
+      if (r.g.userData.aura) r.g.userData.aura.material.opacity = (m.sp && m.sp.enr ? 0.6 : 0.3) + 0.12 * Math.sin(tNow * 6);
+      if (r.g.userData.mixer && (m.frz > 0 || m.stun > 0)) r.frozen = true; else r.frozen = false;
+    }
+    for (const a of st.allies) {
+      if (!a.inv && a.hp <= 0) continue;
+      const r = upd(DJ.ents, a, djAllyRec);
+      djPose(r, a, alpha, tNow);
+      djBar(r, a.hp / a.hpMax, !a.inv && a.hp < a.hpMax);
+      if (!r.g.userData.mixer) r.g.userData.body.position.y = a.mv ? Math.abs(Math.sin(tNow * 14)) * 0.06 : 0;
+    }
+    for (const [id, r] of DJ.ents) if (r.seen !== fr) {
+      DJ.ents.delete(id);
+      if (r.g.userData.A && r.g.userData.A.death) { r.bar.visible = false; djPlay(r, 'death', 1.3, true); DJ.dying.push({ r, t: 0 }); }
+      else { djGroup.remove(r.g); burst(r.lx, r.ly, 0.3, 0xd8d0c0, 4); }
+    }
+    for (const [, r] of DJ.ents) { const U = r.g.userData; if (U.mixer) U.mixer.update(r.frozen ? 0 : dt); }
+    /* Projectiles */
+    for (const s of st.shots) {
+      let r = DJ.shots.get(s.id);
+      if (!r) {
+        const arrow = s.kind === 'arrow', m = arrow ? P('box', DJ_SHOT.arrow, 0.05, 0.05, 0.5, 0, 0, 0, 0, true) : makeGlow(DJ_SHOT[s.kind] || 0xffffff, s.kind === 'fire' ? 0.9 : 0.7, 0);
+        if (!arrow) { const core = P('sph', basic(DJ_SHOT[s.kind] || 0xffffff), 0.16, 0.16, 0.16, 0, -0.08, 0, 0, true); m.add(core); }
+        r = { m, arrow }; DJ.shots.set(s.id, r); djGroup.add(m);
+      }
+      r.seen = fr;
+      const x = s.px + (s.x - s.px) * alpha, y = s.py + (s.y - s.py) * alpha;
+      r.m.position.set(x - half, 0.95, y - half);
+      if (r.arrow) r.m.rotation.y = Math.atan2(s.x - s.px, s.y - s.py);
+    }
+    for (const [id, r] of DJ.shots) if (r.seen !== fr) { DJ.shots.delete(id); djGroup.remove(r.m); if (!r.arrow) spark(r.m.position.x + half, 0.9, r.m.position.z + half, 0xffd0a0); }
+    /* Zones (consécration, pluie de flèches) */
+    for (const z of st.zones) {
+      let r = DJ.zones.get(z.id);
+      if (!r) {
+        const c = z.k === 'cons' ? 0xffd27a : 0x9be37a, g2 = new THREE.CircleGeometry(z.r, 40); g2.rotateX(-Math.PI / 2);
+        const m = new THREE.Mesh(g2, basic(c, { transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending })); m.position.set(z.x - half, 0.05, z.y - half); m.renderOrder = 3;
+        r = { m, k: z.k }; DJ.zones.set(z.id, r); djGroup.add(m);
+      }
+      r.seen = fr; r.m.material.opacity = 0.18 + 0.1 * Math.sin(tNow * 8);
+      if (z.k === 'rain' && Math.random() < dt * 14) { const tx = z.x + (Math.random() - 0.5) * z.r * 1.6, ty = z.y + (Math.random() - 0.5) * z.r * 1.6; spawnShot('arrow', tx - 0.6, 4, ty - 0.6, () => [tx, 0.1, ty], 0.3, 0.2); }
+    }
+    for (const [id, r] of DJ.zones) if (r.seen !== fr) { DJ.zones.delete(id); djGroup.remove(r.m); r.m.geometry.dispose(); }
+    /* Grilles : affichées seulement quand elles sont fermées. */
+    if (DJ.doorMesh) {
+      let sig = ''; for (const k of DJ.doorCells) sig += st.door[k] ? '1' : '0';
+      if (sig !== DJ.doorSig) {
+        DJ.doorSig = sig; const m4 = new THREE.Matrix4(), W = st.d.W;
+        DJ.doorCells.forEach((k, i) => { const on = st.door[k]; m4.compose(new THREE.Vector3(k % W + 0.5 - half, 0, Math.floor(k / W) + 0.5 - half), new THREE.Quaternion(), on ? new THREE.Vector3(0.96, 1.1, 0.96) : new THREE.Vector3(0, 0, 0)); DJ.doorMesh.setMatrixAt(i, m4); });
+        DJ.doorMesh.instanceMatrix.needsUpdate = true;
+      }
+      DJ.doorMat.opacity = 0.35 + 0.12 * Math.sin(tNow * 5);
+    }
+    if (DJ.spikeMesh) {
+      const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(0.12, 0.45, 0.12), p = new THREE.Vector3();
+      DJ.spikes.forEach((sp, i) => { const on = st.traps[sp[0]].on; p.set(sp[1] - half, on ? -0.02 : -0.5, sp[2] - half); m4.compose(p, q, s); DJ.spikeMesh.setMatrixAt(i, m4); });
+      DJ.spikeMesh.instanceMatrix.needsUpdate = true;
+    }
+    st.chests.forEach((c, i) => { const r = DJ.chests[i]; if (!r) return; if (c.open && !r.open) { r.open = true; r.glow.visible = false; } r.lid.rotation.x += ((r.open ? -1.15 : 0) - r.lid.rotation.x) * Math.min(1, dt * 8); if (!r.open) r.glow.material.opacity = 0.3 + 0.15 * Math.sin(tNow * 3 + i); });
+    if (DJ.altar) { const used = st.altar.used; DJ.altar.orb.visible = !used; DJ.altar.core.visible = !used; if (!used) DJ.altar.orb.material.opacity = 0.4 + 0.2 * Math.sin(tNow * 2.5); }
+    if (DJ.pris) {
+      const P3 = DJ.pris, U = P3.g.userData;
+      if (U.mixer) U.mixer.update(dt);
+      if (st.pris.freed && P3.t > 0) {
+        if (!P3.cheer) { P3.cheer = true; P3.chains.visible = false; P3.mark.visible = false; if (U.A && U.A.cheer) { U.A.cheer.reset().play(); if (U.cur && U.cur !== U.A.cheer) U.cur.stop(); U.cur = U.A.cheer; } }
+        P3.t += dt; if (P3.t > 2.5) { const k = Math.max(0, 1 - (P3.t - 2.5) / 0.6); P3.g.scale.setScalar(k); if (k <= 0) { djGroup.remove(P3.g); DJ.pris = null; } }
+      } else P3.mark.material.opacity = 0.35 + 0.25 * Math.sin(tNow * 4);
+    }
+    if (st.exit && !DJ.exit) {
+      const g = new THREE.Group(); g.position.set(st.exit.x - half, 0, st.exit.y - half);
+      const rg = new THREE.RingGeometry(0.55, 0.85, 40); rg.rotateX(-Math.PI / 2);
+      g.add(new THREE.Mesh(rg, basic(0xffd27a, { transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide })));
+      const beam = new THREE.Mesh(geo('cyl12'), basic(0xffe9a8, { transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false })); beam.scale.set(1.2, 4, 1.2); g.add(beam);
+      g.add(makeGlow(0xffd27a, 2.4, 0.6)); djGroup.add(g); DJ.exit = { g, beam };
+    }
+    if (DJ.exit) { DJ.exit.beam.material.opacity = 0.18 + 0.1 * Math.sin(tNow * 4); DJ.exit.g.rotation.y += dt; }
+    /* Caméra et lumière sur le héros suivi */
+    const me = st.heroes.find(h => h.id === DJ.me) || st.heroes[0];
+    if (me) {
+      const r = DJ.ents.get(me.id), x = r ? r.g.position.x : me.x - half, z = r ? r.g.position.z : me.y - half;
+      const k = Math.min(1, dt * 6); cam.tx += (x - cam.tx) * k; cam.tz += (z - cam.tz) * k;
+      DJ.light.position.set(x, 2.4, z);
+    }
+  }
+  /* Ce qui vit sans la simulation : chiffres qui montent, alertes au sol, morts, torches, soleil qui suit la caméra. */
+  function djTick(dt, tNow) {
+    for (const n of DJ.nums) if (n.on) { n.t += dt; n.sp.position.y += dt * 1.1; n.sp.material.opacity = Math.max(0, 1 - Math.pow(n.t / 0.9, 2)); if (n.t > 0.9) { n.on = false; n.sp.visible = false; } }
+    for (const t of DJ.teles) {
+      t.t += dt; const k = Math.min(1, t.t / t.T);
+      if (t.fly) t.m.position.set(t.fly[0] + (t.fly[2] - t.fly[0]) * k - half, 1, t.fly[1] + (t.fly[3] - t.fly[1]) * k - half);
+      else if (t.fade) t.m.material.opacity = 0.85 * (1 - k);
+      else t.m.material.opacity = 0.15 + 0.4 * k;
+      if (t.t >= t.T) { t.done = true; djGroup.remove(t.m); if (t.m.geometry && t.m.geometry !== geo('sph')) t.m.geometry.dispose(); }
+    }
+    DJ.teles = DJ.teles.filter(t => !t.done);
+    for (const d of DJ.dying) {
+      d.t += dt; const U = d.r.g.userData; if (U.mixer) U.mixer.update(dt);
+      if (d.t > 1.5) { const k = Math.max(0, 1 - (d.t - 1.5) / 0.5); d.r.g.scale.setScalar(k); if (k <= 0) { d.done = true; djGroup.remove(d.r.g); } }
+    }
+    DJ.dying = DJ.dying.filter(d => !d.done);
+    for (const t of DJ.torches) { const f = 0.85 + 0.1 * Math.sin(tNow * 13 + t.ph) + 0.06 * Math.sin(tNow * 31 + t.ph); t.s.material.opacity = 0.42 * f; t.f.scale.y = 0.26 * f; }
+    const sp = P_MOOD.sunPos;
+    sun.position.set(cam.tx + sp[0], sp[1], cam.tz + sp[2]); sun.target.position.set(cam.tx, 0, cam.tz); sun.target.updateMatrixWorld();
+  }
+
   /* ---------- boucle ---------- */
   let lastFrame = 0, emitClock = 0, emberClock = 0;
   const camQ = new THREE.Quaternion();
@@ -1699,7 +2096,7 @@ const V3 = (() => {
     camQ.copy(camera.quaternion);
     for (const [, bar] of wallBars) bar.quaternion.copy(camQ);
     if (waterNormal && waterMesh.visible) { waterNormal.offset.x = (tNow * 0.012) % 1; waterNormal.offset.y = (tNow * 0.007) % 1; }
-    for (const [, r] of blds) {
+    if (!DJ) for (const [, r] of blds) {
       if (r.bar) { r.bar.quaternion.copy(camQ); const up = r.item.up; if (up) setBar(r.bar, up.frac != null ? up.frac : (Date.now() - up.t0) / Math.max(1, up.t1 - up.t0)); }
       if (r.hp) r.hp.quaternion.copy(camQ);
       if (r.glow) r.glow.material.opacity = P_MOOD.glow * (0.85 + 0.15 * Math.sin(tNow * 6 + r.ph) + 0.06 * Math.sin(tNow * 17 + r.ph));
@@ -1720,7 +2117,7 @@ const V3 = (() => {
     }
     anims = anims.filter(a => !a.done);
     emitClock += dt;
-    if (emitClock > 0.55) {
+    if (emitClock > 0.55 && !DJ) {
       emitClock = 0;
       for (const [, r] of blds) {
         if (r.item.dead) { if (Math.random() < 0.5) smokeAt(r.g.position.x, 0.4, r.g.position.z, true); continue; }
@@ -1738,8 +2135,8 @@ const V3 = (() => {
         fxGroup.add(s); embers.push({ s, vy: 0.5 + Math.random() * 0.7, vx: (Math.random() - 0.5) * 0.4, age: 0, life: 1.6 + Math.random() * 1.4 });
       }
     }
-    stepPeople(dt, tNow);
-    for (const [, r] of blds) {
+    if (!DJ) stepPeople(dt, tNow);
+    if (!DJ) for (const [, r] of blds) {
       if (r.burnT > 0) r.burnT -= dt;
       const on = r.burn || r.burnT > 0;
       if (on && !r.fireGlow) { r.fireGlow = makeGlow(0xff7a2a, BLD[r.item.type].size * 2.2, 0.6); r.fireGlow.material.toneMapped = false; r.g.add(r.fireGlow); }
@@ -1794,6 +2191,7 @@ const V3 = (() => {
       if (k >= 1) { sp.done = true; fxGroup.remove(sp.s); sp.s.material.dispose(); }
     }
     for (let i = sparks.length - 1; i >= 0; i--) if (sparks[i].done) sparks.splice(i, 1);
+    if (DJ) djTick(dt, tNow);
     renderer.render(scene, camera);
   }
 
@@ -1806,5 +2204,6 @@ const V3 = (() => {
     _bench: () => { const t0 = performance.now(); paintBase(biome); const t1 = performance.now(); paintGround(lastGroundItems); return { base: Math.round(t1 - t0), ground: Math.round(performance.now() - t1) }; },
     _fx: () => ({ flames: flames.length, burning: [...blds.values()].filter(r => r.burn).length, people: people.size, mood, biome }),
     onFrame: f => { frameHook = f; }, onTap: f => { tapHook = f; },
+    dj: { enter: djEnter, exit: djExit, sync: djSync, fx: djFx, active: () => !!DJ },
   };
 })();

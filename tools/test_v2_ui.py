@@ -17,7 +17,7 @@ def put(path, v):
 arr = lambda x: [x[k] for k in sorted(x, key=int)] if isinstance(x, dict) else (x or [])
 
 async def text(pg, sel):
-    try: return (await pg.inner_text(sel, timeout=8000)).replace('\n', ' | ')
+    try: return (await pg.inner_text(sel, timeout=20000)).replace('\n', ' | ')
     except Exception: return f'<none {sel}>'
 
 async def close_modal(pg):
@@ -32,6 +32,7 @@ async def main():
         async def page(name):
             ctx = await b.new_context(viewport={'width': 844, 'height': 390}, device_scale_factor=1)
             pg = await ctx.new_page()
+            pg.set_default_timeout(120000)   # rendu logiciel très lent avec deux pages et les modèles Meshy (un clic peut prendre 20 s)
             pg.on('console', lambda m: logs.append(f'[{name}] {m.type}: {m.text}') if m.type == 'error' and 'ERR_TUNNEL' not in m.text and 'fonts.g' not in m.text else None)
             pg.on('pageerror', lambda e: logs.append(f'[{name}] pageerror: {e}'))
             return pg

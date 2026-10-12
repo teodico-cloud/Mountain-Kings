@@ -74,7 +74,7 @@ h1,h2,h3,p{margin:0}
 .pill .fill i{display:block;height:100%;background:currentColor;border-radius:3px}
 .pill.full .v{color:var(--lantern)}
 
-.nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:4px;padding:5px}
+.nav{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:4px;padding:5px}
 .nav button{appearance:none;border:0;background:transparent;color:var(--fg);font:inherit;font-size:11px;font-weight:800;display:grid;justify-items:center;gap:3px;padding:7px 2px 6px;border-radius:10px;cursor:pointer;position:relative;min-height:54px}
 .nav button .ic{width:24px;height:24px}
 .nav button.hot{background:var(--accent);color:var(--accent-fg)}
@@ -254,7 +254,7 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 .land .hud.bottom{display:flex;align-items:flex-end;justify-content:flex-end;gap:10px;padding-bottom:8px}
 .land .hud.bottom > .card{flex:0 1 400px;margin-right:auto}
 .land .hud.bottom > .card:only-child{margin-right:0;flex-basis:520px}
-.land .nav{flex:0 0 auto;width:440px;padding:4px}
+.land .nav{flex:0 0 auto;width:500px;padding:4px}
 .land .nav button{min-height:48px;padding:5px 2px 4px}
 /* En paysage, la barre de combat se range en bas à gauche, hors du terrain de jeu. */
 .land .hud.bottom > .fightwrap{flex:1 1 auto;justify-items:start}
@@ -266,6 +266,39 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 .land .toast{top:64px}
 @media (max-width:360px){ .land .nav button{font-size:11px} }
 @media (max-width:360px){ .stock{grid-template-columns:repeat(2,minmax(0,1fr))} .nav button{font-size:10px} }
+
+/* ----- Donjons : écran de combat ----- */
+.djhud{position:absolute;inset:0;z-index:6;pointer-events:none;touch-action:none;-webkit-user-select:none;user-select:none}
+.djhud > *{pointer-events:auto}
+.djtop{position:absolute;left:12px;right:12px;top:calc(env(safe-area-inset-top,0px) + 10px);display:flex;align-items:flex-start;gap:8px;pointer-events:none}
+.djtop > *{pointer-events:auto}
+.djme{display:flex;align-items:center;gap:9px;padding:6px 12px 6px 6px;min-width:0;width:min(270px,46vw)}
+.djmet{display:grid;gap:4px;min-width:0;flex:1}
+.djmet b{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.djmet b small{font-size:11.5px;color:var(--muted);font-weight:700}
+.djhp{position:relative;height:13px;border-radius:7px;background:rgba(0,0,0,.35);overflow:hidden}
+.djhp i{position:absolute;left:0;top:0;bottom:0;width:100%;background:linear-gradient(90deg,#3fbf5a,#7ad86a);border-radius:7px;transition:width .15s linear}
+.djhp em{position:absolute;inset:0;display:grid;place-items:center;font-style:normal;font-size:10.5px;font-weight:800;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.8);font-variant-numeric:tabular-nums}
+.djinfo{flex:1 1 auto;align-self:center;max-width:300px;margin:0 auto;padding:7px 12px;font-size:12.5px;font-weight:800;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.djflee{margin-left:auto;align-self:center}
+.djboss{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 58px);transform:translateX(-50%);width:min(380px,70vw);padding:6px 12px 8px;display:grid;gap:4px;text-align:center;font-size:13px}
+.djhp.boss{height:11px}.djhp.boss i{background:linear-gradient(90deg,#c7372a,#f06a3c)}
+.djjoy{position:absolute;left:0;bottom:0;width:48%;top:22%;touch-action:none}
+.djhint{position:absolute;left:24px;bottom:calc(env(safe-area-inset-bottom,0px) + 26px);margin:0;font-size:12.5px;font-weight:800;color:#fff;opacity:.8;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none}
+.djbase{position:absolute;width:118px;height:118px;margin:-59px 0 0 -59px;border-radius:50%;background:rgba(255,255,255,.12);border:2px solid rgba(255,255,255,.35);pointer-events:none}
+.djknob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:rgba(255,255,255,.55);box-shadow:0 2px 10px rgba(0,0,0,.4)}
+.djbtns{position:absolute;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);display:grid;grid-template-columns:repeat(2,auto);gap:10px 12px;align-items:end;pointer-events:none}
+.djsk{pointer-events:auto;position:relative;width:66px;height:66px;border-radius:50%;border:2px solid rgba(255,255,255,.55);background:radial-gradient(circle at 50% 35%,#4c5a72,#222a38);color:#ffe6b0;display:grid;place-items:center;padding:0;cursor:pointer;touch-action:none;box-shadow:0 4px 14px rgba(0,0,0,.45);transition:transform .08s ease}
+.djsk .djico .ic{width:28px;height:28px}
+.djsk small{position:absolute;left:50%;bottom:-15px;transform:translateX(-50%);font-size:10px;font-weight:800;color:#fff;white-space:nowrap;text-shadow:0 1px 2px rgba(0,0,0,.9)}
+.djsk .djcd{position:absolute;inset:0;border-radius:50%;background:conic-gradient(rgba(0,0,0,.62) var(--cd,0deg),transparent 0);pointer-events:none}
+.djsk.lock{opacity:.45;filter:grayscale(1)}
+.djsk.press{transform:scale(.92)}
+.djsk.pot{width:56px;height:56px;background:radial-gradient(circle at 50% 35%,#7a3a46,#3a1820);color:#ffb0b8}
+.djsk .djn{position:absolute;right:-4px;top:-4px;min-width:22px;height:22px;border-radius:11px;background:#fff;color:#222;font-size:12.5px;font-weight:800;display:grid;place-items:center;padding:0 5px}
+.djlv{gap:6px}
+.skrow{align-items:center;flex-wrap:nowrap}
+.skrow p{flex:1}
 
 /* ----- Nouveau jeu : village commun ----- */
 .c-ble{color:#B8901F} .c-farine{color:#9C8A6A} .c-pain{color:var(--food)} .c-viande{color:#A8483A} .c-people{color:#3F6FB0} .c-heart{color:#C2453A} .c-hammer{color:var(--stone)} .c-scroll{color:var(--lantern)}
@@ -368,7 +401,7 @@ ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:v
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="game.js?v=3f601483ea"></script>
+<script src="game.js?v=ac2d3c42e2"></script>
 <script>
 if ('serviceWorker' in navigator && location.protocol === 'https:') {
   navigator.serviceWorker.register('sw.js', { scope: './' }).then(r => {
