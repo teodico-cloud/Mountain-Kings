@@ -57,7 +57,23 @@ function normVillage(v) {
     L.res = Object.assign({ k: 0, e: 0, f: 0, h: 0, g: 0, xp: 0, br: 0, s: 0 }, fbObj(L.res));
     L.res.lost = Object.assign({}, fbObj(L.res.lost)); L.res.back = Object.assign({}, fbObj(L.res.back));
     L.res.ko = fbArr(L.res.ko); L.res.dmg = fbArr(L.res.dmg).map(fbArr);
+    if (L.G) L.G = fbArr(L.G).map(fbArr); else delete L.G;
+    if (L.res.gd) L.res.gd = fbArr(L.res.gd).map(fbArr);
+    if (L.orbs) L.orbs = fbArr(L.orbs); else delete L.orbs;
   } else delete v.lastRaid;
+  /* Garnison (étape 4b) : soldats (communs), orbes et bannières en réserve */
+  const S = {};
+  for (const [k, s0] of Object.entries(fbObj(v.sol))) {
+    if (!s0 || typeof s0 !== 'object' || !s0.type) continue;
+    const s = Object.assign({ n: 0, num: 1, lvl: 1, xp: 0, post: 0, hurt: 0, vet: 0, raids: 0, kills: 0, race: 'humain', sex: 'm' }, s0, { id: s0.id || k, o: Object.assign({}, fbObj(s0.o)) });
+    for (const it of ['w', 'a']) if (!s[it] || typeof s[it] !== 'object') delete s[it];
+    S[s.id] = s;
+  }
+  if (Object.keys(S).length) v.sol = S; else delete v.sol;
+  if (v.orbs && typeof v.orbs === 'object') v.orbs = Object.assign({}, v.orbs); else delete v.orbs;
+  const BN = {};
+  for (const [k, b0] of Object.entries(fbObj(v.bans))) if (b0 && typeof b0 === 'object' && b0.k) BN[b0.id || k] = Object.assign({}, b0, { id: b0.id || k });
+  if (Object.keys(BN).length) v.bans = BN; else delete v.bans;
   return v;
 }
 const fbItem = x => x && typeof x === 'object' && x.sl ? Object.assign({}, x, { gm: Object.assign({}, fbObj(x.gm)) }) : null;

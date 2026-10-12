@@ -205,17 +205,20 @@ function djLeave() {
   SND.music('village', 1);
   refreshScene(); renderAll();
 }
+/* Ce que le donjon rapporte à la garnison (orbes, bannière), en une phrase. */
+const garGainTxt = res => { const l = (res.orbs || []).map(orbLabel).concat(res.ban ? [banLabel(res.ban) + (res.ban.sold ? ' (réserve pleine : vendue)' : '')] : []); return l.length ? ' Pour la garnison : ' + l.join(', ') + '.' : ''; };
 function djBack() {
   if (!dj) return;
   const r = dj.res || djResult(dj.st), hid = dj.hid, name = (me && me.heroes[hid] || {}).name || 'Ton héros';
   const guest = dj.duo && dj.duo.role === 'guest';     // le butin et le prisonnier ne comptent qu'une fois : c'est l'hôte qui les rapporte
   const items = (r.items && r.items[hid]) || [], gems = (r.gems && r.gems[hid]) || {};
   const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris, theme: r.theme || dj.st.d.theme, deep: r.deep || 0,
-    or: guest ? 0 : r.gold || 0, items, gems, pi: dj.pi | 0 }, { quiet: true });
+    or: guest ? 0 : r.gold || 0, items, gems, pi: dj.pi | 0, gar: guest ? 0 : 1 }, { quiet: true });
   djLeave();
   if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
-  else if (res && res.closed) toast(res.closed.all ? 'Le portail est refermé : pas de raid cette fois !' : 'Le portail est refermé. Il en reste d’autres ouverts (menu Défense).');
+  else if (res && res.closed) toast((res.closed.all ? 'Le portail est refermé : pas de raid cette fois !' : 'Le portail est refermé. Il en reste d’autres ouverts (menu Défense).') + garGainTxt(res));
   else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
+  else if (res && ((res.orbs && res.orbs.length) || res.ban)) toast(garGainTxt(res).trim());
   else if (res && res.autoSold) toast('Sac plein : ' + res.autoSold + ' objet' + (res.autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + res.autoGold + ' or. Fais de la place dans ton sac (menu Héros).');
   else if (res && res.items) toast(res.items + ' objet' + (res.items > 1 ? 's rangés' : ' rangé') + ' dans ton sac (menu Héros).');
   else if (!res) toast('Le retour n’a pas pu être enregistré.');

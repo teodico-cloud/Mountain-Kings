@@ -1,7 +1,7 @@
 /* Essais des règles du nouveau jeu (village commun). Usage : node tools/test_v2.js */
 const fs = require('fs'), path = require('path');
-const src = ['p2_rules.js', 'p2e_equip.js', 'p2r_raid.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
-const R = new Function(src + '\nreturn { VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone, genItem, cleanItem, itemInfo, canWear, gearOf, compareItem, bagOf, bagMax, mulberry32, merchHere, merchDay, RARITY, SETS, POWERS, GEMS, gemOf, craftCost, improveCost, SLOTS, DROP, rollRarity, forgeLvlOf, hpOf, hpMaxOf, repairCostOf, raidTick, raidInput, raidStart, raidStep, raidResult, raidReplay, raidInfo, raidLevel, raidClosePortal, raidField, raidFoeStep, raidHurtFoe, RAID_FIRST, RAID_CHARGE, RAID_AWAY, RAID_FOES, limitOf, fits };')();
+const src = ['p0_fb.js', 'p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
+const R = new Function(src + '\nreturn { normVillage, solList, solStats, solCap, postCap, postsOf, guardsOf, solHurt, solXpNeed, recruitCost, promoteCost, solEat, solFood, solTitle, solName, orbOf, orbAdd, banAdd, banOk, garLoot, solFormation, raidGuards, SOLDIERS, ORB_LVLS, ORBS, BANNERS, SOL_SETS, POST_SLOTS, limitV, caserneLvl, VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone, genItem, cleanItem, itemInfo, canWear, gearOf, compareItem, bagOf, bagMax, mulberry32, merchHere, merchDay, RARITY, SETS, POWERS, GEMS, gemOf, craftCost, improveCost, SLOTS, DROP, rollRarity, forgeLvlOf, hpOf, hpMaxOf, repairCostOf, raidTick, raidInput, raidStart, raidStep, raidResult, raidReplay, raidInfo, raidLevel, raidClosePortal, raidField, raidFoeStep, raidHurtFoe, RAID_FIRST, RAID_CHARGE, RAID_AWAY, RAID_FOES, limitOf, fits };')();
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
 const H = 3600000, D = 24 * H, T0 = Date.UTC(2026, 9, 12, 8, 0, 0);
@@ -172,7 +172,7 @@ ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
   /* Profondeurs : record d'étages, pas de niveau de donjon ouvert, plafond d'expérience qui grandit avec les étages */
   const vp = R.clone(vh), gp = vp.heroes[R.activeHero(vp, 'u1').id], dj0 = gp.dj || 1;
   const rp = R.applyV(vp, { type: 'djEnd', hid: gp.id, lvl: 4, win: true, xp: 900, loot: { pierre: 40 }, theme: 'prof', deep: 4 }, who);
-  ok(rp.ok && gp.deep === 4 && (gp.dj || 1) === dj0 && vp.log.slice(-1)[0].m.includes('remonte des Profondeurs (4 étages terminés)'), 'Profondeurs : record de 4 étages, aucun niveau de donjon ouvert, le journal le raconte');
+  ok(rp.ok && gp.deep === 4 && (gp.dj || 1) === dj0 && vp.log.slice(-2).some(l => l.m.includes('remonte des Profondeurs (4 étages terminés)')), 'Profondeurs : record de 4 étages, aucun niveau de donjon ouvert, le journal le raconte');
   R.applyV(vp, { type: 'djEnd', hid: gp.id, lvl: 4, win: false, xp: 10, theme: 'prof', deep: 2 }, who);
   ok(gp.deep === 4 && vp.log.slice(-1)[0].m.includes('a dû fuir les Profondeurs (2 étages terminés)'), 'un moins bon résultat ne baisse pas le record');
   const c1 = R.clone(vh), g1 = c1.heroes[R.activeHero(c1, 'u1').id]; g1.lvl = 1; g1.xp = 0;
@@ -416,6 +416,180 @@ ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
   vb.raid = { n: 9, next: vb.t }; R.simulateVillage(vb, vb.t + 60000);
   const tb = Date.now(); R.simulateVillage(vb, vb.raid.at + 3 * H + 2 * 60000); const mb = Date.now() - tb;
   ok(vb.lastRaid && vb.lastRaid.P.length === 3 && vb.lastRaid.F.length >= 14 && mb < 800, 'halle 5 : 3 portails, ' + (vb.lastRaid && vb.lastRaid.F.length) + ' ennemis, raid simulé (avec 3 h de village) en ' + mb + ' ms');
+}
+
+/* 18. La garnison : caserne, postes de garde, soldats, équipement, orbes, bannières ; soldats dans les raids */
+{
+  const vs = R.newVillage('vgar', 'Garnison', '#D27A22', T0, 'u1', 'Téo');
+  vs.members.u2 = { name: 'Léa', t: T0, hi: 1 };
+  vs.r.bois = 5000; vs.r.pierre = 5000; vs.r.fer = 800; vs.r.or = 2000; vs.r.viande = 900; vs.r.pain = 900;
+  ok(!R.applyV(R.clone(vs), { type: 'build', b: 'caserne', gx: 3, gz: 3 }, who).ok, 'caserne : il faut la halle niveau 2');
+  let r = R.applyV(R.clone(vs), { type: 'build', b: 'poste', gx: 12, gz: 5 }, who);
+  ok(!r.ok && /caserne/.test(r.err), 'poste de garde : il faut d’abord la caserne (' + r.err + ')');
+  ok(!R.applyV(R.clone(vs), { type: 'recruit', t: 'fant' }, who).ok, 'pas de recrue sans caserne');
+  vs.b.find(b => b.type === 'halle').lvl = 2;
+  const cs = R.freeSpot(vs, 'caserne', 4, 4); r = R.applyV(vs, { type: 'build', b: 'caserne', gx: cs[0], gz: cs[1] }, who);
+  ok(r.ok && !r.inst, 'la caserne se construit');
+  R.simulateVillage(vs, vs.t + 4 * H);
+  ok(R.caserneLvl(vs) === 1 && R.solCap(vs) === 3 && R.postCap(vs) === 1, 'caserne niveau 1 : 3 soldats, 1 poste');
+  r = R.applyV(vs, { type: 'build', b: 'poste', gx: 12, gz: 5 }, who);
+  const p1 = vs.b.find(b => b.id === r.id);
+  ok(r.ok && r.inst && p1.lvl === 1, 'un poste de garde posé tout de suite');
+  r = R.applyV(R.clone(vs), { type: 'build', b: 'poste', gx: 16, gz: 5 }, who);
+  ok(!r.ok && /agrandissez la caserne/.test(r.err), 'un seul poste avec la caserne niveau 1');
+  /* recruter */
+  const or0 = vs.r.or;
+  r = R.applyV(vs, { type: 'recruit', t: 'fant' }, who);
+  const s1 = vs.sol[r.id];
+  ok(r.ok && vs.r.or === or0 - 40 && s1.lvl === 1 && s1.post === p1.id && /n°1$/.test(r.name), 'recrue : ' + r.name + ' pour 40 or, qui rejoint tout seul le poste');
+  r = R.applyV(vs, { type: 'recruit', t: 'fant' }, who2);
+  ok(r.ok && vs.r.or === or0 - 90 && vs.sol[r.id].num === 2, 'la suivante coûte 50 or : ' + r.name);
+  r = R.applyV(vs, { type: 'recruit', t: 'arch' }, who);
+  ok(r.ok && vs.sol[r.id].num === 1 && R.solList(vs).length === 3, 'un archer, numéroté à part : ' + r.name);
+  ok(!R.applyV(R.clone(vs), { type: 'recruit', t: 'mage' }, who).ok, 'la caserne niveau 1 est pleine (3 soldats)');
+  /* ils mangent */
+  const rt0 = R.ratesOf(vs, vs.t);
+  ok(Math.abs(R.solFood(vs) - 33) < 1e-9 && rt0.food < -(vs.vil.length + 1.3), 'les soldats mangent : 33 rations par jour à eux trois');
+  /* agrandir la caserne : 2 postes, répartir */
+  const cas = vs.b.find(b => b.type === 'caserne'); cas.lvl = 4;
+  vs.b.find(b => b.type === 'halle').lvl = 3;
+  r = R.applyV(vs, { type: 'build', b: 'poste', gx: 8, gz: 16 }, who);
+  const p2 = vs.b.find(b => b.id === r.id);
+  for (const t2 of ['lanc', 'mage', 'arch', 'fant', 'lanc']) R.applyV(vs, { type: 'recruit', t: t2 }, who);
+  ok(R.solList(vs).length === 8, '8 soldats avec la caserne niveau 4');
+  r = R.applyV(vs, { type: 'solAuto' }, who);
+  const g1 = R.guardsOf(vs, p1.id), g2 = R.guardsOf(vs, p2.id);
+  ok(r.ok && g1.length === 4 && g2.length === 4 && ['fant', 'arch'].every(ty => g1.some(s => s.type === ty) && g2.some(s => s.type === ty)), 'Répartir : 4 et 4, avec des fantassins et des archers à chaque poste');
+  /* un poste a 6 places */
+  for (const s of R.solList(vs)) R.applyV(vs, { type: 'solPost', sid: s.id, post: 0 }, who);
+  for (const s of R.solList(vs).slice(0, 6)) R.applyV(vs, { type: 'solPost', sid: s.id, post: p1.id }, who);
+  const s7 = R.solList(vs)[6];
+  r = R.applyV(R.clone(vs), { type: 'solPost', sid: s7.id, post: p1.id }, who);
+  ok(R.guardsOf(vs, p1.id).length === 6 && !r.ok && /complet/.test(r.err), 'un poste : 6 gardes au plus');
+  R.applyV(vs, { type: 'solAuto' }, who);
+  /* promotion */
+  ok(!R.applyV(R.clone(vs), { type: 'promote', sid: s1.id }, who).ok, 'pas de promotion sans expérience');
+  s1.xp = 500; const or1 = vs.r.or, vi1 = vs.r.viande;
+  r = R.applyV(vs, { type: 'promote', sid: s1.id }, who);
+  ok(r.ok && s1.lvl === 2 && s1.xp === 470 && vs.r.or === or1 - 20 && vs.r.viande === vi1 - 10, 'promotion au niveau 2 : 20 or et 10 viande');
+  while (s1.lvl < 4) R.applyV(vs, { type: 'promote', sid: s1.id }, who);
+  ok(s1.lvl === 4 && R.solEat(s1) === 14, 'niveau 4 : il mange un peu plus (14 rations par jour)');
+  /* équipement : il faut une forge */
+  ok(!R.applyV(R.clone(vs), { type: 'solForge', sid: s1.id, k: 'w' }, who).ok, 'pas d’équipement de soldat sans forge');
+  vs.b.push({ id: vs.nid++, type: 'forge', lvl: 2, gx: 19, gz: 16, up: null });
+  const st0 = R.solStats(s1, p1);
+  r = R.applyV(vs, { type: 'solForge', sid: s1.id, k: 'w' }, who);
+  ok(r.ok && s1.w && s1.w.il === 4, 'une arme forgée au niveau du soldat : ' + r.name);
+  r = R.applyV(vs, { type: 'solForge', sid: s1.id, k: 'a', set: 'fer' }, who);
+  ok(r.ok && s1.a.set === 'fer', 'une armure complète, avec son ensemble : ' + r.name);
+  const st1 = R.solStats(s1, p1);
+  ok(st1.dmg > st0.dmg && st1.hp > st0.hp && Math.abs(st1.armor - (st0.armor + 0.1)) < 1e-9, 'équipé : plus de dégâts, plus de vie, +10 % d’armure (ensemble)');
+  r = R.applyV(vs, { type: 'solImprove', sid: s1.id, k: 'w' }, who);
+  ok(r.ok && s1.w.up === 1, 'arme améliorée +1');
+  for (let i = 0; i < 3; i++) R.applyV(vs, { type: 'solImprove', sid: s1.id, k: 'w' }, who);
+  r = R.applyV(R.clone(vs), { type: 'solImprove', sid: s1.id, k: 'w' }, who);
+  ok(s1.w.up === 4 && !r.ok && /forge/.test(r.err), 'forge niveau 2 : +4 au plus');
+  const fer0 = vs.r.fer; r = R.applyV(vs, { type: 'solForge', sid: s1.id, k: 'w' }, who);
+  ok(r.ok && r.back > 0 && s1.w.up === 0, 'une nouvelle arme remplace l’ancienne, fondue (+' + r.back + ' fer)');
+  /* orbes */
+  R.orbAdd(vs, 'vie1', 4); R.orbAdd(vs, 'esquive0', 1);
+  r = R.applyV(vs, { type: 'orbSet', sid: s1.id, s: 0, o: 'vie1' }, who);
+  ok(r.ok && s1.o.o0 === 'vie1' && vs.orbs.vie1 === 3, 'une orbe de vie sertie (emplacement du niveau 4)');
+  ok(!R.applyV(R.clone(vs), { type: 'orbSet', sid: s1.id, s: 1, o: 'esquive0' }, who).ok, '2e emplacement : au niveau 8');
+  const st2 = R.solStats(s1, p1);
+  ok(st2.hp > st1.hp, 'l’orbe donne de la vie (' + st1.hp + ' → ' + st2.hp + ')');
+  r = R.applyV(vs, { type: 'orbFuse', o: 'vie1' }, who);
+  ok(r.ok && !vs.orbs.vie1 && vs.orbs.vie2 === 1, 'trois orbes peu communes → une rare (' + r.name + ')');
+  R.applyV(vs, { type: 'orbOff', sid: s1.id, s: 0 }, who);
+  ok(!s1.o.o0 && vs.orbs.vie1 === 1, 'l’orbe retirée retourne dans la réserve');
+  /* bannières */
+  const bid = R.banAdd(vs, 'lion', 2);
+  r = R.applyV(vs, { type: 'banSet', id: p1.id, ban: bid }, who);
+  ok(r.ok && p1.ban && p1.ban.k === 'lion' && !Object.keys(vs.bans || {}).length, 'une bannière du lion (rare) sur le poste 1 : ' + r.name);
+  const st3 = R.solStats(s1, p1), st3b = R.solStats(s1, p2);
+  ok(st3.dmg > st3b.dmg, 'la bannière donne des dégâts aux gardes de son poste (' + st3b.dmg + ' → ' + st3.dmg + ')');
+  const b2 = R.banAdd(vs, 'ours', 0); r = R.applyV(vs, { type: 'banSet', id: p1.id, ban: b2 }, who);
+  ok(r.ok && p1.ban.k === 'ours' && Object.values(vs.bans).some(b => b.k === 'lion'), 'une autre bannière la remplace : l’ancienne retourne dans la réserve');
+  const or2 = vs.r.or, lionId = Object.values(vs.bans).find(b => b.k === 'lion').id;
+  r = R.applyV(vs, { type: 'banSell', ban: lionId }, who);
+  ok(r.ok && vs.r.or === or2 + 60, 'vendre une bannière rare : +60 or');
+  /* titres de vétéran */
+  const sv0 = R.solStats(s1, p1); s1.vet = 5;
+  ok(R.solTitle(s1)[1] === 'Vétéran' && R.solStats(s1, p1).dmg > sv0.dmg * 1.03 && R.solStats(s1, p1).hp > sv0.hp * 1.03, 'après 5 raids sans tomber : Vétéran (+5 % de dégâts et de vie)');
+  s1.vet = 10; ok(R.solTitle(s1)[1] === 'Briscard', '10 raids : Briscard');
+  s1.vet = 0;
+
+  /* un raid avec la garnison : un portail au nord, les deux postes, dix soldats, pas de héros */
+  const mkRaid = withGuards => {
+    const vr = R.clone(vs);
+    vr.heroes = {}; vr.r.bois = 900; vr.r.pierre = 900; vr.r.or = 300;
+    if (!withGuards) vr.sol = {};
+    for (const s of R.solList(vr)) { s.lvl = Math.max(s.lvl, 5); s.hurt = 0; }
+    p1.gx = 12; p1.gz = 5;
+    vr.raid = { n: 4, next: vr.t }; R.simulateVillage(vr, vr.t + 60000);
+    vr.raid.p = [[12, 0, 0]]; vr.raid.cl = [0];
+    R.simulateVillage(vr, vr.raid.at + 3 * H + 2 * 60000);
+    return vr;
+  };
+  const vr = mkRaid(true), vr0 = mkRaid(false), lr = vr.lastRaid, lr0 = vr0.lastRaid;
+  ok(lr && lr.G && lr.G.length === 8 && lr.res.gd && lr.res.gd.length === 8, 'au raid, les 8 soldats sont à leur poste (gardés pour la rediffusion)');
+  ok(lr0 && !lr0.G && !lr0.res.gd, 'sans garnison : rien de nouveau dans le raid');
+  const sumL = o => Object.values(o || {}).reduce((a, b) => a + b, 0);
+  ok(lr.res.k > lr0.res.k && sumL(lr.res.lost) < sumL(lr0.res.lost), 'avec la garnison : ' + lr.res.k + ' vaincus (dont ' + lr.res.gk + ' par les soldats) au lieu de ' + lr0.res.k + ', ' + sumL(lr.res.lost) + ' volés au lieu de ' + sumL(lr0.res.lost));
+  const rep = st => { let n = 0; while (!st.over && n++ < 4000) { R.raidStep(st); st.ev.length = 0; } return R.raidResult(st); };
+  ok(JSON.stringify(rep(R.raidReplay(JSON.parse(JSON.stringify(lr))))) === JSON.stringify(lr.res), 'la rediffusion rejoue exactement le même raid, soldats compris');
+  const kos = lr.res.gd.filter(x => x[2]).map(x => x[0]), alive = lr.res.gd.filter(x => !x[2]).map(x => x[0]);
+  ok(alive.every(id => vr.sol[id].xp > vs.sol[id].xp || vr.sol[id].lvl > 5) && alive.every(id => vr.sol[id].vet === (vs.sol[id].vet | 0) + 1), 'ceux qui ont tenu gagnent de l’expérience et un raid de plus dans leur série');
+  ok(kos.every(id => R.solHurt(vr.sol[id], vr.t) && vr.sol[id].vet === 0), kos.length + ' soldat(s) tombé(s) : blessé(s) 8 h, série perdue');
+  ok(vr.log.some(l => l.k === 'sol' && /La garnison abat/.test(l.m)), 'le journal : ' + vr.log.filter(l => l.k === 'sol' && /garnison abat/.test(l.m)).slice(-1)[0].m);
+  /* un soldat seul face aux trolls : il tombe, il est blessé 8 heures et perd son titre */
+  {
+    const vk = R.clone(vs); vk.heroes = {}; vk.r.bois = 900; vk.r.pierre = 900;
+    const keep = R.solList(vk)[0]; for (const s of R.solList(vk)) if (s !== keep) delete vk.sol[s.id];
+    Object.assign(keep, { lvl: 1, w: null, a: null, o: {}, vet: 7, hurt: 0, post: p1.id });
+    vk.b.find(b => b.type === 'halle').lvl = 4;
+    vk.raid = { n: 6, next: vk.t }; R.simulateVillage(vk, vk.t + 60000); vk.raid.p = [[12, 0, 0]]; vk.raid.cl = [0];
+    R.simulateVillage(vk, vk.raid.at + 3 * H + 2 * 60000);
+    const gk = vk.lastRaid && vk.lastRaid.res.gd && vk.lastRaid.res.gd[0];
+    ok(gk && gk[2] === 1 && R.solHurt(vk.sol[keep.id], vk.t) && vk.sol[keep.id].hurt === vk.lastRaid.t + 8 * H && vk.sol[keep.id].vet === 0, 'un soldat seul face aux trolls tombe : blessé pour 8 h, série remise à zéro');
+    ok(vk.log.some(l => l.k === 'sol' && /perd son titre : vétéran/.test(l.m)), 'le journal le dit (il perd son titre de vétéran)');
+  }
+  /* un blessé ne défend pas */
+  const vh2 = R.clone(vr), sh = R.solList(vh2)[0]; sh.hurt = vh2.t + 2 * H;
+  ok(!R.raidGuards(vh2, vh2.t).some(e => e[0] === sh.id) && R.raidGuards(vh2, vh2.t + 3 * H).some(e => e[0] === sh.id), 'un blessé ne défend pas ; guéri, il revient à son poste');
+  /* défense réussie : des orbes pour la garnison */
+  const vw = R.clone(vs); vw.heroes = {};
+  for (const s of R.solList(vw)) { s.lvl = 15; s.hurt = 0; }
+  vw.b.push({ id: vw.nid++, type: 'tour', lvl: 3, gx: 14, gz: 7, up: null });
+  vw.raid = { n: 0, next: vw.t }; R.simulateVillage(vw, vw.t + 60000); vw.raid.p = [[12, 0, 0]]; vw.raid.cl = [0];
+  const orbs0 = sumL(vw.orbs);
+  R.simulateVillage(vw, vw.raid.at + 3 * H + 2 * 60000);
+  const lw = vw.lastRaid;
+  ok(lw && !Object.keys(lw.res.lost).length && lw.orbs && lw.orbs.length >= 1 && sumL(vw.orbs) === orbs0 + lw.orbs.length, 'défense réussie (rien volé) : ' + (lw && lw.orbs ? lw.orbs.join(', ') : '?') + ' pour la garnison');
+  /* butin des donjons pour la garnison */
+  const vd2 = R.clone(vs); R.applyV(vd2, { type: 'hero', name: 'Brokk', race: 'nain', cls: 'guerrier' }, who);
+  const hb = Object.values(vd2.heroes)[0], ob0 = sumL(vd2.orbs);
+  vd2.raid = { n: 1, next: vd2.t }; R.simulateVillage(vd2, vd2.t + 60000);
+  r = R.applyV(vd2, { type: 'djEnd', hid: hb.id, lvl: 2, win: true, xp: 100, theme: 'portail', pi: 0 }, who);
+  ok(r.ok && r.orbs.length === 1 && sumL(vd2.orbs) === ob0 + 1, 'gardien du portail vaincu : une orbe' + (r.ban ? ' et une bannière (' + r.ban.k + ')' : '') + ' pour la garnison');
+  const vd3 = R.clone(vd2); r = R.applyV(vd3, { type: 'djEnd', hid: hb.id, lvl: 2, win: true, xp: 100, theme: 'prof', deep: 7, gar: 0 }, who);
+  ok(r.ok && !r.orbs.length && !r.ban, 'à deux, l’invitée ne rapporte rien pour la garnison (c’est l’hôte)');
+  r = R.applyV(vd2, { type: 'djEnd', hid: hb.id, lvl: 2, win: true, xp: 100, theme: 'prof', deep: 7 }, who);
+  ok(r.ok && r.orbs.length === 3 && r.ban, 'Profondeurs, 7 étages : 3 orbes et une bannière');
+  /* retirer un poste, renvoyer, démolir la caserne */
+  const vx = R.clone(vs), px = vx.b.find(b => b.id === p1.id), nG = R.guardsOf(vx, p1.id).length;
+  r = R.applyV(vx, { type: 'demolish', id: px.id }, who);
+  ok(r.ok && nG > 0 && R.solList(vx).every(s => s.post !== p1.id) && Object.values(vx.bans || {}).some(b => b.k === 'ours'), 'poste retiré : ses gardes n’ont plus de poste, sa bannière retourne dans la réserve');
+  ok(!R.applyV(R.clone(vx), { type: 'demolish', id: cas.id }, who).ok, 'pas de démolition de la caserne tant qu’elle loge des soldats');
+  const sx = R.solList(vx)[0]; sx.o = { o0: 'regen2' }; sx.lvl = 4;
+  r = R.applyV(vx, { type: 'dismiss', sid: sx.id }, who);
+  ok(r.ok && !vx.sol[sx.id] && vx.orbs.regen2 === 1, 'un soldat renvoyé : ses orbes retournent dans la réserve');
+  /* la base de données efface les objets vides : on retrouve tout */
+  const back = R.normVillage(JSON.parse(JSON.stringify(vr)));
+  ok(R.solList(back).length === 8 && back.lastRaid.G.length === 8 && JSON.stringify(rep(R.raidReplay(back.lastRaid))) === JSON.stringify(vr.lastRaid.res), 'après un aller-retour par la base : soldats et rediffusion intacts');
+  /* formation : fantassins et lanciers devant (vers le portail), archers et mages derrière */
+  const F = R.solFormation({ x: 12.5, y: 8.5, r: 3 }, ['arch', 'fant', 'mage', 'lanc'], 0, -1, () => false);
+  ok(F[1][1] < F[0][1] && F[3][1] < F[2][1] && F.every(p => Math.hypot(p[0] - 12.5, p[1] - 8.5) <= 3), 'formation : la ligne de front face au portail, tout le monde dans le cercle');
 }
 
 /* 14. Rapidité : simuler 3 jours */

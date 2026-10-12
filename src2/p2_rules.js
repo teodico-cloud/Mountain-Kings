@@ -131,9 +131,13 @@ const BLD = {
   tour: { name: 'Tour d’archers', size: 2, max: 3, cost: { bois: 120, pierre: 90 }, mul: 2, work: 90, hps: [700, 1200, 1900], def: 'tower', tw: { range: [5.5, 6, 6.5], dmg: [14, 22, 34], rate: 1.2 }, cat: 'def', desc: 'Ses archers tirent sur les ennemis à portée pendant les raids.' },
   piege: { name: 'Piège à pointes', size: 1, max: 3, costs: [{ bois: 25, pierre: 10 }, { pierre: 20, fer: 10 }, { pierre: 30, fer: 20 }], inst: 1, def: 'trap', trap: { dmg: [45, 75, 120], uses: [3, 3, 3] }, cat: 'def', desc: 'Caché dans le sol : blesse les ennemis qui marchent dessus (3 fois par raid). On marche dessus sans risque.' },
   filet: { name: 'Filet', size: 1, max: 2, costs: [{ bois: 30 }, { bois: 30, fer: 8 }], inst: 1, def: 'trap', trap: { root: [3, 4.5], uses: [1, 2] }, cat: 'def', desc: 'Caché dans le sol : immobilise quelques secondes l’ennemi qui marche dessus (les trolls s’en défont deux fois plus vite).' },
+  /* Garnison (étape 4b, p2g_garnison.js) : la caserne loge les soldats (3 par niveau) ; chaque poste de garde (1 par niveau de caserne)
+     garde un cercle (zone : rayon en cases selon son niveau). On marche à travers un poste (ennemis compris). */
+  caserne: { name: 'Caserne', size: 2, max: 4, cost: { bois: 140, pierre: 100 }, mul: 2, work: 100, hall: 2, cat: 'def', desc: 'Loge les soldats de la garnison : 3 par niveau (12 au plus), et un poste de garde de plus par niveau. On y recrute des soldats contre de l’or.' },
+  poste: { name: 'Poste de garde', size: 1, max: 3, costs: [{ bois: 30, pierre: 10 }, { bois: 30, pierre: 40 }, { pierre: 60, fer: 15 }], inst: 1, def: 'post', zone: [3, 4, 5], lvlNames: ['Poste de garde', 'Poste fortifié', 'Bastion'], cat: 'def', desc: 'Ses soldats (6 au plus) gardent un cercle autour de lui pendant les raids, sans jamais en sortir. L’améliorer agrandit le cercle.' },
   marchand:{ name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
 };
-const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'rempart', 'porte', 'tour', 'piege', 'filet', 'banc', 'fleurs', 'fontaine', 'statue'];
+const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'rempart', 'porte', 'tour', 'piege', 'filet', 'caserne', 'poste', 'banc', 'fleurs', 'fontaine', 'statue'];
 const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['heros', 'Pour les héros'], ['def', 'Défense'], ['deco', 'Décorations']];
 const LIMITS = {
   halle: [1, 1, 1, 1, 1],
@@ -141,6 +145,7 @@ const LIMITS = {
   moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], brasserie: [0, 1, 1, 1, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
   taverne: [0, 1, 1, 1, 1], mine: [0, 1, 1, 2, 2], forge: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
   rempart: [24, 40, 56, 72, 90], porte: [2, 3, 4, 5, 6], tour: [1, 2, 3, 4, 5], piege: [2, 4, 6, 8, 10], filet: [1, 2, 3, 4, 5],
+  caserne: [0, 1, 1, 1, 1], poste: [4, 4, 4, 4, 4],     // postes : en fait 1 par niveau de caserne (limitV)
 };
 const DECO_MAX = 15;             // le moral apporté par les décorations est plafonné
 const FEAST = { cost: { pain: 30, viande: 30, biere: 20 }, mor: 15, len: DAY, cd: 3 * DAY };
@@ -175,6 +180,9 @@ const hallLvl = v => { const h = v.b.find(b => b.type === 'halle'); return h ? M
 const maxLvlOf = (type, hl) => type === 'halle' ? BLD.halle.max : Math.min(BLD[type].max, hl + 1);
 const limitOf = (type, hl) => LIMITS[type][Math.max(1, Math.min(5, hl)) - 1];
 const countOf = (v, type) => v.b.filter(b => b.type === type).length;
+/* Combien on peut en avoir dans ce village : selon la halle, sauf les postes de garde (un par niveau de caserne). */
+const limitV = (v, type) => type === 'poste' ? postCap(v) : limitOf(type, hallLvl(v));
+const limitWhy = (v, type) => type === 'poste' ? (caserneLvl(v) ? 'Plus de poste possible : agrandissez la caserne.' : 'Il faut d’abord construire la caserne.') : 'Nombre maximum atteint : agrandissez la halle pour en construire plus.';
 const jobsOf = b => BLD[b.type].jobs ? BLD[b.type].jobs + (b.lvl - 1) : 0;
 /* Ce que produit un bâtiment : un champ donne la culture qu'on y a semée (blé par défaut). */
 const cropOf = b => b.crop === 'orge' ? 'orge' : 'ble';
@@ -431,8 +439,9 @@ function stepVillage(v) {
       }
     }
   }
-  /* Repas : moitié pain, moitié viande quand c'est possible */
+  /* Repas : moitié pain, moitié viande quand c'est possible (les soldats de la garnison mangent aussi, un peu plus à chaque niveau) */
   let eat = 0; for (const p of v.vil) eat += EAT_DAY * ((TRAITS[p.tr] || {}).eat || 1);
+  if (v.sol) eat += solFood(v);
   eat = eat / 1440;
   if (eat > 0) {
     const half = eat / 2;
@@ -487,6 +496,7 @@ function ratesOf(v, t) {
     for (const r in o) out[r] += o[r] * f;
   }
   let eat = 0; for (const p of v.vil) eat += EAT_DAY * ((TRAITS[p.tr] || {}).eat || 1) / 24;
+  if (v.sol) eat += solFood(v) / 24;
   out.food = -eat;
   if (hasTavern(v)) out.biere -= v.vil.length * BEER.day / 24;
   return out;
@@ -547,7 +557,7 @@ function applyV(v, a, who) {
     case 'build': {
       const d = BLD[a.b]; if (!d || a.b === 'halle') return fail('Bâtiment inconnu.');
       if ((d.hall || 1) > hl) return fail('Il faut une halle du village de niveau ' + d.hall + '.');
-      if (countOf(v, a.b) >= limitOf(a.b, hl)) return fail('Nombre maximum atteint : agrandissez la halle pour en construire plus.');
+      if (countOf(v, a.b) >= limitV(v, a.b)) return fail(limitWhy(v, a.b));
       if (!fits(v, a.b, a.gx, a.gz)) return fail('Emplacement occupé ou trop près du bord.');
       const c = costOf(a.b, 1), m = missingTxt(v, c); if (m) return fail(m);
       pay(v, c);
@@ -627,9 +637,12 @@ function applyV(v, a, who) {
       const b = v.b.find(x => x.id === a.id); if (!b) return fail('Bâtiment introuvable.');
       if (b.type === 'halle') return fail('On ne démolit pas la halle.');
       if (houseOf(b) && housingOf(v) - houseOf(b) < v.vil.length) return fail('Des villageois y logent : il n’y aurait plus assez de place.');
+      if (b.type === 'caserne' && solList(v).length) return fail('Des soldats y logent : renvoyez-les d’abord.');
       v.b = v.b.filter(x => x !== b);
       for (const p of v.vil) if (p.job === b.id) p.job = null;
       for (const hh of Object.values(v.heroes)) if (hh && hh.at === b.id) hh.at = null;
+      /* un poste retiré : ses gardes n'ont plus de poste, sa bannière retourne dans la réserve */
+      if (b.type === 'poste') { for (const s of solList(v)) if (s.post === b.id) s.post = 0; if (banOk(b.ban)) banAdd(v, b.ban.k, b.ban.r); }
       if (!BLD[b.type].inst) addLog(v, t, nm + ' démolit : ' + BLD[b.type].name.toLowerCase() + '.', 'demolish');   // une palissade retirée : pas de quoi le noter
       return { ok: true };
     }
@@ -733,7 +746,10 @@ function applyV(v, a, who) {
       if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + (th === 'crypte' ? ' d’un tombeau de la crypte' : th === 'portail' ? ' d’une cage du gardien du portail' : ' d’un cachot souterrain') + ', voudrait s’installer au village.', 'cand');
       /* Portail démoniaque vaincu : il se referme (s'il est encore ouvert) ; tous refermés = pas de raid cette fois. */
       const closed = th === 'portail' && win ? raidClosePortal(v, t, a.pi | 0, hh.name) : null;
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed };
+      /* Pour la garnison (réserve commune) : orbes et bannières ; à deux, seulement chez l'hôte (gar: 0 chez l'invitée) */
+      const gar = win && a.gar !== 0 ? garLoot(v, th, L, deep) : { orbs: [], ban: null };
+      if (gar.orbs.length || gar.ban) addLog(v, t, 'Pour la garnison : ' + gar.orbs.map(orbLabel).concat(gar.ban ? [banLabel(gar.ban) + (gar.ban.sold ? ' (réserve pleine : vendue)' : '')] : []).join(', ') + '.', 'sol');
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed, orbs: gar.orbs, ban: gar.ban };
     }
     /* ---------- équipement (étape 3) ---------- */
     case 'equip': {
@@ -867,6 +883,8 @@ function applyV(v, a, who) {
       return { ok: true, g: g.id };
     }
   }
+  /* La garnison (p2g_garnison.js) : recruter, promouvoir, affecter aux postes, équiper, orbes et bannières. */
+  const g = applyGar(v, a, nm, t); if (g) return g;
   return fail('Action inconnue.');
 }
 

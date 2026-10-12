@@ -30,6 +30,9 @@ function raidReportHTML(v, lr, btn) {
     ${r.xp && heroes.length ? `<div class="row split"><span>Expérience des défenseurs</span><b>+${fmtN(r.xp)} chacun</b></div>` : ''}
     ${r.br ? `<div class="row split"><span>Défenses détruites</span><b>${r.br} (à réparer)</b></div>` : ''}
     ${r.ko.length ? `<div class="row split"><span>À terre pendant le combat</span><b>${esc(r.ko.map(names).join(', '))}</b></div>` : ''}
+    ${r.gd ? `<div class="row split"><span>Abattus par la garnison</span><b>${r.gk || 0}</b></div>` : ''}
+    ${r.gd && r.gd.some(x => x[2]) ? `<div class="row split"><span>Soldats blessés (8 h)</span><b>${esc(r.gd.filter(x => x[2]).map(x => { const G = (lr.G || []).find(e => e[0] === x[0]); return G ? solName({ type: G[1], sex: G[3], num: G[15] }) : '?'; }).join(', '))}</b></div>` : ''}
+    ${lr.orbs && lr.orbs.length ? `<div class="row split"><span>Pour la garnison</span><span class="chips2">${lr.orbs.map(k => orbChip(k)).join('')}</span></div>` : ''}
   </div>`;
   if (r.h) h += '<p class="why">Ils ont pillé la halle, le cœur du village : le moral baisse pendant un jour.</p>';
   if (!heroes.length) h += '<p class="note">Aucun héros pour défendre la halle : créez votre héros, il défendra le village.</p>';
@@ -52,6 +55,7 @@ function sheetDefense() {
       ${info.p.map(p => `<div class="row split portrow"><b>Portail ${RAID_OF[p.side]}</b>${p.cl ? '<span class="chip plus">refermé</span>' : hh ? `<span class="row"><button class="btn small primary" data-act="djGo" data-th="portail" data-k="${L}" data-pi="${p.i}">${djIco('sword')}Le refermer</button>${pk && ph ? `<button class="btn small${on ? '' : ' off'}" data-act="djInvite" data-th="portail" data-k="${L}" data-pi="${p.i}"${on ? '' : ' disabled'}>À deux</button>` : ''}</span>` : '<span class="note">crée ton héros</span>'}</div>`).join('')}
       <div class="row"><button class="btn small" data-act="portalLook">Voir le portail</button></div></div>`;
   }
+  h += garCardHTML(v);
   if (lr) h += `<div class="sec"><h4>Dernier raid · ${fmtAgo(lr.t)}</h4><div class="item"><div class="head"><b>${esc(raidTitle(lr.res))}</b><small>${lr.F.length} assaillants · niveau ${lr.L}</small></div>${raidReportHTML(v, lr, true)}</div></div>`;
   /* les défenses du village */
   const of = type => v.b.filter(b => b.type === type), cnt = type => of(type).length + ' sur ' + limitOf(type, hl);
@@ -91,6 +95,7 @@ function sheetDefense() {
 
 /* ---------- panneau d'une défense du village (touchée sur la carte) ---------- */
 function defPanel(v, b) {
+  if (b.type === 'poste') return postPanel(v, b);
   const d = BLD[b.type], hl = hallLvl(v), mx = hpMaxOf(b), hp = hpOf(b), broken = isBroken(b), t = now();
   let h = `<div class="glass card"><h3><span>${esc(b.type === 'tour' ? d.name : lvlName(b))}</span><span class="row"><small>${b.lvl > 0 ? 'niveau ' + b.lvl : 'chantier'}</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>`;
   if (b.up) {
@@ -174,6 +179,7 @@ function raidItems(st) {
   const col = safeColor(me ? me.c : COLORS[0]);
   const out = st.S.filter(S => S.id).map(S => ({ key: 'r' + S.id, id: S.id, type: S.type, lvl: S.lvl, gx: S.x0, gz: S.y0, up: S.lvl < 1 ? { frac: 0 } : null, col, dead: S.dead }));
   for (const T of st.traps) out.push({ key: 'rt' + T.id, id: T.id, type: T.type, lvl: T.lvl, gx: T.x, gz: T.y, up: null, col });
+  for (const P0 of st.posts) out.push({ key: 'rp' + P0.id, id: P0.id, type: 'poste', lvl: P0.lvl, gx: P0.gx, gz: P0.gz, up: null, col, ban: P0.ban ? P0.ban - 1 : undefined });
   return out;
 }
 function raidReplayStart() {
@@ -183,14 +189,14 @@ function raidReplayStart() {
   const st = raidReplay(lr);
   rp = { st, lr, speed: 1, acc: 0, sig: '', ended: false };
   closeSheet(true); modal = null; sel = null; selP = null; place = null;
-  mode = 'raid';
+  mode = 'raid'; ringSig = '?';
   V3.raid.enter(st); V3.clearBuildings(); V3.setBuildings(raidItems(st));   // repartir de zéro : pas d'animation de construction partout
   rpHudBuild(); SND.music('battle', 1); SND.sfx('alarm');
   renderAll();
 }
 function raidReplayExit() {
   if (!rp) return;
-  V3.raid.exit(); rp = null; V3.clearBuildings();
+  V3.raid.exit(); rp = null; V3.clearBuildings(); ringSig = '?';
   const el = $('#rpHud'); if (el) el.hidden = true;
   mode = 'home'; SND.music('village', 1);
   refreshScene(); renderAll();
@@ -222,6 +228,7 @@ function rpEvents(st) {
     switch (e.k) {
       case 'tshot': SND.sfx('shoot', pan); break;
       case 'hhit': SND.sfx(e.sh === 'rodeur' ? 'shoot' : e.sh ? 'bolt' : 'chop'); break;
+      case 'ghit': SND.sfx(e.sh === 'arch' ? 'shoot' : e.sh === 'mage' ? 'bolt' : 'chop', pan); break;
       case 'die': SND.sfx(e.big ? 'collapse' : 'death', pan); break;
       case 'break': SND.sfx('wallbreak', pan); break;
       case 'trap': SND.sfx('wallhit', pan); break;

@@ -59,7 +59,23 @@ function normVillage(v) {
     L.res = Object.assign({ k: 0, e: 0, f: 0, h: 0, g: 0, xp: 0, br: 0, s: 0 }, fbObj(L.res));
     L.res.lost = Object.assign({}, fbObj(L.res.lost)); L.res.back = Object.assign({}, fbObj(L.res.back));
     L.res.ko = fbArr(L.res.ko); L.res.dmg = fbArr(L.res.dmg).map(fbArr);
+    if (L.G) L.G = fbArr(L.G).map(fbArr); else delete L.G;
+    if (L.res.gd) L.res.gd = fbArr(L.res.gd).map(fbArr);
+    if (L.orbs) L.orbs = fbArr(L.orbs); else delete L.orbs;
   } else delete v.lastRaid;
+  /* Garnison (étape 4b) : soldats (communs), orbes et bannières en réserve */
+  const S = {};
+  for (const [k, s0] of Object.entries(fbObj(v.sol))) {
+    if (!s0 || typeof s0 !== 'object' || !s0.type) continue;
+    const s = Object.assign({ n: 0, num: 1, lvl: 1, xp: 0, post: 0, hurt: 0, vet: 0, raids: 0, kills: 0, race: 'humain', sex: 'm' }, s0, { id: s0.id || k, o: Object.assign({}, fbObj(s0.o)) });
+    for (const it of ['w', 'a']) if (!s[it] || typeof s[it] !== 'object') delete s[it];
+    S[s.id] = s;
+  }
+  if (Object.keys(S).length) v.sol = S; else delete v.sol;
+  if (v.orbs && typeof v.orbs === 'object') v.orbs = Object.assign({}, v.orbs); else delete v.orbs;
+  const BN = {};
+  for (const [k, b0] of Object.entries(fbObj(v.bans))) if (b0 && typeof b0 === 'object' && b0.k) BN[b0.id || k] = Object.assign({}, b0, { id: b0.id || k });
+  if (Object.keys(BN).length) v.bans = BN; else delete v.bans;
   return v;
 }
 const fbItem = x => x && typeof x === 'object' && x.sl ? Object.assign({}, x, { gm: Object.assign({}, fbObj(x.gm)) }) : null;
@@ -284,9 +300,13 @@ const BLD = {
   tour: { name: 'Tour d’archers', size: 2, max: 3, cost: { bois: 120, pierre: 90 }, mul: 2, work: 90, hps: [700, 1200, 1900], def: 'tower', tw: { range: [5.5, 6, 6.5], dmg: [14, 22, 34], rate: 1.2 }, cat: 'def', desc: 'Ses archers tirent sur les ennemis à portée pendant les raids.' },
   piege: { name: 'Piège à pointes', size: 1, max: 3, costs: [{ bois: 25, pierre: 10 }, { pierre: 20, fer: 10 }, { pierre: 30, fer: 20 }], inst: 1, def: 'trap', trap: { dmg: [45, 75, 120], uses: [3, 3, 3] }, cat: 'def', desc: 'Caché dans le sol : blesse les ennemis qui marchent dessus (3 fois par raid). On marche dessus sans risque.' },
   filet: { name: 'Filet', size: 1, max: 2, costs: [{ bois: 30 }, { bois: 30, fer: 8 }], inst: 1, def: 'trap', trap: { root: [3, 4.5], uses: [1, 2] }, cat: 'def', desc: 'Caché dans le sol : immobilise quelques secondes l’ennemi qui marche dessus (les trolls s’en défont deux fois plus vite).' },
+  /* Garnison (étape 4b, p2g_garnison.js) : la caserne loge les soldats (3 par niveau) ; chaque poste de garde (1 par niveau de caserne)
+     garde un cercle (zone : rayon en cases selon son niveau). On marche à travers un poste (ennemis compris). */
+  caserne: { name: 'Caserne', size: 2, max: 4, cost: { bois: 140, pierre: 100 }, mul: 2, work: 100, hall: 2, cat: 'def', desc: 'Loge les soldats de la garnison : 3 par niveau (12 au plus), et un poste de garde de plus par niveau. On y recrute des soldats contre de l’or.' },
+  poste: { name: 'Poste de garde', size: 1, max: 3, costs: [{ bois: 30, pierre: 10 }, { bois: 30, pierre: 40 }, { pierre: 60, fer: 15 }], inst: 1, def: 'post', zone: [3, 4, 5], lvlNames: ['Poste de garde', 'Poste fortifié', 'Bastion'], cat: 'def', desc: 'Ses soldats (6 au plus) gardent un cercle autour de lui pendant les raids, sans jamais en sortir. L’améliorer agrandit le cercle.' },
   marchand:{ name: 'Marchand ambulant', size: 1, max: 1, cost: {}, work: 0, cat: 'aucun', desc: 'Sa charrette, les jours où il est là.' },   // pas à construire : juste pour l'afficher
 };
-const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'rempart', 'porte', 'tour', 'piege', 'filet', 'banc', 'fleurs', 'fontaine', 'statue'];
+const SHOP = ['maison', 'bucheron', 'carriere', 'mine', 'champ', 'chasse', 'moulin', 'boulangerie', 'brasserie', 'entrepot', 'taverne', 'forge', 'rempart', 'porte', 'tour', 'piege', 'filet', 'caserne', 'poste', 'banc', 'fleurs', 'fontaine', 'statue'];
 const CATS = [['hab', 'Habitations'], ['prod', 'Production'], ['stock', 'Réserves'], ['vie', 'Vie du village'], ['heros', 'Pour les héros'], ['def', 'Défense'], ['deco', 'Décorations']];
 const LIMITS = {
   halle: [1, 1, 1, 1, 1],
@@ -294,6 +314,7 @@ const LIMITS = {
   moulin: [0, 1, 1, 2, 2], boulangerie: [0, 1, 1, 2, 2], brasserie: [0, 1, 1, 1, 2], chasse: [1, 1, 2, 2, 3], entrepot: [1, 1, 2, 2, 3],
   taverne: [0, 1, 1, 1, 1], mine: [0, 1, 1, 2, 2], forge: [0, 1, 1, 1, 1], banc: [2, 4, 6, 8, 10], fleurs: [4, 8, 12, 16, 20], fontaine: [0, 1, 1, 2, 2], statue: [0, 0, 1, 2, 3],
   rempart: [24, 40, 56, 72, 90], porte: [2, 3, 4, 5, 6], tour: [1, 2, 3, 4, 5], piege: [2, 4, 6, 8, 10], filet: [1, 2, 3, 4, 5],
+  caserne: [0, 1, 1, 1, 1], poste: [4, 4, 4, 4, 4],     // postes : en fait 1 par niveau de caserne (limitV)
 };
 const DECO_MAX = 15;             // le moral apporté par les décorations est plafonné
 const FEAST = { cost: { pain: 30, viande: 30, biere: 20 }, mor: 15, len: DAY, cd: 3 * DAY };
@@ -328,6 +349,9 @@ const hallLvl = v => { const h = v.b.find(b => b.type === 'halle'); return h ? M
 const maxLvlOf = (type, hl) => type === 'halle' ? BLD.halle.max : Math.min(BLD[type].max, hl + 1);
 const limitOf = (type, hl) => LIMITS[type][Math.max(1, Math.min(5, hl)) - 1];
 const countOf = (v, type) => v.b.filter(b => b.type === type).length;
+/* Combien on peut en avoir dans ce village : selon la halle, sauf les postes de garde (un par niveau de caserne). */
+const limitV = (v, type) => type === 'poste' ? postCap(v) : limitOf(type, hallLvl(v));
+const limitWhy = (v, type) => type === 'poste' ? (caserneLvl(v) ? 'Plus de poste possible : agrandissez la caserne.' : 'Il faut d’abord construire la caserne.') : 'Nombre maximum atteint : agrandissez la halle pour en construire plus.';
 const jobsOf = b => BLD[b.type].jobs ? BLD[b.type].jobs + (b.lvl - 1) : 0;
 /* Ce que produit un bâtiment : un champ donne la culture qu'on y a semée (blé par défaut). */
 const cropOf = b => b.crop === 'orge' ? 'orge' : 'ble';
@@ -584,8 +608,9 @@ function stepVillage(v) {
       }
     }
   }
-  /* Repas : moitié pain, moitié viande quand c'est possible */
+  /* Repas : moitié pain, moitié viande quand c'est possible (les soldats de la garnison mangent aussi, un peu plus à chaque niveau) */
   let eat = 0; for (const p of v.vil) eat += EAT_DAY * ((TRAITS[p.tr] || {}).eat || 1);
+  if (v.sol) eat += solFood(v);
   eat = eat / 1440;
   if (eat > 0) {
     const half = eat / 2;
@@ -640,6 +665,7 @@ function ratesOf(v, t) {
     for (const r in o) out[r] += o[r] * f;
   }
   let eat = 0; for (const p of v.vil) eat += EAT_DAY * ((TRAITS[p.tr] || {}).eat || 1) / 24;
+  if (v.sol) eat += solFood(v) / 24;
   out.food = -eat;
   if (hasTavern(v)) out.biere -= v.vil.length * BEER.day / 24;
   return out;
@@ -700,7 +726,7 @@ function applyV(v, a, who) {
     case 'build': {
       const d = BLD[a.b]; if (!d || a.b === 'halle') return fail('Bâtiment inconnu.');
       if ((d.hall || 1) > hl) return fail('Il faut une halle du village de niveau ' + d.hall + '.');
-      if (countOf(v, a.b) >= limitOf(a.b, hl)) return fail('Nombre maximum atteint : agrandissez la halle pour en construire plus.');
+      if (countOf(v, a.b) >= limitV(v, a.b)) return fail(limitWhy(v, a.b));
       if (!fits(v, a.b, a.gx, a.gz)) return fail('Emplacement occupé ou trop près du bord.');
       const c = costOf(a.b, 1), m = missingTxt(v, c); if (m) return fail(m);
       pay(v, c);
@@ -780,9 +806,12 @@ function applyV(v, a, who) {
       const b = v.b.find(x => x.id === a.id); if (!b) return fail('Bâtiment introuvable.');
       if (b.type === 'halle') return fail('On ne démolit pas la halle.');
       if (houseOf(b) && housingOf(v) - houseOf(b) < v.vil.length) return fail('Des villageois y logent : il n’y aurait plus assez de place.');
+      if (b.type === 'caserne' && solList(v).length) return fail('Des soldats y logent : renvoyez-les d’abord.');
       v.b = v.b.filter(x => x !== b);
       for (const p of v.vil) if (p.job === b.id) p.job = null;
       for (const hh of Object.values(v.heroes)) if (hh && hh.at === b.id) hh.at = null;
+      /* un poste retiré : ses gardes n'ont plus de poste, sa bannière retourne dans la réserve */
+      if (b.type === 'poste') { for (const s of solList(v)) if (s.post === b.id) s.post = 0; if (banOk(b.ban)) banAdd(v, b.ban.k, b.ban.r); }
       if (!BLD[b.type].inst) addLog(v, t, nm + ' démolit : ' + BLD[b.type].name.toLowerCase() + '.', 'demolish');   // une palissade retirée : pas de quoi le noter
       return { ok: true };
     }
@@ -886,7 +915,10 @@ function applyV(v, a, who) {
       if (pris) addLog(v, t, pris.name + ' (' + raceName(pris.race, pris.sex).toLowerCase() + '), délivré' + (pris.sex === 'f' ? 'e' : '') + (th === 'crypte' ? ' d’un tombeau de la crypte' : th === 'portail' ? ' d’une cage du gardien du portail' : ' d’un cachot souterrain') + ', voudrait s’installer au village.', 'cand');
       /* Portail démoniaque vaincu : il se referme (s'il est encore ouvert) ; tous refermés = pas de raid cette fois. */
       const closed = th === 'portail' && win ? raidClosePortal(v, t, a.pi | 0, hh.name) : null;
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed };
+      /* Pour la garnison (réserve commune) : orbes et bannières ; à deux, seulement chez l'hôte (gar: 0 chez l'invitée) */
+      const gar = win && a.gar !== 0 ? garLoot(v, th, L, deep) : { orbs: [], ban: null };
+      if (gar.orbs.length || gar.ban) addLog(v, t, 'Pour la garnison : ' + gar.orbs.map(orbLabel).concat(gar.ban ? [banLabel(gar.ban) + (gar.ban.sold ? ' (réserve pleine : vendue)' : '')] : []).join(', ') + '.', 'sol');
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed, orbs: gar.orbs, ban: gar.ban };
     }
     /* ---------- équipement (étape 3) ---------- */
     case 'equip': {
@@ -1020,6 +1052,8 @@ function applyV(v, a, who) {
       return { ok: true, g: g.id };
     }
   }
+  /* La garnison (p2g_garnison.js) : recruter, promouvoir, affecter aux postes, équiper, orbes et bannières. */
+  const g = applyGar(v, a, nm, t); if (g) return g;
   return fail('Action inconnue.');
 }
 
@@ -1296,6 +1330,269 @@ function genMerch(v, d) {
   return { d, it, gm, sold: '' };
 }
 
+/* ===================== LA GARNISON (pur, sans DOM) =====================
+   Une caserne (3 → 12 soldats selon son niveau) et des postes de garde (1 → 4) : chaque poste garde un cercle,
+   ses soldats ne le quittent jamais et se placent tout seuls (fantassins et lanciers devant, archers et mages derrière).
+   Données (communes aux deux joueurs) :
+     v.sol  = { s12: soldat }  soldat = { id, n, num, type, race, sex, lvl, xp, post, w, a, o: { o0, o1, o2 }, hurt, vet, raids, kills }
+     v.orbs = { vie2: 3 }      orbes en réserve (sorte + rareté 0 à 4)
+     v.bans = { b5: { id, k, r } }  bannières en réserve ; celle d'un poste est sur le poste (b.ban = { k, r })
+   Pas de nom propre : « Archère n°2 » (numéro par type). Un soldat abattu pendant un raid est blessé 8 heures (il ne perd rien,
+   sauf sa série de raids : son titre de vétéran). */
+
+const SOL_MAX_LVL = 15;
+const SOLDIERS = {
+  fant: { name: 'Fantassin', fem: 'Fantassine', plural: 'Fantassins', hp: 200, dmg: 10, armor: 0.28, range: 1.0, cd: 1.0, speed: 2.2, front: 1, desc: 'Épée et bouclier : solide, il tient la ligne.' },
+  arch: { name: 'Archer', fem: 'Archère', plural: 'Archers', hp: 120, dmg: 9, armor: 0.06, range: 5.5, cd: 1.1, speed: 2.3, front: 0, desc: 'Il tire de loin, sur ce qui approche de son poste.' },
+  lanc: { name: 'Lancier', fem: 'Lancière', plural: 'Lanciers', hp: 170, dmg: 11, armor: 0.18, range: 1.6, cd: 1.15, speed: 2.1, front: 1, troll: 1.8, desc: 'Longue allonge : il frappe un peu plus loin, et très fort les trolls.' },
+  mage: { name: 'Mage de guerre', fem: 'Mage de guerre', plural: 'Mages de guerre', hp: 100, dmg: 10, armor: 0.04, range: 4.5, cd: 1.4, speed: 2.2, front: 0, splash: 1.3, desc: 'Une boule de feu qui touche aussi autour de sa cible.' },
+};
+const SOL_TYPES = ['fant', 'arch', 'lanc', 'mage'];
+const POST_SLOTS = 6;                                   // gardes au plus par poste
+const SOL_HURT = 8 * HOUR;                              // repos d'un soldat abattu
+const solTypeName = (type, sex) => { const S = SOLDIERS[type] || SOLDIERS.fant; return sex === 'f' ? S.fem : S.name; };
+const solName = s => solTypeName(s.type, s.sex) + ' n°' + Math.max(1, s.num | 0);
+const caserneOf = v => v.b.find(b => b.type === 'caserne' && b.lvl > 0) || null;
+const caserneLvl = v => { const c = caserneOf(v); return c ? Math.min(4, c.lvl) : 0; };
+const solCap = v => 3 * caserneLvl(v);
+const postCap = v => caserneLvl(v);
+const postsOf = v => v.b.filter(b => b.type === 'poste' && b.lvl > 0).sort((a, b) => a.id - b.id);
+const postR = b => BLD.poste.zone[Math.max(1, Math.min(3, b.lvl | 0)) - 1];
+const postNum = (v, b) => postsOf(v).findIndex(x => x.id === b.id) + 1;
+const solList = v => Object.values(v.sol || {}).filter(s => s && SOLDIERS[s.type]).sort((a, b) => (a.n || 0) - (b.n || 0));
+const guardsOf = (v, pid) => solList(v).filter(s => s.post === pid);
+const solHurt = (s, t) => (s.hurt || 0) > t;
+const solXpNeed = L => 30 * Math.max(1, L);
+const recruitCost = v => ({ or: 40 + 10 * solList(v).length });
+const promoteCost = L => { const c = { or: 20 * L, viande: 10 * L }; if (L >= 5) c.fer = 4 * L; return c; };
+const solEat = s => 10 + Math.max(1, s.lvl | 0);       // rations par jour (un villageois en mange 24)
+const solCanPromote = s => s.lvl < SOL_MAX_LVL && (s.xp | 0) >= solXpNeed(s.lvl);
+/* Titres : une série de raids sans tomber ; perdue s'il tombe. */
+const SOL_TITLES = [[20, 'Héros de la garde', 15], [10, 'Briscard', 10], [5, 'Vétéran', 5]];
+const solTitle = s => SOL_TITLES.find(x => (s.vet | 0) >= x[0]) || null;
+
+/* ---------- équipement : une arme (son nom suit le type du soldat) et une armure complète (un ensemble, avec son bonus) ----------
+   Forgés au niveau du soldat (il), améliorables de +1 à +5 selon la forge (up). L'armure porte son ensemble (set). */
+const SOL_WEAPON = { fant: 'Épée', arch: 'Arc', lanc: 'Lance', mage: 'Bâton de feu' };
+const SOL_SETS = {
+  fer: { name: 'Armure de la Garde de fer', st: 'armor', v: 10, t: '+10 % d’armure', fit: 'fant' },
+  vent: { name: 'Tenue des Vents', st: 'haste', v: 15, t: 'attaque 15 % plus vite', fit: 'arch' },
+  roc: { name: 'Harnois du Roc', st: 'thorns', v: 12, t: 'renvoie 12 % des coups reçus', fit: 'lanc' },
+  braise: { name: 'Robe de braise', st: 'dmg', v: 12, t: '+12 % de dégâts', fit: 'mage' },
+};
+const SOL_SET_KEYS = Object.keys(SOL_SETS);
+const solWeaponDmg = it => r1((10 + 2 * it.il) * (1 + 0.1 * (it.up | 0)));
+const solArmorHp = it => r1((12 + 2.5 * it.il) * (1 + 0.1 * (it.up | 0)));
+const solForgeCost = (k, L) => k === 'w' ? { fer: 20 + 4 * L, bois: 10 + 2 * L, or: 10 + 3 * L } : { fer: 25 + 5 * L, or: 15 + 3 * L };
+const solImproveCost = it => { const k = (it.up | 0) + 1; return { fer: (10 + 2 * it.il) * k, or: (8 + 2 * it.il) * k }; };
+const solMelt = it => Math.max(1, Math.round((10 + 2 * it.il) * (1 + 0.5 * (it.up | 0)) * 0.5));
+const solItemName = (s, k) => { const it = s[k]; if (!it) return ''; return (k === 'w' ? SOL_WEAPON[s.type] + ' de soldat' : (SOL_SETS[it.set] || SOL_SETS.fer).name) + ' (niv. ' + it.il + ')' + (it.up ? ' +' + it.up : ''); };
+
+/* ---------- orbes de défense : 3 emplacements par soldat (niveaux 4, 8 et 12) ---------- */
+const ORB_LVLS = [4, 8, 12];
+const ORBS = {
+  vie: { name: 'Orbe de vie', st: 'hp', v: [8, 12, 17, 23, 30], t: x => '+' + x + ' % de vie', col: '#e0464e' },
+  armure: { name: 'Orbe d’armure', st: 'armor', v: [4, 6, 9, 12, 16], t: x => '+' + x + ' % d’armure', col: '#8aa0b4' },
+  regen: { name: 'Orbe de régénération', st: 'regen', v: [0.4, 0.6, 0.9, 1.3, 1.8], t: x => 'récupère ' + String(x).replace('.', ',') + ' % de vie par seconde', col: '#5cc27a' },
+  epines: { name: 'Orbe d’épines', st: 'thorns', v: [8, 12, 18, 25, 35], t: x => 'renvoie ' + x + ' % des coups reçus', col: '#b07ce8' },
+  esquive: { name: 'Orbe d’esquive', st: 'dodge', v: [4, 6, 9, 12, 16], t: x => '+' + x + ' % d’esquive', col: '#e8b23a' },
+};
+const ORB_KEYS = Object.keys(ORBS);
+const ORB_DROP = [55, 30, 12, 2.6, 0.4];
+const ORB_FUSE = [15, 40, 100, 250];                    // or pour fusionner trois orbes en une de la rareté suivante
+const orbOf = key => { const m = /^([a-z]+)([0-4])$/.exec(String(key || '')); if (!m || !ORBS[m[1]]) return null; const O = ORBS[m[1]], r = +m[2]; return { key: m[1] + r, type: m[1], r, st: O.st, v: O.v[r], col: O.col, name: O.name, txt: O.t(O.v[r]) }; };
+const orbLabel = key => { const O = orbOf(key); return O ? O.name + ' (' + RARITY[O.r].name.toLowerCase() + ')' : ''; };
+function orbAdd(v, key, n) { if (!orbOf(key)) return; if (!v.orbs) v.orbs = {}; v.orbs[key] = (v.orbs[key] || 0) + (n || 1); }
+function orbTake(v, key) { if (!v.orbs || !(v.orbs[key] > 0)) return false; v.orbs[key]--; if (!v.orbs[key]) delete v.orbs[key]; return true; }
+
+/* ---------- bannières : une par poste, bonus à tous les gardes du cercle ---------- */
+const BANNERS = {
+  lion: { name: 'Bannière du lion', st: 'dmg', v: [8, 12, 17, 23, 30], t: x => '+' + x + ' % de dégâts' },
+  ours: { name: 'Bannière de l’ours', st: 'hp', v: [10, 15, 21, 28, 36], t: x => '+' + x + ' % de vie' },
+  faucon: { name: 'Bannière du faucon', st: 'haste', v: [8, 12, 17, 23, 30], t: x => 'attaquent ' + x + ' % plus vite' },
+  tour: { name: 'Bannière de la tour', st: 'armor', v: [5, 7, 10, 13, 17], t: x => '+' + x + ' % d’armure' },
+  chene: { name: 'Bannière du chêne', st: 'regen', v: [0.4, 0.6, 0.9, 1.2, 1.6], t: x => 'récupèrent ' + String(x).replace('.', ',') + ' % de vie par seconde' },
+};
+const BAN_KEYS = Object.keys(BANNERS);
+const BAN_DROP = [35, 35, 20, 8, 2];
+const BAN_MAX = 12;                                     // bannières en réserve au plus (au-delà : vendues d'office)
+const banPrice = ban => [10, 25, 60, 150, 400][Math.max(0, Math.min(4, ban.r | 0))];
+const banOk = ban => !!(ban && BANNERS[ban.k] && ban.r >= 0 && ban.r <= 4);
+const banTxt = ban => banOk(ban) ? BANNERS[ban.k].t(BANNERS[ban.k].v[ban.r]) : '';
+const banLabel = ban => banOk(ban) ? BANNERS[ban.k].name + ' (' + RARITY[ban.r].name.toLowerCase() + ')' : '';
+/* Une bannière gagnée entre dans la réserve ; réserve pleine : vendue pour de l'or. Renvoie l'identifiant (ou null si vendue). */
+function banAdd(v, k, r) {
+  if (!v.bans) v.bans = {};
+  if (Object.keys(v.bans).length >= BAN_MAX) { v.r.or = (v.r.or || 0) + banPrice({ r }); return null; }
+  const id = 'b' + (v.banN = (v.banN | 0) + 1);
+  v.bans[id] = { id, k, r };
+  return id;
+}
+
+/* ---------- ce que vaut un soldat (vie, dégâts…) : niveau, équipement, orbes, bannière de son poste, titre ---------- */
+const gPow = (b, n) => { let k = 1; for (let i = 0; i < n; i++) k *= b; return k; };
+function solStats(s, post) {
+  const S = SOLDIERS[s.type] || SOLDIERS.fant, L = Math.max(1, Math.min(SOL_MAX_LVL, s.lvl | 0)), pw = gPow(1.08, L - 1);
+  const G = { hp: 0, dmg: 0, armor: 0, haste: 0, regen: 0, thorns: 0, dodge: 0 };
+  if (s.w) G.dmg += solWeaponDmg(s.w);
+  if (s.a) { G.hp += solArmorHp(s.a); const SS = SOL_SETS[s.a.set]; if (SS) G[SS.st] += SS.v; }
+  for (let i = 0; i < 3; i++) { const O = orbOf(s.o && s.o['o' + i]); if (O && L >= ORB_LVLS[i]) G[O.st] += O.v; }
+  const ban = post && banOk(post.ban) ? post.ban : null; if (ban) G[BANNERS[ban.k].st] += BANNERS[ban.k].v[ban.r];
+  const ti = solTitle(s); if (ti) { G.hp += ti[2]; G.dmg += ti[2]; }
+  return {
+    hp: Math.round(S.hp * pw * (1 + G.hp / 100)), dmg: r1(S.dmg * pw * (1 + G.dmg / 100)),
+    armor: r2(Math.min(0.7, S.armor + G.armor / 100)), cd: r2(S.cd / (1 + G.haste / 100)),
+    regen: r2(Math.min(3, G.regen)), thorns: r2(Math.min(0.6, G.thorns / 100)), dodge: r2(Math.min(0.4, G.dodge / 100)),
+    range: S.range, speed: S.speed,
+  };
+}
+const solFood = v => solList(v).reduce((a, s) => a + solEat(s), 0);
+
+/* ---------- butin pour la garnison (donjon gagné, gardien du portail, Profondeurs) ----------
+   Orbe : 2 chances sur 5 pour la mine et la crypte, toujours une au portail, une tous les 3 étages des Profondeurs.
+   Bannière : 3 chances sur 5 sur le gardien du portail, une pour 5 étages des Profondeurs ou plus. */
+function garLoot(v, th, L, deep) {
+  const R = mulberry32(hash((v.seed ^ Math.imul((v.gN = (v.gN | 0) + 1), 0x27d4eb2d)) >>> 0)), orbs = [];
+  const lv = L + (th === 'prof' ? Math.ceil(deep / 2) : 0);
+  const n = th === 'prof' ? Math.min(5, Math.ceil(deep / 3)) : th === 'portail' ? 1 : R() < 0.4 ? 1 : 0;
+  for (let i = 0; i < n; i++) { const key = pickOf(R, ORB_KEYS) + rollRarity(R, ORB_DROP, lv); orbAdd(v, key); orbs.push(key); }
+  let ban = null;
+  if ((th === 'portail' && R() < 0.6) || (th === 'prof' && deep >= 5)) { const k = pickOf(R, BAN_KEYS), r = rollRarity(R, BAN_DROP, lv); ban = { k, r, sold: !banAdd(v, k, r) }; }
+  return { orbs, ban };
+}
+/* Défense réussie (rien n'a été emporté) : une orbe, deux si personne ne s'est enfui. */
+function garRaidOrbs(v, inp, res) {
+  if (Object.keys(res.lost || {}).length) return [];
+  const R = mulberry32((inp.sd ^ 0x2f6b55a7) >>> 0), out = [];
+  for (let i = 0; i < (res.e ? 1 : 2); i++) { const key = pickOf(R, ORB_KEYS) + rollRarity(R, ORB_DROP, inp.L); orbAdd(v, key); out.push(key); }
+  return out;
+}
+
+/* ---------- actions de la garnison (appelées par applyV) : null si l'action n'est pas d'ici ---------- */
+function applyGar(v, a, nm, t) {
+  const fail = err => ({ ok: false, err });
+  const solAt = () => (v.sol && v.sol[a.sid]) || null;
+  switch (a.type) {
+    case 'recruit': {
+      if (!caserneLvl(v)) return fail('Il faut d’abord construire la caserne.');
+      if (!SOLDIERS[a.t]) return fail('Type de soldat inconnu.');
+      const list = solList(v);
+      if (list.length >= solCap(v)) return fail(list.length >= 12 ? 'La garnison est complète (12 soldats).' : 'La caserne est pleine : agrandissez-la pour recruter plus.');
+      const c = recruitCost(v), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c);
+      const n = v.nid++, R = mulberry32(hash((v.seed ^ Math.imul(n, 0x85ebca6b)) >>> 0));
+      const x = R(), race = x < 0.5 ? 'humain' : x < 0.78 ? 'nain' : 'elfe', sex = R() < 0.5 ? 'm' : 'f';
+      const used = new Set(list.filter(s => s.type === a.t).map(s => s.num | 0)); let num = 1; while (used.has(num)) num++;
+      if (!v.sol) v.sol = {};
+      const s = { id: 's' + n, n, num, type: a.t, race, sex, lvl: 1, xp: 0, post: 0, o: {}, hurt: 0, vet: 0, raids: 0, kills: 0 };
+      v.sol[s.id] = s;
+      /* il rejoint tout seul le premier poste qui a de la place */
+      const p = postsOf(v).find(b => guardsOf(v, b.id).length < POST_SLOTS); if (p) s.post = p.id;
+      addLog(v, t, nm + ' recrute ' + (sex === 'f' ? 'une ' : 'un ') + solTypeName(a.t, sex).toLowerCase() + ' à la caserne (' + solName(s) + ').', 'sol');
+      return { ok: true, id: s.id, name: solName(s), post: s.post };
+    }
+    case 'dismiss': {
+      const s = solAt(); if (!s) return fail('Soldat introuvable.');
+      for (const k of ['o0', 'o1', 'o2']) if (orbOf(s.o && s.o[k])) orbAdd(v, s.o[k]);
+      const back = (s.w ? solMelt(s.w) : 0) + (s.a ? solMelt(s.a) : 0);
+      if (back) v.r.fer = Math.min(Math.max(capOf(v), v.r.fer || 0), (v.r.fer || 0) + back);
+      delete v.sol[s.id];
+      addLog(v, t, nm + ' renvoie ' + solName(s) + ' de la caserne.', 'sol');
+      return { ok: true, back };
+    }
+    case 'promote': {
+      const s = solAt(); if (!s) return fail('Soldat introuvable.');
+      if (s.lvl >= SOL_MAX_LVL) return fail('Déjà au niveau maximum (' + SOL_MAX_LVL + ').');
+      if ((s.xp | 0) < solXpNeed(s.lvl)) return fail('Pas encore assez d’expérience : elle se gagne en défendant le village.');
+      const c = promoteCost(s.lvl), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); s.xp = (s.xp | 0) - solXpNeed(s.lvl); s.lvl++;
+      return { ok: true, lvl: s.lvl, orb: ORB_LVLS.includes(s.lvl) };
+    }
+    case 'solPost': {
+      const s = solAt(); if (!s) return fail('Soldat introuvable.');
+      const to = a.post | 0;
+      if (to) {
+        const b = v.b.find(x => x.id === to && x.type === 'poste'); if (!b) return fail('Poste introuvable.');
+        if (guardsOf(v, to).filter(x => x.id !== s.id).length >= POST_SLOTS) return fail('Ce poste est complet (' + POST_SLOTS + ' gardes).');
+      }
+      s.post = to;
+      return { ok: true };
+    }
+    case 'solAuto': {
+      /* chacun son tour, poste après poste : un peu de chaque type partout (fantassins et lanciers d'abord, les plus forts d'abord) */
+      const posts = postsOf(v); if (!posts.length) return fail('Posez d’abord un poste de garde (menu Défense).');
+      const list = solList(v).slice().sort((x, y) => SOL_TYPES.indexOf(x.type) - SOL_TYPES.indexOf(y.type) || y.lvl - x.lvl || x.n - y.n);
+      if (!list.length) return fail('Recrutez d’abord des soldats à la caserne.');
+      const cnt = posts.map(() => 0); let i = 0;
+      for (const s of list) {
+        let k = 0; while (k < posts.length && cnt[(i + k) % posts.length] >= POST_SLOTS) k++;
+        if (k >= posts.length) { s.post = 0; continue; }
+        const j = (i + k) % posts.length; s.post = posts[j].id; cnt[j]++; i = j + 1;
+      }
+      return { ok: true, n: list.length, p: posts.length };
+    }
+    case 'solForge': {
+      if (!forgeLvlOf(v)) return fail('Il faut une forge pour équiper les soldats.');
+      const s = solAt(); if (!s) return fail('Soldat introuvable.');
+      const k = a.k === 'a' ? 'a' : 'w', set = k === 'a' ? (SOL_SETS[a.set] ? a.set : null) : null;
+      if (k === 'a' && !set) return fail('Choisis une armure.');
+      const c = solForgeCost(k, s.lvl), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c);
+      const old = s[k], back = old ? solMelt(old) : 0;
+      if (back) v.r.fer = Math.min(Math.max(capOf(v), v.r.fer || 0), (v.r.fer || 0) + back);
+      s[k] = k === 'a' ? { il: s.lvl, up: 0, set } : { il: s.lvl, up: 0 };
+      return { ok: true, back, name: solItemName(s, k) };
+    }
+    case 'solImprove': {
+      const f = forgeLvlOf(v); if (!f) return fail('Il faut une forge.');
+      const s = solAt(); if (!s) return fail('Soldat introuvable.');
+      const it = s[a.k === 'a' ? 'a' : 'w']; if (!it) return fail('Rien à améliorer : forgez-le d’abord.');
+      if ((it.up | 0) >= maxUpOf(f)) return fail((it.up | 0) >= 5 ? 'Déjà amélioré au maximum (+5).' : 'Agrandissez la forge pour aller plus loin.');
+      const c = solImproveCost(it), m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c); it.up = (it.up | 0) + 1;
+      return { ok: true, up: it.up };
+    }
+    case 'orbSet': case 'orbOff': {
+      const s = solAt(); if (!s) return fail('Soldat introuvable.');
+      const i = a.s | 0; if (i < 0 || i > 2) return fail('Emplacement inconnu.');
+      if (!s.o) s.o = {};
+      const old = s.o['o' + i];
+      if (a.type === 'orbOff') { if (orbOf(old)) { orbAdd(v, old); delete s.o['o' + i]; } return { ok: true }; }
+      if (s.lvl < ORB_LVLS[i]) return fail('Cet emplacement s’ouvre au niveau ' + ORB_LVLS[i] + '.');
+      const O = orbOf(a.o); if (!O) return fail('Orbe inconnue.');
+      if (!orbTake(v, O.key)) return fail('Plus d’orbe de ce genre en réserve.');
+      if (orbOf(old)) orbAdd(v, old);
+      s.o['o' + i] = O.key;
+      return { ok: true, name: orbLabel(O.key) };
+    }
+    case 'orbFuse': {
+      const O = orbOf(a.o); if (!O) return fail('Orbe inconnue.');
+      if (O.r >= 4) return fail('Cette orbe est déjà légendaire.');
+      if (((v.orbs || {})[O.key] || 0) < 3) return fail('Il faut trois orbes pareilles.');
+      const c = { or: ORB_FUSE[O.r] }, m = missingTxt(v, c); if (m) return fail(m);
+      pay(v, c);
+      v.orbs[O.key] -= 3; if (!v.orbs[O.key]) delete v.orbs[O.key];
+      const nk = O.type + (O.r + 1); orbAdd(v, nk);
+      return { ok: true, o: nk, name: orbLabel(nk) };
+    }
+    case 'banSet': case 'banOff': {
+      const b = v.b.find(x => x.id === a.id && x.type === 'poste'); if (!b) return fail('Poste introuvable.');
+      let ban = null;
+      if (a.type === 'banSet') { ban = v.bans && v.bans[a.ban]; if (!banOk(ban)) return fail('Bannière introuvable.'); delete v.bans[a.ban]; }
+      if (banOk(b.ban)) banAdd(v, b.ban.k, b.ban.r);      // l'ancienne retourne dans la réserve (vendue si la réserve est pleine)
+      delete b.ban;
+      if (ban) b.ban = { k: ban.k, r: ban.r };
+      return { ok: true, name: ban ? banLabel(ban) : '' };
+    }
+    case 'banSell': {
+      const ban = v.bans && v.bans[a.ban]; if (!banOk(ban)) return fail('Bannière introuvable.');
+      const gain = banPrice(ban); delete v.bans[a.ban]; v.r.or = (v.r.or || 0) + gain;
+      return { ok: true, gain };
+    }
+  }
+  return null;
+}
+
 /* ===================== RAIDS : portails démoniaques, gobelins, voleurs et trolls (pur, sans DOM) =====================
    Le calendrier : le premier portail s'ouvre au début du 3e jour du village ; il se charge pendant 3 heures (on voit de quel côté
    viendra le raid), puis le raid part dès que les deux joueurs sont absents depuis 2 heures. Le portail suivant s'ouvre 20 à 28 heures
@@ -1407,12 +1704,25 @@ function raidForce(v, R, open) {
   /* les trolls ouvrent la marche, les gobelins suivent, les voleurs se faufilent un peu après */
   return list.map((type, i) => [type, open[i % open.length], r1((type === 'troll' ? 0 : type === 'gobelin' ? 1.5 : 6) + i * 0.6 + rnd() * 0.8)]);
 }
+/* La garnison : les soldats affectés à un poste et pas blessés.
+   [id, type, race, sexe, niveau, vie, dégâts, armure, allonge, secondes entre deux coups, vitesse, poste, esquive, régénération (% par s), épines, numéro, titre]
+   Sans nourriture au village, ils frappent moins fort (−25 %). */
+function raidGuards(v, t) {
+  const posts = v.b.filter(b => b.type === 'poste' && b.lvl > 0), hungry = (v.hunger || 0) > 0 || foodOf(v) < 1;
+  return solList(v).filter(s => s.post && !solHurt(s, t) && posts.some(b => b.id === s.post)).map(s => {
+    const S = solStats(s, posts.find(b => b.id === s.post));
+    return [s.id, s.type, s.race === 'nain' || s.race === 'elfe' ? s.race : 'humain', s.sex === 'f' ? 'f' : 'm', Math.max(1, s.lvl | 0), S.hp, hungry ? r1(S.dmg * 0.75) : S.dmg, S.armor, S.range, S.cd, S.speed, s.post, S.dodge, S.regen, S.thorns, s.num | 0, solTitle(s) ? 1 : 0];
+  });
+}
 function raidInput(v, t) {
   const R = v.raid, open = R.p.map((p, i) => i).filter(i => !R.cl[i]);
-  const B = v.b.filter(b => BLD[b.type] && b.type !== 'marchand').map(b => [b.id, b.type, b.lvl | 0, b.gx, b.gz, BLD[b.type].hps ? Math.round(hpOf(b)) : 0]);
+  /* le 6e nombre : la solidité (palissade, porte, tour) ; pour un poste de garde, la rareté de sa bannière + 1 (0 : pas de bannière) */
+  const B = v.b.filter(b => BLD[b.type] && b.type !== 'marchand').map(b => [b.id, b.type, b.lvl | 0, b.gx, b.gz, b.type === 'poste' ? (banOk(b.ban) ? 1 + b.ban.r : 0) : BLD[b.type].hps ? Math.round(hpOf(b)) : 0]);
   const H = Object.values(v.heroes || {}).filter(Boolean).sort((a, b) => (a.n || 0) - (b.n || 0)).map(raidHeroStats);
   const stock = {}; for (const k of RAID_LOOT.concat(['or'])) stock[k] = Math.floor(v.r[k] || 0);
-  return { t, n: R.n | 0, sd: R.sd, L: raidLevel(v), P: R.p.map((p, i) => [p[0], p[1], p[2], R.cl[i] ? 1 : 0]), B, H, F: raidForce(v, R, open), R: stock };
+  const inp = { t, n: R.n | 0, sd: R.sd, L: raidLevel(v), P: R.p.map((p, i) => [p[0], p[1], p[2], R.cl[i] ? 1 : 0]), B, H, F: raidForce(v, R, open), R: stock };
+  const G = raidGuards(v, t); if (G.length) inp.G = G;
+  return inp;
 }
 
 /* ---------- le combat ---------- */
@@ -1421,7 +1731,7 @@ function raidStart(inp) {
   const N = GRID * GRID, L = Math.max(1, inp.L | 0);
   const st = {
     inp, t: 0, n: 0, rs: (inp.sd ^ 0x2545f491) >>> 0, over: false, ev: [],
-    S: [], occ: new Int16Array(N), trapAt: new Int16Array(N), traps: [], towers: [], foes: [], heroes: [],
+    S: [], occ: new Int16Array(N), trapAt: new Int16Array(N), traps: [], towers: [], foes: [], heroes: [], posts: [], guards: [],
     ff: {}, hf: new Map(), gen: 0, hall: -1, stores: [],
     stock: Object.assign({}, inp.R), taken: {}, lost: {}, back: {}, kills: 0, esc: 0, gold: 0, xp: 0, heart: 0, broke: 0,
     L, mul: raidPow(1.12, L - 1), lootMul: 1 + 0.15 * (L - 1),
@@ -1429,6 +1739,8 @@ function raidStart(inp) {
   };
   for (const e of inp.B) {
     const id = e[0], type = e[1], lvl = e[2] | 0, gx = e[3], gz = e[4], d = BLD[type]; if (!d) continue;
+    /* poste de garde : on passe à travers ; il garde un cercle (bannière : sa rareté + 1) */
+    if (d.def === 'post') { if (lvl >= 1) st.posts.push({ id, lvl, gx, gz, x: gx + 0.5, y: gz + 0.5, r: d.zone[Math.min(lvl, d.max) - 1], ban: e[5] | 0 }); continue; }
     if (d.def === 'trap') {
       if (lvl < 1) continue;
       const T = d.trap, k = Math.min(lvl, d.max) - 1;
@@ -1454,6 +1766,20 @@ function raidStart(inp) {
     st.heroes.push({ id: e[0], name: e[1], cls: e[2], race: e[3], sex: e[4], col: e[5], lvl: e[6], kind: 'hero', hp: e[7], hpMax: e[7], dmg: e[8], armor: e[9], range: e[10], cd: e[11], speed: e[12],
       r: 0.3, x: sp[0], y: sp[1], px: sp[0], py: sp[1], home: sp, atkT: 0.2 + 0.1 * i, atkN: 0, mv: false, ko: false, dead: false, fx: 0, fy: 1 });
   });
+  /* La garnison : chaque garde à sa place dans la formation de son poste, tournée vers le portail ouvert le plus proche */
+  const G = inp.G || [], open = inp.P.filter(p => !p[3]);
+  for (const P0 of st.posts) {
+    const mine = G.filter(e => e[11] === P0.id); if (!mine.length) continue;
+    let dx = 0, dy = -1, bd = 1e18;
+    for (const p of open) { const ex = p[0] + 0.5 - P0.x, ey = p[1] + 0.5 - P0.y, d2 = ex * ex + ey * ey; if (d2 < bd && d2 > 1e-6) { bd = d2; const L0 = Math.sqrt(d2); dx = ex / L0; dy = ey / L0; } }
+    const spots = solFormation(P0, mine.map(e => e[1]), dx, dy, (cx, cy) => raidBlocked(st, cx, cy));
+    mine.forEach((e, i) => {
+      const sp = spots[i];
+      st.guards.push({ id: e[0], type: SOLDIERS[e[1]] ? e[1] : 'fant', race: e[2], sex: e[3], lvl: e[4], kind: 'guard', hp: e[5], hpMax: e[5], dmg: e[6], armor: e[7], range: e[8], cd: e[9], speed: e[10],
+        post: P0, dodge: e[12], regen: e[13], thorns: e[14], num: e[15], title: e[16], r: 0.28, x: sp[0], y: sp[1], px: sp[0], py: sp[1], home: sp,
+        atkT: 0.3 + 0.07 * st.guards.length, atkN: 0, mv: false, ko: false, dead: false, fx: dx, fy: dy, kills: 0 });
+    });
+  }
   inp.F.forEach((f, i) => {
     const type = RAID_FOES[f[0]] ? f[0] : 'gobelin', D = RAID_FOES[type], k = st.mul;
     st.foes.push({ id: 100 + i, type, kind: 'mob', pi: Math.max(0, Math.min(inp.P.length - 1, f[1] | 0)), delay: +f[2] || 0, on: false, dead: false, out: false,
@@ -1478,6 +1804,37 @@ function raidSpots(st, n) {
   const step = Math.max(1, Math.floor(out.length / n)), pick = [];
   for (let i = 0; i < n; i++) pick.push(out[(i * step) % out.length]);
   return pick;
+}
+/* Une case où un défenseur ne peut pas aller : hors de la vallée, un mur, un bâtiment (pas une porte ni une ruine). */
+function raidBlocked(st, cx, cy) {
+  if (cx < 0 || cy < 0 || cx >= GRID || cy >= GRID) return true;
+  const o = st.occ[cy * GRID + cx] - 1; return o >= 0 && st.S[o].kind !== 'gate';
+}
+/* Formation d'un poste (P0 : { x, y, r }) : fantassins et lanciers devant, vers (dx, dy), archers et mages derrière ; 4 par rang.
+   Une place prise par un mur ou hors du cercle : la case libre la plus proche dans le cercle. Même résultat partout (raid et village). */
+function solFormation(P0, types, dx, dy, blocked) {
+  const px = -dy, py = dx, out = new Array(types.length), taken = [], fr = [], bk = [], rows = [];
+  types.forEach((ty, i) => ((SOLDIERS[ty] || SOLDIERS.fant).front ? fr : bk).push(i));
+  const lay = (idx, d0) => { for (let k = 0; k < idx.length; k += 4) rows.push([idx.slice(k, k + 4), d0 - 0.9 * (k / 4)]); };
+  lay(fr, Math.min(1.5, P0.r * 0.45)); lay(bk, -Math.min(0.6, P0.r * 0.15));
+  for (const [list, d] of rows) list.forEach((i, j) => {
+    const off = (j - (list.length - 1) / 2) * 0.9;
+    let x = P0.x + dx * d + px * off, y = P0.y + dy * d + py * off;
+    if (blocked(Math.floor(x), Math.floor(y)) || raidLen(x - P0.x, y - P0.y) > P0.r - 0.2) { const f = solFree(P0, x, y, blocked, taken); x = f[0]; y = f[1]; }
+    taken.push([x, y]); out[i] = [Math.round(x * 100) / 100, Math.round(y * 100) / 100];
+  });
+  return out;
+}
+function solFree(P0, x, y, blocked, taken) {
+  let best = null, bd = 1e18;
+  for (let cy = Math.floor(P0.y - P0.r); cy <= Math.floor(P0.y + P0.r); cy++) for (let cx = Math.floor(P0.x - P0.r); cx <= Math.floor(P0.x + P0.r); cx++) {
+    if (blocked(cx, cy)) continue;
+    const ox = cx + 0.5, oy = cy + 0.5; if (raidLen(ox - P0.x, oy - P0.y) > P0.r - 0.2) continue;
+    let used = 0; for (const q of taken) if (raidLen(q[0] - ox, q[1] - oy) < 0.5) used++;
+    const d = (ox - x) * (ox - x) + (oy - y) * (oy - y) + used * 4;
+    if (d < bd) { bd = d; best = [ox, oy]; }
+  }
+  return best || [P0.x, P0.y];
 }
 
 /* ---------- chemins : une carte des distances par but (halle, réserve, portail), refaite quand un mur tombe ---------- */
@@ -1548,10 +1905,18 @@ function raidHeroField(st, goal) {
 }
 
 /* ---------- dégâts ---------- */
-function raidHurtFoe(st, u, v) {
+function raidHurtFoe(st, u, v, by) {
   if (!raidAlive(u) || !(v > 0)) return;
   u.hp -= v; st.ev.push({ k: 'hit', id: u.id, v: Math.round(v) });
-  if (u.hp <= 0) raidKill(st, u);
+  if (u.hp <= 0) { raidKill(st, u); if (by && by.kind === 'guard') by.kills++; }
+}
+/* Un garde touché : il esquive peut-être, son armure encaisse, ses épines renvoient une part du coup ; à 0, il tombe (blessé). */
+function raidHurtGuard(st, g, v, u) {
+  if (g.ko) return;
+  if (g.dodge > 0 && raidRnd(st) < g.dodge) { st.ev.push({ k: 'dodge', id: g.id }); return; }
+  const n = v * (1 - g.armor); g.hp -= n; st.ev.push({ k: 'hurt', id: g.id, v: Math.round(n) });
+  if (g.thorns > 0 && u) raidHurtFoe(st, u, n * g.thorns, g);
+  if (g.hp <= 0) { g.hp = 0; g.ko = true; g.dead = true; st.ev.push({ k: 'ko', id: g.id, x: g.x, y: g.y }); }
 }
 function raidKill(st, u) {
   const D = RAID_FOES[u.type];
@@ -1619,11 +1984,12 @@ function raidTrapCheck(st, u) {
 function raidFoeStep(st, u) {
   if (!raidAlive(u)) return;
   u.mv = false; u.atkT -= RAID_DT; if (u.root > 0) u.root -= RAID_DT;
-  /* 1) un héros à portée : on se bat (les voleurs, eux, ne se battent jamais) */
+  /* 1) un héros ou un garde à portée : on se bat (les voleurs, eux, ne se battent jamais) */
   if (u.fight) {
     let h = null, bd = 1e9;
     for (const o of st.heroes) { if (o.ko) continue; const d = raidDist(u, o); if (d <= u.r + o.r + u.reach && d < bd) { bd = d; h = o; } }
-    if (h) { raidFace(u, h); if (u.atkT <= 1e-9) { u.atkT = u.rate; u.atkN++; raidHurtHero(st, h, u.dmg); } return; }
+    for (const o of st.guards) { if (o.ko) continue; const d = raidDist(u, o); if (d <= u.r + o.r + u.reach && d < bd) { bd = d; h = o; } }
+    if (h) { raidFace(u, h); if (u.atkT <= 1e-9) { u.atkT = u.rate; u.atkN++; if (h.kind === 'guard') raidHurtGuard(st, h, u.dmg, u); else raidHurtHero(st, h, u.dmg); } return; }
   }
   if (u.atkT < 0) u.atkT = 0;
   /* 2) en plein pillage */
@@ -1714,6 +2080,45 @@ function raidHeroStep(st, h) {
   if (far > RAID_ZONE + 3 && far > raidLen(h.x - H.x, h.y - H.y)) return;     // on ne s'éloigne pas trop de la halle
   h.x = nx; h.y = ny; h.mv = true; h.fx = dx / L; h.fy = dy / L;
 }
+/* Un garde de la garnison : il frappe ce qui est à sa portée ; au corps à corps, il va au-devant de ce qui entre dans le cercle
+   de son poste, sans jamais en sortir (ni traverser un mur) ; sinon, il reprend sa place dans la formation. */
+function raidGuardStep(st, g) {
+  if (g.ko) return;
+  g.atkT -= RAID_DT; g.mv = false;
+  if (g.regen > 0 && g.hp < g.hpMax) g.hp = Math.min(g.hpMax, g.hp + g.hpMax * g.regen / 100 * RAID_DT);
+  const P0 = g.post, melee = g.range < 2, lanc = g.type === 'lanc';
+  /* d'abord ceux qui emportent du butin ou qui pillent, puis les voleurs ; les lanciers visent les trolls */
+  const score = u => raidDist(g, u) - (u.loot ? 3 : 0) - (u.pl > 0 ? 2 : 0) - (u.thief ? 1.5 : 0) - (lanc && u.big ? 3 : 0);
+  let tgt = null, bd = 1e9;
+  for (const u of st.foes) { if (!raidAlive(u) || raidDist(g, u) > g.range + u.r) continue; const sc = score(u); if (sc < bd) { bd = sc; tgt = u; } }
+  if (tgt) {
+    raidFace(g, tgt);
+    if (g.atkT <= 1e-9) {
+      g.atkT = g.cd; g.atkN++;
+      st.ev.push({ k: 'ghit', id: g.id, tgt: tgt.id, sh: melee ? '' : g.type });
+      raidHurtFoe(st, tgt, g.dmg * (lanc && tgt.big ? SOLDIERS.lanc.troll : 1), g);
+      if (g.type === 'mage') for (const o of st.foes) if (o !== tgt && raidAlive(o) && raidDist(o, tgt) <= SOLDIERS.mage.splash + o.r) raidHurtFoe(st, o, g.dmg * 0.6, g);
+    }
+    return;
+  }
+  if (g.atkT < 0) g.atkT = 0;
+  let gx = g.home[0], gy = g.home[1];
+  if (melee) {
+    let ch = null; bd = 1e9;
+    for (const u of st.foes) { if (!raidAlive(u) || raidLen(u.x - P0.x, u.y - P0.y) > P0.r + 0.3) continue; const sc = score(u); if (sc < bd) { bd = sc; ch = u; } }
+    if (ch) { gx = ch.x; gy = ch.y; }
+  }
+  const dx = gx - g.x, dy = gy - g.y, L = raidLen(dx, dy); if (L < 0.12) return;
+  const k = Math.min(g.speed * RAID_DT, L) / L;
+  let nx = g.x + dx * k, ny = g.y + dy * k;
+  const ox = nx - P0.x, oy = ny - P0.y, oL = raidLen(ox, oy);
+  if (oL > P0.r) { nx = P0.x + ox / oL * P0.r; ny = P0.y + oy / oL * P0.r; }
+  if (raidBlocked(st, raidCell(nx), raidCell(ny))) {
+    if (!raidBlocked(st, raidCell(nx), raidCell(g.y))) ny = g.y; else if (!raidBlocked(st, raidCell(g.x), raidCell(ny))) nx = g.x; else return;
+  }
+  if (raidLen(nx - g.x, ny - g.y) < 1e-6) return;
+  g.fx = dx / L; g.fy = dy / L; g.x = nx; g.y = ny; g.mv = true;
+}
 function raidTowerStep(st, tw, i) {
   const S = st.S[tw.si]; if (S.dead) return;
   tw.cd -= RAID_DT; if (tw.cd > 1e-9) return;
@@ -1745,10 +2150,12 @@ function raidStep(st) {
   if (st.over) return;
   for (const u of st.foes) { u.px = u.x; u.py = u.y; }
   for (const h of st.heroes) { h.px = h.x; h.py = h.y; }
+  for (const g of st.guards) { g.px = g.x; g.py = g.y; }
   for (const u of st.foes) if (!u.on && !u.dead && !u.out && st.t + 1e-9 >= u.delay) raidSpawn(st, u);
   for (const T of st.traps) if (T.cd > 0) T.cd -= RAID_DT;
   st.towers.forEach((tw, i) => raidTowerStep(st, tw, i));
   for (const h of st.heroes) raidHeroStep(st, h);
+  for (const g of st.guards) raidGuardStep(st, g);
   for (const u of st.foes) raidFoeStep(st, u);
   raidSeparate(st);
   st.t = Math.round((st.t + RAID_DT) * 10) / 10; st.n++;
@@ -1765,8 +2172,11 @@ function raidResult(st) {
   const dmg = [];
   for (const S of st.S) if ((S.kind === 'wall' || S.kind === 'gate' || S.kind === 'tower') && S.hp !== S.hp0) dmg.push([S.id, Math.max(0, Math.round(S.hp))]);
   const round = o => { const out = {}; for (const k of RAID_LOOT.concat(['or'])) { const n = Math.round(o[k] || 0); if (n > 0) out[k] = n; } return out; };
-  return { k: st.kills, e: st.esc, f: st.foes.length, lost: round(st.lost), back: round(st.back), h: st.heart, g: Math.round(st.gold), xp: Math.round(st.xp), br: st.broke,
+  const res = { k: st.kills, e: st.esc, f: st.foes.length, lost: round(st.lost), back: round(st.back), h: st.heart, g: Math.round(st.gold), xp: Math.round(st.xp), br: st.broke,
     ko: st.heroes.filter(h => h.ko).map(h => h.id), dmg, s: Math.round(st.t) };
+  /* la garnison : ennemis abattus par chaque garde, et ceux qui sont tombés */
+  if (st.guards.length) { res.gd = st.guards.map(g => [g.id, g.kills, g.ko ? 1 : 0]); res.gk = st.guards.reduce((a, g) => a + g.kills, 0); }
+  return res;
 }
 /* Tout le raid d'un coup, à la minute où il part ; le village garde de quoi le rediffuser. */
 function raidResolve(v, t) {
@@ -1781,6 +2191,18 @@ function raidApply(v, t, inp, res) {
   const ups = [];
   if (res.xp) for (const h of Object.values(v.heroes || {}).filter(Boolean).sort((a, b) => (a.n || 0) - (b.n || 0))) if (heroAddXp(h, h.race === 'humain' ? res.xp * 1.1 : res.xp)) ups.push(h.name + ' (niveau ' + h.lvl + ')');
   if (res.h) v.raidMor = t + DAY;
+  /* la garnison : de l'expérience pour ceux qui ont tenu (et un raid de plus dans leur série), 8 heures de repos pour ceux qui sont tombés (série perdue) */
+  const gm = 1 + 0.2 * ((inp.L | 0) - 1), hurt = [], titles = [];
+  for (const [id, kills, ko] of res.gd || []) {
+    const s = v.sol && v.sol[id]; if (!s) continue;
+    s.kills = (s.kills | 0) + kills;
+    if (ko) { const had = solTitle(s); s.hurt = t + SOL_HURT; s.vet = 0; hurt.push(solName(s) + (had ? ' (perd son titre : ' + had[1].toLowerCase() + ')' : '')); continue; }
+    const was = solTitle(s);
+    s.vet = (s.vet | 0) + 1; s.raids = (s.raids | 0) + 1;
+    s.xp = Math.min(3 * solXpNeed(s.lvl), (s.xp | 0) + Math.round((15 + 5 * kills) * gm));
+    const ti = solTitle(s); if (ti && ti !== was) titles.push(solName(s) + ' devient ' + ti[1].toLowerCase());
+  }
+  const orbs = garRaidOrbs(v, inp, res);
   const lostTxt = Object.keys(res.lost).map(k => res.lost[k] + ' ' + RES_LABEL[k].toLowerCase()).join(', ');
   let m = (lostTxt ? 'Raid des gobelins : ' : 'Raid repoussé ! ') + res.k + ' ennemi' + (res.k > 1 ? 's' : '') + ' vaincu' + (res.k > 1 ? 's' : '') + ' sur ' + res.f;
   if (res.e) m += ', ' + res.e + ' enfui' + (res.e > 1 ? 's' : '') + (lostTxt ? ' avec ' + lostTxt : ' les mains vides');
@@ -1788,12 +2210,16 @@ function raidApply(v, t, inp, res) {
   addLog(v, t, m, 'raid');
   if (res.h) addLog(v, t, 'Les gobelins ont pillé la halle, le cœur du village : le moral baisse pour un jour.', 'raid');
   if (ups.length) addLog(v, t, 'En défendant le village : ' + ups.join(', ') + ' !', 'hero');
+  if (res.gd) addLog(v, t, 'La garnison abat ' + res.gk + ' ennemi' + (res.gk > 1 ? 's' : '') + '.' + (hurt.length ? ' Blessé' + (hurt.length > 1 ? 's' : '') + ' (8 h de repos à la caserne) : ' + hurt.join(', ') + '.' : '') + (titles.length ? ' ' + titles.join(', ') + ' !' : ''), 'sol');
+  if (orbs.length) addLog(v, t, 'Défense réussie : ' + orbs.map(orbLabel).join(', ') + ' pour la garnison.', 'sol');
   v.lastRaid = { t, n: inp.n, sd: inp.sd, L: inp.L, P: inp.P, B: inp.B, H: inp.H, F: inp.F, R: inp.R, res };
+  if (inp.G) v.lastRaid.G = inp.G;
+  if (orbs.length) v.lastRaid.orbs = orbs;
   const rnd = mulberry32((inp.sd ^ 0x63d83595) >>> 0);
   v.raid = { n: (inp.n | 0) + 1, next: t + RAID_GAP + Math.floor(rnd() * (RAID_GAP_RND / MIN)) * MIN, closed: (v.raid && v.raid.closed) | 0 };
 }
 /* Rediffusion : le même combat, rejoué à partir de ce que le village a gardé. */
-const raidReplay = lr => raidStart({ t: lr.t, n: lr.n, sd: lr.sd, L: lr.L, P: lr.P, B: lr.B, H: lr.H, F: lr.F, R: lr.R });
+const raidReplay = lr => raidStart({ t: lr.t, n: lr.n, sd: lr.sd, L: lr.L, P: lr.P, B: lr.B, H: lr.H, F: lr.F, R: lr.R, G: lr.G });
 
 /* ===================== DONJONS : fabrication à partir d'une graine (pur, sans DOM) =====================
    Même graine + même niveau = même donjon, sur les deux téléphones. Une case = 1 unité (≈ un personnage). */
@@ -3796,6 +4222,9 @@ const V3 = (() => {
   function setRay(cx, cy) { const [lx, ly] = mapPt(cx, cy), w = canvas.clientWidth || 1, h = canvas.clientHeight || 1; ndc.set(lx / w * 2 - 1, -(ly / h) * 2 + 1); ray.setFromCamera(ndc, camera); }
   function pickGround(cx, cy) { setRay(cx, cy); if (!ray.ray.intersectPlane(plane, hit)) return null; return [hit.x + half, hit.z + half]; }
   function pickBuilding(cx, cy) {
+    /* un poste de garde (un simple mât) caché derrière un grand bâtiment : toucher sa case suffit */
+    const g0 = pickGround(cx, cy);
+    if (g0) { const gx = Math.floor(g0[0]), gz = Math.floor(g0[1]); for (const [k, r] of blds) if (r.item.type === 'poste' && r.item.gx === gx && r.item.gz === gz) return k; }
     setRay(cx, cy);
     const hits = ray.intersectObjects(bldGroup.children, true);
     for (const h of hits) { let o = h.object; while (o && o.parent !== bldGroup) o = o.parent; if (o && o.userData.key != null) return o.userData.key; }
@@ -3845,7 +4274,7 @@ const V3 = (() => {
     o.scale.setScalar(k); o.rotation.y = ry || 0; o.userData.h = sz.y * k;
     return o;
   }
-  function sigOf(it) { return [it.type, it.lvl, it.gx, it.gz, it.up ? 1 : 0, it.dead ? 1 : 0, it.col, it.orc ? 1 : 0, it.id || 0, LIB.ver].join('|'); }
+  function sigOf(it) { return [it.type, it.lvl, it.gx, it.gz, it.up ? 1 : 0, it.dead ? 1 : 0, it.col, it.orc ? 1 : 0, it.id || 0, LIB.ver, it.ban == null ? '' : it.ban].join('|'); }
   function placeGroup(g, it) { const s = BLD[it.type].size; g.position.set(it.gx + s / 2 - half, 0, it.gz + s / 2 - half); }
   function makeGlow(color, size, y) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.5 }));
@@ -4014,7 +4443,45 @@ const V3 = (() => {
     for (let i = 0; i < 4; i++) g.add(P('box', 0x8a7856, 0.62, 0.02, 0.025, 0, 0.05, 0, i * Math.PI / 4, true));
     return { g, info: { top: 0.5, muzzle: 0.2, emit: [] } };
   }
-  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG };
+  /* Caserne : long bâtiment de pierre au toit d'ardoise, cour d'entraînement (mannequin de paille, râtelier de lances), drapeau du village. */
+  function caserneG(it) {
+    const g = new THREE.Group(), lv = Math.max(1, it.lvl), y0 = 0.14, H = 0.8 + 0.14 * (lv - 1), col = it.col || COLORS[0];
+    g.add(P('box', 0x8a8378, 1.76, y0, 1.62, 0, 0, 0));
+    g.add(P('box', 0xb7ad9c, 1.52, H, 0.76, 0, y0, -0.4));
+    for (const x of [-0.76, 0.76]) g.add(P('box', 0x8f8a80, 0.12, H, 0.8, x, y0, -0.4, 0, true));
+    g.add(P('prism', 0x46576a, 1.7, 0.56, 0.96, 0, y0 + H, -0.4));
+    g.add(P('box', 0x3e2716, 0.3, 0.52, 0.04, 0, y0, -0.01, 0, true));
+    for (const x of [-0.5, 0.5]) g.add(P('box', winMat, 0.18, 0.2, 0.04, x, y0 + H * 0.5, -0.01, 0, true));
+    g.add(P('box', col, 1.54, 0.07, 0.03, 0, y0 + H * 0.86, -0.01, 0, true));
+    g.add(P('box', 0xb39669, 1.56, 0.02, 0.66, 0, y0, 0.42, 0, true));
+    g.add(P('cyl6', 0x6b4a2b, 0.07, 0.62, 0.07, -0.48, y0, 0.44));
+    g.add(P('cyl8', 0xd8c07a, 0.24, 0.3, 0.2, -0.48, y0 + 0.34, 0.44));
+    g.add(P('sph', 0xd8c07a, 0.18, 0.18, 0.18, -0.48, y0 + 0.64, 0.44));
+    g.add(P('box', 0x6b4a2b, 0.44, 0.05, 0.05, -0.48, y0 + 0.52, 0.44, 0, true));
+    g.add(P('box', 0x5f4127, 0.56, 0.05, 0.08, 0.42, y0 + 0.4, 0.66, 0, true));
+    for (const x of [0.22, 0.36, 0.5, 0.64]) { g.add(P('box', 0x6b4a2b, 0.025, 0.66, 0.025, x, y0, 0.62, 0, true)); g.add(P('cone4', 0xc9d0d6, 0.05, 0.1, 0.05, x, y0 + 0.66, 0.62, 0, true)); }
+    if (lv >= 2) { g.add(P('box', 0x9a9488, 0.5, H + 0.5, 0.5, -0.62, y0, -0.55)); g.add(P('cone4', 0x3c4552, 0.66, 0.5, 0.66, -0.62, y0 + H + 0.5, -0.55)); }
+    if (lv >= 3) for (const x of [-0.3, 0.3]) g.add(P('cyl12', col, 0.2, 0.03, 0.2, x, y0 + H * 0.45, 0.0, 0, true));
+    if (lv >= 4) { g.add(P('box', 0x9a9488, 0.42, H + 0.3, 0.42, 0.64, y0, -0.58)); g.add(P('cone4', 0x3c4552, 0.56, 0.42, 0.56, 0.64, y0 + H + 0.3, -0.58)); }
+    g.add(flag(0.78, y0, 0.78, col, 1.15));
+    return { g, info: { top: y0 + H + (lv >= 2 ? 1.0 : 0.7), muzzle: 1, emit: [] } };
+  }
+  /* Poste de garde : un mât et son fanion aux couleurs du village (une grande bannière couleur de sa rareté quand on en pose une), sur un socle qui grandit avec le niveau. */
+  const RAR_COL = [0xa3abb4, 0x5cc27a, 0x5b9cf0, 0xb07ce8, 0xf59a3c];
+  function posteG(it) {
+    const g = new THREE.Group(), lv = Math.max(1, it.lvl | 0), col = it.col || COLORS[0], ban = it.ban != null && it.ban >= 0 ? RAR_COL[Math.min(4, it.ban | 0)] : null;
+    if (lv >= 3) g.add(P('cyl8', 0x8f8a80, 0.7, 0.22, 0.7, 0, 0, 0));
+    const y = lv >= 3 ? 0.22 : 0, H = 1.45 + 0.15 * lv;
+    g.add(P(lv >= 2 ? 'cyl8' : 'cyl6', lv >= 2 ? 0x9a9488 : 0x6b5a44, 0.4, 0.14, 0.4, 0, y, 0));
+    g.add(P('cyl6', 0x5f4127, 0.07, H, 0.07, 0, y + 0.14, 0));
+    g.add(P('box', 0x5f4127, 0.5, 0.05, 0.05, 0.2, y + 0.14 + H - 0.1, 0, 0, true));
+    const cloth = piv(0, y + 0.14 + H - 0.12, 0, [P('box', ban || col, ban ? 0.44 : 0.36, ban ? 0.62 : 0.3, 0.025, ban ? 0.22 : 0.18, ban ? -0.31 : -0.15, 0, 0, true)]);
+    g.add(cloth); anims.push({ k: 'flag', o: cloth, ph: Math.random() * 6 });
+    if (ban) { const gl2 = makeGlow(ban, 0.9, y + H - 0.3); gl2.position.x = 0.22; gl2.material.opacity = 0.35; g.add(gl2); }
+    if (lv >= 2) g.add(P('cone6', 0xc9d0d6, 0.12, 0.18, 0.12, 0, y + 0.14 + H, 0, 0, true));
+    return { g, info: { top: y + H + 0.45, muzzle: 1, emit: [] } };
+  }
+  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG, caserne: caserneG, poste: posteG };
   function build(it) {
     const s = BLD[it.type].size, g = new THREE.Group();
     let info = { top: 1.2, muzzle: 1, emit: [] };
@@ -4275,7 +4742,7 @@ const V3 = (() => {
   const people = new Map(), lifeGroup = new THREE.Group();
   let vilBlocked = null, vilSpots = [], bldSpots = new Map(), bldCenters = new Map();
   function planVillage(items) {
-    const PASS = new Set(['porte', 'piege', 'filet']);           // on passe les portes, on marche sur les pièges
+    const PASS = new Set(['porte', 'piege', 'filet', 'poste']);  // on passe les portes, on marche sur les pièges, on contourne à peine un poste de garde
     const blds = items.filter(it => it.type !== 'rempart' && !PASS.has(it.type) && it.key !== 'ghost' && !it.dead);
     vilBlocked = new Uint8Array(GRID * GRID); vilSpots = []; bldSpots = new Map(); bldCenters = new Map();
     for (const b of items) { if (b.key === 'ghost' || PASS.has(b.type) || (b.dead && BLD[b.type].hps)) continue; const sz = BLD[b.type].size; for (let i = 0; i < sz; i++) for (let j = 0; j < sz; j++) { const x = b.gx + i, z = b.gz + j; if (x >= 0 && z >= 0 && x < GRID && z < GRID) vilBlocked[z * GRID + x] = 1; } }
@@ -4315,6 +4782,12 @@ const V3 = (() => {
     rodeur: { humain: ['2H_Crossbow', 'Knight_Cape'], nain: ['2H_Crossbow', 'Barbarian_Hat'], elfe: ['2H_Crossbow', 'Rogue_Cape'] },
     mage: { humain: ['Throwable', 'Knight_Cape'], nain: ['Throwable', 'Barbarian_Cape'], elfe: ['Throwable', 'Rogue_Cape'] },
   };
+  const SOL_GEAR = {
+    fant: { humain: ['1H_Sword', 'Round_Shield', 'Knight_Helmet'], nain: ['1H_Axe', 'Barbarian_Round_Shield', 'Barbarian_Hat'], elfe: ['1H_Sword', 'Round_Shield'] },
+    arch: { humain: ['2H_Crossbow', 'Knight_Helmet'], nain: ['2H_Crossbow', 'Barbarian_Hat'], elfe: ['2H_Crossbow', 'Rogue_Cape'] },
+    lanc: { humain: ['2H_Sword', 'Knight_Helmet'], nain: ['2H_Axe', 'Barbarian_Hat'], elfe: ['2H_Sword', 'Rogue_Cape'] },
+    mage: { humain: ['Throwable', 'Knight_Cape'], nain: ['Throwable', 'Barbarian_Cape'], elfe: ['Throwable', 'Rogue_Cape'] },
+  };
   const GEAR_NAMES = new Set(['1H_Axe_Offhand', 'Barbarian_Round_Shield', '1H_Axe', '2H_Axe', 'Mug', 'Barbarian_Hat', 'Barbarian_Cape', 'Knife_Offhand', '1H_Crossbow', '2H_Crossbow', 'Knife', 'Throwable', 'Rogue_Cape',
     '1H_Sword_Offhand', 'Badge_Shield', 'Rectangle_Shield', 'Round_Shield', 'Spike_Shield', '1H_Sword', '2H_Sword', 'Knight_Helmet', 'Knight_Cape']);
   function nameTag(text, col) {
@@ -4333,8 +4806,8 @@ const V3 = (() => {
     const def = P_DEF[p.race] || P_DEF.humain, src = LIB.ch[def.m];
     if (!src || !THREE.SkeletonUtils) return null;
     const obj = THREE.SkeletonUtils.clone(src.scene);
-    const hero = p.kind === 'hero';
-    const gear = hero ? ((HERO_GEAR[p.cls] || {})[p.race] || CLASS_GEAR[p.cls] || []) : (JOB_GEAR[p.job] || []);
+    const hero = p.kind === 'hero', sol = p.kind === 'sol';
+    const gear = hero ? ((HERO_GEAR[p.cls] || {})[p.race] || CLASS_GEAR[p.cls] || []) : sol ? ((SOL_GEAR[p.type] || SOL_GEAR.fant)[p.race] || SOL_GEAR.fant.humain) : (JOB_GEAR[p.job] || []);
     const have = new Set();
     obj.traverse(o => {
       if (GEAR_NAMES.has(o.name)) { o.visible = gear.includes(o.name); if (o.visible) have.add(o.name); }
@@ -4356,6 +4829,7 @@ const V3 = (() => {
     const wk = hero ? null : JOB_WORK[p.job];
     const A = { idle: act('Idle'), walk: act('Walking_A'), work: wk ? act(wk) : null, cheer: act('Cheer') };
     g.userData = { body, mixer, A, cur: null, hero };
+    if (sol) { const ring = new THREE.Mesh(geo('plane'), basic(0x9fb4c8, { transparent: true, opacity: 0.55, depthWrite: false })); ring.scale.set(0.62, 1, 0.62); ring.position.y = 0.02; ring.renderOrder = 2; g.add(ring); }
     if (hero) {
       const ring = new THREE.Mesh(geo('plane'), basic(p.col || COLORS[0], { transparent: true, opacity: 0.75, depthWrite: false }));
       ring.scale.set(0.85, 1, 0.85); ring.position.y = 0.02; ring.renderOrder = 2; g.add(ring);
@@ -4371,17 +4845,19 @@ const V3 = (() => {
     for (const p of list) {
       seen.add(p.key);
       let r = people.get(p.key);
-      const sig = [p.race, p.cls || '', p.job || '', p.col || '', p.name || ''].join('|');
+      const sig = [p.race, p.cls || '', p.job || '', p.col || '', p.name || '', p.type || ''].join('|');
       if (!r || r.sig !== sig) {
         const g = makePerson(p); if (!g) continue;
         let x, z;
         if (r) { x = r.x; z = r.z; lifeGroup.remove(r.g); }
+        else if (p.fixed) { x = p.fixed[0]; z = p.fixed[1]; }
         else { const sps = p.at && bldSpots.get(p.at), sp = (sps && sps.length && sps[Math.floor(Math.random() * sps.length)]) || vilSpots[Math.floor(Math.random() * vilSpots.length)] || [half, half]; x = sp[0] + 0.5; z = sp[1] + 0.5; }
         const nr = { g, x, z, path: [], wait: Math.random() * 2, sig, data: p, working: false };
         g.position.set(x - half, 0, z - half); lifeGroup.add(g); people.set(p.key, nr);
         r = nr;
       }
       if (r.data.at !== p.at) { r.path = []; r.wait = 0; r.working = false; }
+      if (String(r.data.fixed) !== String(p.fixed)) { r.path = []; r.wait = 0; r.working = false; r.fixKey = null; }
       r.data = p;
     }
     for (const [k, r] of people) if (!seen.has(k)) { lifeGroup.remove(r.g); people.delete(k); }
@@ -4398,6 +4874,7 @@ const V3 = (() => {
       const U = r.g.userData; if (U.mixer) U.mixer.update(dt);
       if (U.halo) U.halo.material.opacity = 0.22 + 0.1 * Math.sin(tNow * 3 + r.x);
       const p = r.data;
+      if (p.fixed) { stepFixed(r, p, dt); continue; }
       if (r.wait > 0) {
         r.wait -= dt;
         play(r.g, r.working && U.A.work ? 'work' : 'idle', 1);
@@ -4422,6 +4899,25 @@ const V3 = (() => {
       r.g.position.set(r.x - half, 0, r.z - half);
       if (r.path.length) play(r.g, 'walk', p.kind === 'hero' ? 0.62 : 0.55);
     }
+  }
+  /* Un soldat de la garnison : il rejoint sa place dans la formation de son poste, puis monte la garde, tourné vers le danger. */
+  function stepFixed(r, p, dt) {
+    const fx = p.fixed[0], fz = p.fixed[1], key = fx + ',' + fz;
+    if (r.fixKey !== key) {
+      r.fixKey = key;
+      const x0 = cellOf(r.x), z0 = cellOf(r.z), x1 = cellOf(fx), z1 = cellOf(fz);
+      r.path = x0 === x1 && z0 === z1 ? [] : findPath(x0, z0, x1, z1);
+      r.path.push([fx, fz]);
+    }
+    if (r.path.length) {
+      const [tx, tz] = r.path[0], dx = tx - r.x, dz = tz - r.z, L = Math.sqrt(dx * dx + dz * dz), step = 0.85 * dt;
+      if (L <= step) { r.x = tx; r.z = tz; r.path.shift(); } else { r.x += dx / L * step; r.z += dz / L * step; r.g.rotation.y = Math.atan2(dx, dz); }
+      r.g.position.set(r.x - half, 0, r.z - half);
+      play(r.g, 'walk', 0.6);
+      return;
+    }
+    play(r.g, 'idle', 1);
+    if (p.face) { const want = Math.atan2(p.face[0], p.face[1]); let d = want - r.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); r.g.rotation.y += d * Math.min(1, dt * 4); }
   }
   /* Habitant le plus proche de l'endroit touché (à l'écran). */
   function pickPerson(cx, cy, maxPx) {
@@ -5264,6 +5760,16 @@ const V3 = (() => {
   let RD = null;
   const RD_U = { gobelin: DJ_U.gobelin, voleur: { m: 'rogue', tex: 'orc_rogue', show: ['Knife', 'Rogue_Cape'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.85, w: 0.9 }, troll: DJ_U.troll };
   const RD_SHOT = { mage: 0xff7a2a, pretre: 0xffe08a, druide: 0x7bd36a, necro: 0xa070ff };
+  const RD_GUARD_ATK = { fant: '1H_Melee_Attack_Chop', arch: '2H_Ranged_Shoot', lanc: '2H_Melee_Attack_Chop', mage: '1H_Melee_Attack_Slice_Diagonal' };
+  function rdGuardRec(e) {
+    let g = LIB.ok ? makePerson({ kind: 'sol', race: e.race, sex: e.sex, type: e.type }) : null;
+    if (!g) { g = djSimple(0xb8c4d0, 1.0); g.add(djRing(0x9fb4c8, 0.62, 0.55)); }
+    const U = g.userData;
+    if (U.mixer) { const act = n => LIB.clips[n] ? U.mixer.clipAction(LIB.clips[n]) : null; U.A.atk = act(RD_GUARD_ATK[e.type] || '1H_Melee_Attack_Chop'); U.A.death = act('Death_A'); }
+    djPrepAnims(g);
+    const bar = makeBar(0.6, 0x7fb8e8); bar.position.y = 1.5; bar.visible = false; g.add(bar);
+    return { g, kind: 'guard', bar, atkN: e.atkN, atkT: -9, lx: e.x, ly: e.y };
+  }
   function rdFoeRec(u) {
     const def = RD_U[u.type] || RD_U.gobelin, g = djModel(def);
     djPrepAnims(g);
@@ -5301,6 +5807,7 @@ const V3 = (() => {
     rdGroup.visible = true;
     for (const p of st.inp.P) if (!p[3]) { const r = makePortalRec({ x: p[0], y: p[1], side: p[2] }); r.frac = 1; r.ready = true; rdGroup.add(r.g); RD.portals.push(r); }
     setMood('raid');
+    showRanges(st.posts && st.posts.length ? st.posts.map(p => ({ x: p.x, z: p.y, r: p.r })) : null);   // les cercles des postes de garde
     /* caméra : sur la halle, un peu tournée vers le portail */
     const H = st.S[st.hall], P0 = st.inp.P.find(p => !p[3]) || st.inp.P[0], k = 0.35;
     cam.tx = clampT(H.x + (P0[0] + 0.5 - H.x) * k - half); cam.tz = clampT(H.y + (P0[1] + 0.5 - H.y) * k - half); cam.view = aspect < 0.8 ? 24 : 15; frustum();
@@ -5309,7 +5816,7 @@ const V3 = (() => {
     if (!RD) return;
     for (const r of RD.portals) disposePortal(r);
     clearGroup(rdGroup); RD = null; rdGroup.visible = false;
-    lifeGroup.visible = true; portalGroup.visible = true;
+    lifeGroup.visible = true; portalGroup.visible = true; showRanges(null);
     for (const s of shots) fxGroup.remove(s.m); shots.length = 0;
     mood = ''; setMood('warm');
   }
@@ -5318,6 +5825,7 @@ const V3 = (() => {
     RD.frame++; const fr = RD.frame;
     const upd = (e, make) => { let r = RD.ents.get(e.id); if (!r) { r = make(e); RD.ents.set(e.id, r); rdGroup.add(r.g); } r.seen = fr; return r; };
     for (const h of st.heroes) { const r = upd(h, djHeroRec); djPose(r, h, alpha, tNow); djBar(r, h.hp / h.hpMax, !h.ko); }
+    for (const g of st.guards || []) { const r = upd(g, rdGuardRec); djPose(r, g, alpha, tNow); djBar(r, g.hp / g.hpMax, !g.ko && g.hp < g.hpMax); }
     for (const u of st.foes) {
       if (!u.on || u.out || u.dead) continue;
       const r = upd(u, rdFoeRec);
@@ -5340,7 +5848,7 @@ const V3 = (() => {
   }
   function rdFx(e, st) {
     if (!RD) return;
-    const pos = id => { const h = st.heroes.find(q => q.id === id); if (h) return [h.x, h.y]; const u = st.foes.find(q => q.id === id); return u ? [u.x, u.y] : null; };
+    const pos = id => { const h = st.heroes.find(q => q.id === id) || (st.guards || []).find(q => q.id === id); if (h) return [h.x, h.y]; const u = st.foes.find(q => q.id === id); return u ? [u.x, u.y] : null; };
     const aimAtId = (id, b) => () => { const q = pos(id) || b; return [q[0], 0.8, q[1]]; };
     switch (e.k) {
       case 'hit': { const p = pos(e.id); if (p) { rdNum(p[0], p[1], String(e.v), '#ffffff'); spark(p[0], 0.8, p[1], 0xfff0d0); } break; }
@@ -5354,6 +5862,14 @@ const V3 = (() => {
         break;
       }
       case 'tshot': { const b = pos(e.tgt); if (b) spawnShot('arrow', e.x, 2.4, e.y, aimAtId(e.tgt, b), 0.32, 0.7); break; }
+      case 'ghit': {
+        if (!e.sh) break;
+        const a = pos(e.id), b = pos(e.tgt); if (!a || !b) break;
+        if (e.sh === 'arch') spawnShot('arrow', a[0], 1.0, a[1], aimAtId(e.tgt, b), 0.25, 0.4);
+        else { const s2 = makeGlow(0xff7a2a, 0.8, 1); s2.position.set(a[0] - half, 1, a[1] - half); rdGroup.add(s2); RD.dying.push({ fly: s2, t: 0, T: 0.24, a, b }); }
+        break;
+      }
+      case 'dodge': { const p = pos(e.id); if (p) rdNum(p[0], p[1], 'esquive', '#9fd8ff'); break; }
       case 'die': burst(e.x, e.y, 0.4, e.big ? 0xff7a3a : 0xbfb8a8, e.big ? 10 : 5); if (e.big) shake(0.25); break;
       case 'loot': { const p = pos(e.id); if (p) rdNum(p[0], p[1], '−' + e.n + ' ' + RES_LABEL[e.r].toLowerCase(), '#ffb347', true); break; }
       case 'drop': rdNum(e.x, e.y, e.n + ' ' + RES_LABEL[e.r].toLowerCase() + ' repris', '#7dff8a', true); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5) * 0.6, 0.4 + Math.random(), e.y + (Math.random() - 0.5) * 0.6, 0xffd27a); break;
@@ -6102,17 +6618,20 @@ function djLeave() {
   SND.music('village', 1);
   refreshScene(); renderAll();
 }
+/* Ce que le donjon rapporte à la garnison (orbes, bannière), en une phrase. */
+const garGainTxt = res => { const l = (res.orbs || []).map(orbLabel).concat(res.ban ? [banLabel(res.ban) + (res.ban.sold ? ' (réserve pleine : vendue)' : '')] : []); return l.length ? ' Pour la garnison : ' + l.join(', ') + '.' : ''; };
 function djBack() {
   if (!dj) return;
   const r = dj.res || djResult(dj.st), hid = dj.hid, name = (me && me.heroes[hid] || {}).name || 'Ton héros';
   const guest = dj.duo && dj.duo.role === 'guest';     // le butin et le prisonnier ne comptent qu'une fois : c'est l'hôte qui les rapporte
   const items = (r.items && r.items[hid]) || [], gems = (r.gems && r.gems[hid]) || {};
   const res = act({ type: 'djEnd', hid, lvl: r.lvl, win: r.win, xp: r.xp, loot: guest ? {} : r.loot, pris: guest ? false : r.pris, theme: r.theme || dj.st.d.theme, deep: r.deep || 0,
-    or: guest ? 0 : r.gold || 0, items, gems, pi: dj.pi | 0 }, { quiet: true });
+    or: guest ? 0 : r.gold || 0, items, gems, pi: dj.pi | 0, gar: guest ? 0 : 1 }, { quiet: true });
   djLeave();
   if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
-  else if (res && res.closed) toast(res.closed.all ? 'Le portail est refermé : pas de raid cette fois !' : 'Le portail est refermé. Il en reste d’autres ouverts (menu Défense).');
+  else if (res && res.closed) toast((res.closed.all ? 'Le portail est refermé : pas de raid cette fois !' : 'Le portail est refermé. Il en reste d’autres ouverts (menu Défense).') + garGainTxt(res));
   else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
+  else if (res && ((res.orbs && res.orbs.length) || res.ban)) toast(garGainTxt(res).trim());
   else if (res && res.autoSold) toast('Sac plein : ' + res.autoSold + ' objet' + (res.autoSold > 1 ? 's vendus' : ' vendu') + ' pour ' + res.autoGold + ' or. Fais de la place dans ton sac (menu Héros).');
   else if (res && res.items) toast(res.items + ' objet' + (res.items > 1 ? 's rangés' : ' rangé') + ' dans ton sac (menu Héros).');
   else if (!res) toast('Le retour n’a pas pu être enregistré.');
@@ -6702,6 +7221,9 @@ function raidReportHTML(v, lr, btn) {
     ${r.xp && heroes.length ? `<div class="row split"><span>Expérience des défenseurs</span><b>+${fmtN(r.xp)} chacun</b></div>` : ''}
     ${r.br ? `<div class="row split"><span>Défenses détruites</span><b>${r.br} (à réparer)</b></div>` : ''}
     ${r.ko.length ? `<div class="row split"><span>À terre pendant le combat</span><b>${esc(r.ko.map(names).join(', '))}</b></div>` : ''}
+    ${r.gd ? `<div class="row split"><span>Abattus par la garnison</span><b>${r.gk || 0}</b></div>` : ''}
+    ${r.gd && r.gd.some(x => x[2]) ? `<div class="row split"><span>Soldats blessés (8 h)</span><b>${esc(r.gd.filter(x => x[2]).map(x => { const G = (lr.G || []).find(e => e[0] === x[0]); return G ? solName({ type: G[1], sex: G[3], num: G[15] }) : '?'; }).join(', '))}</b></div>` : ''}
+    ${lr.orbs && lr.orbs.length ? `<div class="row split"><span>Pour la garnison</span><span class="chips2">${lr.orbs.map(k => orbChip(k)).join('')}</span></div>` : ''}
   </div>`;
   if (r.h) h += '<p class="why">Ils ont pillé la halle, le cœur du village : le moral baisse pendant un jour.</p>';
   if (!heroes.length) h += '<p class="note">Aucun héros pour défendre la halle : créez votre héros, il défendra le village.</p>';
@@ -6724,6 +7246,7 @@ function sheetDefense() {
       ${info.p.map(p => `<div class="row split portrow"><b>Portail ${RAID_OF[p.side]}</b>${p.cl ? '<span class="chip plus">refermé</span>' : hh ? `<span class="row"><button class="btn small primary" data-act="djGo" data-th="portail" data-k="${L}" data-pi="${p.i}">${djIco('sword')}Le refermer</button>${pk && ph ? `<button class="btn small${on ? '' : ' off'}" data-act="djInvite" data-th="portail" data-k="${L}" data-pi="${p.i}"${on ? '' : ' disabled'}>À deux</button>` : ''}</span>` : '<span class="note">crée ton héros</span>'}</div>`).join('')}
       <div class="row"><button class="btn small" data-act="portalLook">Voir le portail</button></div></div>`;
   }
+  h += garCardHTML(v);
   if (lr) h += `<div class="sec"><h4>Dernier raid · ${fmtAgo(lr.t)}</h4><div class="item"><div class="head"><b>${esc(raidTitle(lr.res))}</b><small>${lr.F.length} assaillants · niveau ${lr.L}</small></div>${raidReportHTML(v, lr, true)}</div></div>`;
   /* les défenses du village */
   const of = type => v.b.filter(b => b.type === type), cnt = type => of(type).length + ' sur ' + limitOf(type, hl);
@@ -6763,6 +7286,7 @@ function sheetDefense() {
 
 /* ---------- panneau d'une défense du village (touchée sur la carte) ---------- */
 function defPanel(v, b) {
+  if (b.type === 'poste') return postPanel(v, b);
   const d = BLD[b.type], hl = hallLvl(v), mx = hpMaxOf(b), hp = hpOf(b), broken = isBroken(b), t = now();
   let h = `<div class="glass card"><h3><span>${esc(b.type === 'tour' ? d.name : lvlName(b))}</span><span class="row"><small>${b.lvl > 0 ? 'niveau ' + b.lvl : 'chantier'}</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>`;
   if (b.up) {
@@ -6846,6 +7370,7 @@ function raidItems(st) {
   const col = safeColor(me ? me.c : COLORS[0]);
   const out = st.S.filter(S => S.id).map(S => ({ key: 'r' + S.id, id: S.id, type: S.type, lvl: S.lvl, gx: S.x0, gz: S.y0, up: S.lvl < 1 ? { frac: 0 } : null, col, dead: S.dead }));
   for (const T of st.traps) out.push({ key: 'rt' + T.id, id: T.id, type: T.type, lvl: T.lvl, gx: T.x, gz: T.y, up: null, col });
+  for (const P0 of st.posts) out.push({ key: 'rp' + P0.id, id: P0.id, type: 'poste', lvl: P0.lvl, gx: P0.gx, gz: P0.gz, up: null, col, ban: P0.ban ? P0.ban - 1 : undefined });
   return out;
 }
 function raidReplayStart() {
@@ -6855,14 +7380,14 @@ function raidReplayStart() {
   const st = raidReplay(lr);
   rp = { st, lr, speed: 1, acc: 0, sig: '', ended: false };
   closeSheet(true); modal = null; sel = null; selP = null; place = null;
-  mode = 'raid';
+  mode = 'raid'; ringSig = '?';
   V3.raid.enter(st); V3.clearBuildings(); V3.setBuildings(raidItems(st));   // repartir de zéro : pas d'animation de construction partout
   rpHudBuild(); SND.music('battle', 1); SND.sfx('alarm');
   renderAll();
 }
 function raidReplayExit() {
   if (!rp) return;
-  V3.raid.exit(); rp = null; V3.clearBuildings();
+  V3.raid.exit(); rp = null; V3.clearBuildings(); ringSig = '?';
   const el = $('#rpHud'); if (el) el.hidden = true;
   mode = 'home'; SND.music('village', 1);
   refreshScene(); renderAll();
@@ -6894,6 +7419,7 @@ function rpEvents(st) {
     switch (e.k) {
       case 'tshot': SND.sfx('shoot', pan); break;
       case 'hhit': SND.sfx(e.sh === 'rodeur' ? 'shoot' : e.sh ? 'bolt' : 'chop'); break;
+      case 'ghit': SND.sfx(e.sh === 'arch' ? 'shoot' : e.sh === 'mage' ? 'bolt' : 'chop', pan); break;
       case 'die': SND.sfx(e.big ? 'collapse' : 'death', pan); break;
       case 'break': SND.sfx('wallbreak', pan); break;
       case 'trap': SND.sfx('wallhit', pan); break;
@@ -6931,6 +7457,251 @@ const ACT_RAID = {
   rpAgain: () => { if (!rp) return; V3.raid.exit(); rp = null; raidReplayStart(); },
   rpSpeed: () => { if (rp) rp.speed = rp.speed >= 4 ? 1 : rp.speed * 2; },
   portalLook: () => { const info = raidInfo(me, now()), p = info.p.find(q => !q.cl); if (!p) return; closeSheet(); if (gl) V3.focus(p.x + 0.5, p.y + 0.5); },
+};
+
+/* ===================== GARNISON : interface (caserne, soldats, postes de garde, orbes, bannières) =====================
+   Les règles sont dans p2g_garnison.js (et le combat dans p2r_raid.js) ; ici, seulement ce qu'on voit et ce qu'on touche.
+   Ce fichier ne fait que définir des fonctions et des actions (ACT_GAR) : l'application (p4_app) les appelle. */
+let solSel = null;                               // soldat ouvert dans la fiche de la caserne
+const SOL_ICO = { fant: 'shield', arch: 'arrow', lanc: 'sword', mage: 'flame' };
+const solIco = type => djIco(SOL_ICO[type] || 'shield');
+const orbChip = (key, n) => { const O = orbOf(key); return O ? `<span class="chip gemc"><i class="gdot round" style="background:${O.col}"></i>${n > 1 ? n + ' × ' : ''}${esc(O.name)} <span class="rtag rc${O.r}">${RARITY[O.r].name}</span></span>` : ''; };
+const banChip = ban => banOk(ban) ? `<span class="chip"><span class="ic c-tro">${IC.flag}</span>${esc(BANNERS[ban.k].name)} <span class="rtag rc${ban.r}">${RARITY[ban.r].name}</span></span>` : '';
+const postName = (v, b) => 'Poste ' + postNum(v, b);
+function solStatus(v, s, t) {
+  if (solHurt(s, t)) return 'blessé' + (s.sex === 'f' ? 'e' : '') + ' · de retour dans ' + fmtDur(s.hurt - t);
+  const b = s.post && v.b.find(x => x.id === s.post);
+  return b ? postName(v, b) : 'sans poste';
+}
+function solStatsTxt(S) {
+  const p = ['vie ' + fmtN(S.hp), 'dégâts ' + String(S.dmg).replace('.', ','), 'armure ' + Math.round(S.armor * 100) + ' %'];
+  if (S.dodge) p.push('esquive ' + Math.round(S.dodge * 100) + ' %');
+  if (S.regen) p.push('récupère ' + String(S.regen).replace('.', ',') + ' % de vie par seconde');
+  if (S.thorns) p.push('renvoie ' + Math.round(S.thorns * 100) + ' % des coups');
+  return p.join(' · ');
+}
+
+/* ---------- la carte « Garnison » du menu Défense ---------- */
+function garCardHTML(v) {
+  const hl = hallLvl(v), cas = v.b.find(b => b.type === 'caserne'), t = now();
+  if (!cas) return `<div class="item"><div class="head"><b class="row">${djIco('shield')}Garnison</b><small>${hl < 2 ? 'halle niveau 2' : 'pas encore de caserne'}</small></div>
+    <p>Construisez la caserne pour recruter des soldats contre de l’or : pendant les raids, ils gardent chacun le cercle de leur poste de garde.</p>
+    ${hl >= 2 ? `<div class="foot"><span class="chips2">${chipsRes(costOf('caserne', 1), v.r)}</span><button class="btn small${missingTxt(v, costOf('caserne', 1)) ? ' off' : ' primary'}" data-act="place" data-type="caserne">Construire la caserne</button></div>` : ''}</div>`;
+  if (cas.lvl < 1) return `<div class="item"><div class="head"><b class="row">${djIco('shield')}Garnison</b><small>caserne en construction</small></div><p>Dès que la caserne sera finie, vous pourrez y recruter vos premiers soldats et poser un poste de garde.</p></div>`;
+  const list = solList(v), hurt = list.filter(s => solHurt(s, t)).length, free = list.filter(s => !s.post).length, posts = postsOf(v), promo = list.filter(solCanPromote).length;
+  const warn = [];
+  if (!posts.length) warn.push('Posez un poste de garde : sans poste, les soldats restent à la caserne.');
+  else if (free) warn.push(free + ' soldat' + (free > 1 ? 's' : '') + ' sans poste.');
+  if (promo) warn.push(promo + ' soldat' + (promo > 1 ? 's peuvent' : ' peut') + ' monter de niveau.');
+  return `<div class="item feature"><div class="head"><b class="row">${djIco('shield')}Garnison</b><small>${list.length} soldat${list.length > 1 ? 's' : ''} sur ${solCap(v)} · ${posts.length} poste${posts.length > 1 ? 's' : ''} sur ${postCap(v)}${hurt ? ' · ' + hurt + ' blessé' + (hurt > 1 ? 's' : '') : ''}</small></div>
+    <p>${list.length ? 'Pendant les raids, chaque soldat garde le cercle de son poste, sans jamais en sortir.' : 'Recrutez vos premiers soldats à la caserne (contre de l’or).'}${warn.length ? ' <b>' + esc(warn.join(' ')) + '</b>' : ''}</p>
+    <div class="row"><button class="btn small primary" data-act="sheet" data-s="caserne">${djIco('shield')}La caserne</button>${posts.length < postCap(v) ? `<button class="btn small" data-act="place" data-type="poste">Poser un poste <span class="sub">${chipsRes(costOf('poste', 1))}</span></button>` : ''}${posts.length && list.length ? '<button class="btn small" data-act="solAuto">Répartir</button>' : ''}</div></div>`;
+}
+
+/* ---------- la fiche de la caserne ---------- */
+function solRow(v, s, t, on) {
+  const ti = solTitle(s), need = solXpNeed(s.lvl);
+  return `<button class="item opt srow${on ? ' on' : ''}" data-act="solSel" data-id="${s.id}">
+    <div class="head"><span class="row">${solIco(s.type)}<b>${esc(solName(s))}</b>${ti ? `<span class="chip hero">${esc(ti[1])}</span>` : ''}${solCanPromote(s) ? '<span class="chip plus">▲ niveau</span>' : ''}</span><small>niveau ${s.lvl}</small></div>
+    <p>${esc(solStatus(v, s, t))}${s.lvl < SOL_MAX_LVL ? ' · expérience ' + fmtN(Math.min(s.xp | 0, need)) + ' / ' + fmtN(need) : ''}</p></button>`;
+}
+function solDetail(v, s, t) {
+  const post = s.post && v.b.find(x => x.id === s.post), S = solStats(s, post), f = forgeLvlOf(v), need = solXpNeed(s.lvl);
+  let h = `<div class="item idet"><p><b>${esc(solStatsTxt(S))}</b>${SOLDIERS[s.type].range > 2 ? ' · tire à ' + String(SOLDIERS[s.type].range).replace('.', ',') + ' cases' : ''}</p>
+    <p class="note">${esc(SOLDIERS[s.type].desc)} ${s.raids ? 'Raids tenus : ' + s.raids + ' · ennemis abattus : ' + (s.kills | 0) + '.' : 'Pas encore de raid.'} Repas : ${solEat(s)} rations par jour.</p>`;
+  /* niveau */
+  if (s.lvl < SOL_MAX_LVL) {
+    const c = promoteCost(s.lvl), can = (s.xp | 0) >= need;
+    h += `<div class="bar"><i style="width:${Math.min(100, (s.xp | 0) / need * 100).toFixed(0)}%"></i></div>
+      <div class="foot"><span class="note">${can ? 'Prêt à monter au niveau ' + (s.lvl + 1) + (ORB_LVLS.includes(s.lvl + 1) ? ' (un emplacement d’orbe s’ouvre)' : '') : 'Expérience : ' + fmtN(s.xp | 0) + ' sur ' + fmtN(need) + '. Elle se gagne en tenant les raids.'}</span>
+      ${can ? `<button class="btn small${missingTxt(v, c) ? ' off' : ' primary'}" data-act="promote" data-id="${s.id}">Niveau ${s.lvl + 1} <span class="sub">${chipsRes(c, v.r)}</span></button>` : ''}</div>`;
+  } else h += '<p class="note">Niveau maximum atteint.</p>';
+  const ti = solTitle(s), nx = SOL_TITLES.slice().reverse().find(x => (s.vet | 0) < x[0]);
+  h += `<p class="note">${ti ? '<b>' + esc(ti[1]) + '</b> : +' + ti[2] + ' % de vie et de dégâts. ' : ''}Série : ${s.vet | 0} raid${(s.vet | 0) > 1 ? 's' : ''} sans tomber${nx ? ' (' + esc(nx[1].toLowerCase()) + ' à ' + nx[0] + ')' : ''}. Une chute remet la série à zéro.</p>`;
+  /* poste */
+  const posts = postsOf(v);
+  h += `<div class="chips2"><span class="note">Poste :</span>${posts.map(b => { const n = guardsOf(v, b.id).length, mine = s.post === b.id; return `<button class="btn small${mine ? ' primary' : ''}${!mine && n >= POST_SLOTS ? ' off' : ''}" data-act="solPost" data-id="${s.id}" data-post="${b.id}" aria-pressed="${mine}">${esc(postName(v, b))} · ${n}/${POST_SLOTS}</button>`; }).join('')}<button class="btn small${s.post ? '' : ' primary'}" data-act="solPost" data-id="${s.id}" data-post="0" aria-pressed="${!s.post}">Aucun</button></div>`;
+  if (!posts.length) h += '<p class="note">Pas encore de poste de garde : posez-en un depuis le menu Défense.</p>';
+  /* équipement */
+  h += `<div class="sec"><h4>Équipement</h4>`;
+  if (!f) h += '<p class="note">Il faut une forge pour forger l’arme et l’armure des soldats.</p>';
+  const w = s.w, a = s.a, mx = maxUpOf(f);
+  const upBtn = (k, it) => !f || !it ? '' : (it.up | 0) >= 5 ? '<span class="note">au maximum</span>' : (it.up | 0) >= mx ? `<span class="note">+${(it.up | 0) + 1} : forge plus grande</span>` : `<button class="btn small${missingTxt(v, solImproveCost(it)) ? ' off' : ''}" data-act="solImprove" data-id="${s.id}" data-k="${k}">+${(it.up | 0) + 1} <span class="sub">${chipsRes(solImproveCost(it), v.r)}</span></button>`;
+  h += `<div class="row split"><span><b>${w ? esc(solItemName(s, 'w')) : 'Pas d’arme'}</b>${w ? '<br><small class="note">+' + String(solWeaponDmg(w)).replace('.', ',') + ' % de dégâts</small>' : ''}</span><span class="row">${upBtn('w', w)}${f ? `<button class="btn small${missingTxt(v, solForgeCost('w', s.lvl)) ? ' off' : (w ? '' : ' primary')}" data-act="solForge" data-id="${s.id}" data-k="w">${w ? 'Reforger' : 'Forger'} (niv. ${s.lvl}) <span class="sub">${chipsRes(solForgeCost('w', s.lvl), v.r)}</span></button>` : ''}</span></div>`;
+  h += `<div class="row split"><span><b>${a ? esc(solItemName(s, 'a')) : 'Pas d’armure'}</b>${a ? '<br><small class="note">+' + String(solArmorHp(a)).replace('.', ',') + ' % de vie · ' + esc(SOL_SETS[a.set].t) + '</small>' : ''}</span><span class="row">${upBtn('a', a)}</span></div>`;
+  if (f) h += `<div class="chips2"><span class="note">${a ? 'Reforger' : 'Forger'} une armure (niv. ${s.lvl}, ${chipsRes(solForgeCost('a', s.lvl), v.r)}) :</span>${SOL_SET_KEYS.map(k => `<button class="btn small${missingTxt(v, solForgeCost('a', s.lvl)) ? ' off' : ''}${SOL_SETS[k].fit === s.type ? ' primary' : ''}" data-act="solForge" data-id="${s.id}" data-k="a" data-set="${k}" title="${esc(SOL_SETS[k].t)}">${esc(SOL_SETS[k].name)}<span class="sub">${esc(SOL_SETS[k].t)}</span></button>`).join('')}</div>`;
+  if (f && (w || a)) h += '<p class="note">Reforger remplace l’ancienne pièce (fondue : elle rend un peu de fer).</p>';
+  h += '</div>';
+  /* orbes */
+  const pool = Object.keys(v.orbs || {}).filter(k => v.orbs[k] > 0 && orbOf(k)).sort((x, y) => orbOf(y).r - orbOf(x).r || x.localeCompare(y));
+  h += `<div class="sec"><h4>Orbes de défense</h4>`;
+  ORB_LVLS.forEach((L, i) => {
+    const cur = s.o && s.o['o' + i];
+    if (s.lvl < L) { h += `<p class="note">Emplacement ${i + 1} : au niveau ${L}.</p>`; return; }
+    if (orbOf(cur)) h += `<div class="row split"><span class="row">${orbChip(cur)}<small class="note">${esc(orbOf(cur).txt)}</small></span><button class="btn small" data-act="orbOff" data-id="${s.id}" data-s="${i}">Retirer</button></div>`;
+    else h += `<div class="row split"><span class="note">Emplacement ${i + 1} libre</span></div>${pool.length ? `<div class="chips2">${pool.map(k => `<button class="btn small" data-act="orbSet" data-id="${s.id}" data-s="${i}" data-o="${k}" title="${esc(orbOf(k).txt)}">${orbChip(k, v.orbs[k])}</button>`).join('')}</div>` : ''}`;
+  });
+  if (s.lvl >= ORB_LVLS[0] && !pool.length) h += '<p class="note">Pas d’orbe en réserve : on en gagne en défense réussie et en donjon gagné.</p>';
+  h += '</div>';
+  h += `<div class="row"><button class="btn small" data-act="dismiss" data-id="${s.id}">Renvoyer</button></div></div>`;
+  return h;
+}
+function sheetCaserne() {
+  const v = me, t = now(), cas = caserneOf(v);
+  if (!cas) {
+    const site = v.b.find(b => b.type === 'caserne');
+    return site ? '<p class="note">La caserne est en construction : les bâtisseurs y travaillent.</p>' : `<p class="note">Il faut d’abord construire la caserne (menu Construire, rubrique « Défense », halle niveau 2).</p>${hallLvl(v) >= 2 ? '<button class="btn primary" data-act="place" data-type="caserne">Construire la caserne</button>' : ''}`;
+  }
+  const list = solList(v), cap = solCap(v), posts = postsOf(v), hungry = (v.hunger || 0) > 0 || foodOf(v) < 1;
+  let h = `<p class="note">Caserne de niveau ${cas.lvl} : <b>${list.length} soldat${list.length > 1 ? 's' : ''} sur ${cap}</b> · postes de garde : <b>${posts.length} sur ${postCap(v)}</b>${cas.lvl < 4 ? ' (agrandissez-la pour 3 soldats et un poste de plus)' : ''}. La garnison mange <b>${solFood(v)} rations par jour</b>. Bourse commune : <b>${fmtN(v.r.or || 0)} or</b>.</p>`;
+  if (hungry && list.length) h += '<p class="why">Plus rien à manger au village : vos soldats ont faim, ils frappent moins fort.</p>';
+  /* recruter */
+  if (list.length < cap) {
+    const c = recruitCost(v), miss = missingTxt(v, c);
+    h += `<div class="sec"><h4>Recruter · ${chipsRes(c, v.r)}</h4>`;
+    for (const k of SOL_TYPES) {
+      const S = SOLDIERS[k];
+      h += `<div class="item"><div class="troop"><span class="tico">${solIco(k)}</span><div style="display:grid;gap:4px"><div class="head"><b>${esc(S.name)}</b><small>vie ${S.hp} · dégâts ${S.dmg}${S.range > 2 ? ' · tire à ' + String(S.range).replace('.', ',') + ' cases' : ''}</small></div><p>${esc(S.desc)}</p></div></div>
+        <div class="foot"><span class="note">${list.filter(s => s.type === k).length ? list.filter(s => s.type === k).length + ' dans la garnison' : ''}</span><button class="btn small${miss ? ' off' : ' primary'}" data-act="recruit" data-t="${k}">Recruter</button></div></div>`;
+    }
+    h += '</div>';
+  } else h += `<p class="note">${cap >= 12 ? 'La garnison est complète (12 soldats).' : 'La caserne est pleine : agrandissez-la pour recruter plus.'}</p>`;
+  /* les soldats */
+  if (list.length) {
+    h += `<div class="sec"><h4>Les soldats</h4>`;
+    for (const s of list) { h += solRow(v, s, t, solSel === s.id); if (solSel === s.id) h += solDetail(v, s, t); }
+    h += '</div>';
+  }
+  /* les postes */
+  h += `<div class="sec"><h4>Postes de garde</h4>`;
+  if (!posts.length) h += '<p class="note">Aucun pour l’instant. Un poste garde un cercle autour de lui : placez-le sur le chemin des gobelins (près des portes, de la halle, de l’entrepôt).</p>';
+  for (const b of posts) {
+    const gs = guardsOf(v, b.id);
+    h += `<div class="item"><div class="head"><b class="row"><span class="ic c-tro">${IC.flag}</span>${esc(postName(v, b))} · ${esc(lvlName(b).toLowerCase())}</b><small>cercle de ${postR(b)} cases · ${gs.length}/${POST_SLOTS} gardes</small></div>
+      <p>${gs.length ? gs.map(s => esc(solName(s)) + (solHurt(s, t) ? ' (blessé' + (s.sex === 'f' ? 'e' : '') + ')' : '')).join(', ') : 'Personne pour l’instant.'}</p>
+      ${banOk(b.ban) ? `<div class="chips2">${banChip(b.ban)}<small class="note">${esc(banTxt(b.ban))}</small></div>` : ''}
+      <div class="row"><button class="btn small" data-act="postLook" data-id="${b.id}">Voir sur la carte</button></div></div>`;
+  }
+  h += `<div class="row">${posts.length && list.length ? '<button class="btn small primary" data-act="solAuto">Répartir tout le monde</button>' : ''}${posts.length < postCap(v) ? `<button class="btn small" data-act="place" data-type="poste">Poser un poste <span class="sub">${chipsRes(costOf('poste', 1))}</span></button>` : ''}</div>`;
+  if (posts.length) h += '<p class="note">« Répartir » met un peu de chaque type à chaque poste. Touchez un poste sur la carte pour choisir ses gardes et sa bannière.</p>';
+  h += '</div>';
+  /* orbes en réserve */
+  const ok = Object.keys(v.orbs || {}).filter(k => v.orbs[k] > 0 && orbOf(k)).sort((x, y) => x.localeCompare(y));
+  h += `<div class="sec"><h4>Orbes en réserve</h4>${ok.length ? `<div class="chips2">${ok.map(k => orbChip(k, v.orbs[k])).join('')}</div>` : '<p class="note">Aucune pour l’instant : une défense réussie (rien volé) en rapporte, un donjon gagné parfois.</p>'}`;
+  const fus = ok.filter(k => v.orbs[k] >= 3 && orbOf(k).r < 4);
+  h += fus.map(k => { const O = orbOf(k), c = { or: ORB_FUSE[O.r] }; return `<div class="row split"><span class="note">3 × ${esc(orbLabel(k))} → ${esc(RARITY[O.r + 1].name.toLowerCase())}</span><button class="btn small${missingTxt(v, c) ? ' off' : ' primary'}" data-act="orbFuse" data-o="${k}">Fusionner <span class="sub">${chipsRes(c, v.r)}</span></button></div>`; }).join('');
+  if (ok.length) h += '<p class="note">Les orbes se sertissent dans les soldats (emplacements aux niveaux 4, 8 et 12) : touchez un soldat. Trois orbes pareilles se fusionnent en une de la rareté suivante.</p>';
+  h += '</div>';
+  /* bannières en réserve */
+  const bans = Object.values(v.bans || {}).filter(banOk).sort((x, y) => y.r - x.r);
+  h += `<div class="sec"><h4>Bannières en réserve</h4>${bans.length ? bans.map(ban => `<div class="row split"><span class="row">${banChip(ban)}<small class="note">${esc(banTxt(ban))}</small></span><button class="btn small" data-act="banSell" data-ban="${ban.id}">Vendre <span class="sub">${ico('or')}${banPrice(ban)}</span></button></div>`).join('') + '<p class="note">Pour poser une bannière, touchez un poste de garde sur la carte.</p>' : '<p class="note">Aucune pour l’instant : le gardien du portail en laisse souvent une, les Profondeurs aussi (5 étages ou plus).</p>'}</div>`;
+  /* aide */
+  h += `<div class="sec"><h4>Comment ça marche</h4><ul class="help">
+    <li>On recrute contre de l’or : 4 types de soldats. Un soldat ne travaille pas et n’a pas besoin de maison, mais il mange (un peu plus à chaque niveau).</li>
+    <li>Pendant un raid, chaque soldat garde le cercle de son poste, sans jamais en sortir : fantassins et lanciers devant, du côté du portail ; archers et mages derrière.</li>
+    <li>Ceux qui tiennent gagnent de l’expérience ; c’est vous qui les faites monter de niveau (jusqu’au 15), contre de l’or et de la viande (et du fer à partir du niveau 5).</li>
+    <li>Un soldat abattu est blessé : 8 heures de repos à la caserne, sans rien perdre, sauf sa série de raids. 5 raids de suite sans tomber : Vétéran ; 10 : Briscard ; 20 : Héros de la garde.</li>
+    <li>À la forge : une arme et une armure complète par soldat (chaque armure a son bonus d’ensemble), améliorables jusqu’à +5.</li>
+    <li>Orbes (3 emplacements, aux niveaux 4, 8 et 12) et bannières (une par poste, pour tous ses gardes) se gagnent en défense réussie et en donjon.</li></ul></div>`;
+  return h;
+}
+
+/* ---------- panneau d'un poste de garde (touché sur la carte) ---------- */
+function postPanel(v, b) {
+  const t = now(), gs = guardsOf(v, b.id), d = BLD.poste, hl = hallLvl(v);
+  let h = `<div class="glass card"><h3><span class="row"><span class="ic c-tro">${IC.flag}</span>${esc(postName(v, b))}</span><span class="row"><small>${esc(lvlName(b).toLowerCase())} · ${postR(b)} cases</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>`;
+  h += `<div class="workers">${gs.map(s => `<span class="chip wk">${esc(solName(s))} <b>niv. ${s.lvl}</b>${solHurt(s, t) ? ' <small class="note">blessé' + (s.sex === 'f' ? 'e' : '') + '</small>' : ''}<button class="xs" data-act="solPost" data-id="${s.id}" data-post="0" aria-label="Retirer ${esc(solName(s))}">×</button></span>`).join('')}
+    ${gs.length ? '' : '<span class="note">Pas encore de garde.</span>'}</div>`;
+  if (gs.length < POST_SLOTS) {
+    const cand = solList(v).filter(s => s.post !== b.id).sort((x, y) => (x.post ? 1 : 0) - (y.post ? 1 : 0) || x.n - y.n);
+    if (cand.length) h += `<div class="chips2"><span class="note">Ajouter :</span>${cand.slice(0, 6).map(s => `<button class="btn small" data-act="solPost" data-id="${s.id}" data-post="${b.id}" title="${esc(solStatus(v, s, t))}">${solIco(s.type)}${esc(solName(s))}</button>`).join('')}${cand.length > 6 ? '<button class="btn small" data-act="sheet" data-s="caserne">Tous…</button>' : ''}</div>`;
+    else if (!solList(v).length) h += `<p class="note">Recrutez des soldats à la caserne.</p>`;
+  } else h += `<p class="note">Poste complet (${POST_SLOTS} gardes).</p>`;
+  /* bannière */
+  const pool = Object.values(v.bans || {}).filter(banOk).sort((x, y) => y.r - x.r);
+  if (banOk(b.ban)) h += `<div class="row split"><span class="row">${banChip(b.ban)}<small class="note">${esc(banTxt(b.ban))} (tous ses gardes)</small></span><button class="btn small" data-act="banOff" data-id="${b.id}">Retirer</button></div>`;
+  else h += `<p class="note">Pas de bannière.${pool.length ? '' : ' Le gardien du portail en laisse souvent une.'}</p>`;
+  if (pool.length) h += `<div class="chips2"><span class="note">${banOk(b.ban) ? 'Changer :' : 'Poser :'}</span>${pool.slice(0, 6).map(ban => `<button class="btn small" data-act="banSet" data-id="${b.id}" data-ban="${ban.id}" title="${esc(banTxt(ban))}">${banChip(ban)}</button>`).join('')}</div>`;
+  /* améliorer */
+  const to = b.lvl + 1;
+  if (to <= d.max) {
+    if (to > maxLvlOf('poste', hl)) h += '<p class="note">Agrandissez d’abord la halle du village pour aller plus loin.</p>';
+    else { const c = costOf('poste', to), miss = missingTxt(v, c); h += `<div class="row split"><span class="note">${esc(d.lvlNames[to - 1])} : cercle de ${d.zone[to - 1]} cases</span><span class="row"><span class="chips2">${chipsRes(c, v.r)}</span><button class="btn small${miss ? ' off' : ' primary'}" data-act="upgrade" data-id="${b.id}">Améliorer</button></span></div>`; }
+  } else h += '<p class="note">Niveau maximum atteint.</p>';
+  h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button><button class="btn small" data-act="demolish" data-id="${b.id}">Retirer</button><button class="btn small" data-act="sheet" data-s="caserne">${djIco('shield')}La caserne</button></div>`;
+  return h + '</div>';
+}
+/* Un soldat touché sur la carte */
+function solPersonPanel(v, sid) {
+  const s = v.sol && v.sol[sid]; if (!s) return '';
+  const t = now(), ti = solTitle(s);
+  return `<div class="glass card"><h3><span class="row">${solIco(s.type)}${esc(solName(s))}</span><span class="row"><small>niveau ${s.lvl}${ti ? ' · ' + esc(ti[1].toLowerCase()) : ''}</small><button class="x" data-act="desel" aria-label="Fermer">×</button></span></h3>
+    <p class="note">${esc(solStatus(v, s, t))} · ${esc(solStatsTxt(solStats(s, s.post && v.b.find(x => x.id === s.post))))}</p>
+    <div class="row"><button class="btn small primary" data-act="solOpen" data-id="${s.id}">Sa fiche à la caserne</button></div></div>`;
+}
+
+/* ---------- au village : les soldats debout à leur poste (même formation qu'au raid), les autres à la caserne ---------- */
+function solVillageSpots(v, t) {
+  const out = new Map(), posts = postsOf(v); if (!posts.length || !v.sol) return out;
+  const occ = new Uint8Array(GRID * GRID);
+  for (const b of v.b) {
+    const d = BLD[b.type]; if (!d || d.def === 'trap' || d.def === 'post' || b.type === 'porte' || b.type === 'marchand' || isBroken(b)) continue;
+    for (let i = 0; i < d.size; i++) for (let j = 0; j < d.size; j++) { const x = b.gx + i, z = b.gz + j; if (x >= 0 && z >= 0 && x < GRID && z < GRID) occ[z * GRID + x] = 1; }
+  }
+  const blocked = (cx, cy) => cx < 0 || cy < 0 || cx >= GRID || cy >= GRID || !!occ[cy * GRID + cx];
+  const open = raidInfo(v, t).p.filter(p => !p.cl), hall = v.b.find(b => b.type === 'halle');
+  for (const b of posts) {
+    const gs = solList(v).filter(s => s.post === b.id && !solHurt(s, t)); if (!gs.length) continue;
+    const P0 = { x: b.gx + 0.5, y: b.gz + 0.5, r: postR(b) };
+    let dx = 0, dy = -1, bd = 1e18;
+    if (open.length) { for (const p of open) { const ex = p.x + 0.5 - P0.x, ey = p.y + 0.5 - P0.y, d2 = ex * ex + ey * ey; if (d2 < bd && d2 > 1e-6) { bd = d2; const L = Math.sqrt(d2); dx = ex / L; dy = ey / L; } } }
+    else if (hall) { const ex = P0.x - (hall.gx + BLD.halle.size / 2), ey = P0.y - (hall.gz + BLD.halle.size / 2), L = Math.sqrt(ex * ex + ey * ey); if (L > 1e-6) { dx = ex / L; dy = ey / L; } }
+    const sp = solFormation(P0, gs.map(s => s.type), dx, dy, blocked);
+    gs.forEach((s, i) => out.set(s.id, { x: sp[i][0], y: sp[i][1], fx: dx, fy: dy }));
+  }
+  return out;
+}
+function solPeople(v) {
+  if (!v.sol) return [];
+  const t = now(), cas = caserneOf(v), spots = solVillageSpots(v, t), out = [];
+  for (const s of solList(v)) {
+    const sp = spots.get(s.id);
+    out.push({ key: 'g' + s.id, kind: 'sol', race: s.race, sex: s.sex, type: s.type, name: solName(s), at: sp || !cas ? null : 'm' + cas.id, fixed: sp ? [sp.x, sp.y] : null, face: sp ? [sp.fx, sp.fy] : null, hurt: solHurt(s, t) });
+  }
+  return out;
+}
+/* Cercles des postes : celui du poste choisi (ou en cours de pose), tous quand la caserne est choisie. */
+let ringSig = '';
+function postRings(v, editable) {
+  const rings = [], selB = editable && sel != null && !place ? v.b.find(x => x.id === sel) : null;
+  if (selB && (selB.type === 'poste' || selB.type === 'caserne')) for (const b of postsOf(v)) if (selB.type === 'caserne' || b.id === selB.id) rings.push({ x: b.gx + 0.5, z: b.gz + 0.5, r: postR(b) });
+  if (editable && place && place.type === 'poste') { const pb = place.kind === 'move' ? v.b.find(x => x.id === place.id) : null; rings.push({ x: place.gx + 0.5, z: place.gz + 0.5, r: pb ? postR(pb) : BLD.poste.zone[0] }); }
+  const sig = rings.map(r => r.x + ',' + r.z + ',' + r.r).join(';');
+  if (sig !== ringSig) { ringSig = sig; V3.showRanges(rings.length ? rings : null); }
+}
+
+/* ---------- actions (réunies dans ACT par l'application) ---------- */
+const ACT_GAR = {
+  recruit: b => { const r = act({ type: 'recruit', t: b.dataset.t }); if (r) { solSel = r.id; toast(r.name + ' rejoint la garnison' + (r.post ? ' (' + postName(me, me.b.find(x => x.id === r.post) || { id: 0 }) + ').' : ' : posez un poste de garde pour lui donner un cercle à garder.')); } },
+  solSel: b => { solSel = solSel === b.dataset.id ? null : b.dataset.id; renderAll(); },
+  solOpen: b => { solSel = b.dataset.id; sel = null; selP = null; refreshScene(); openSheet('caserne'); },
+  solPost: b => { const s = me.sol && me.sol[b.dataset.id], to = +b.dataset.post; if (act({ type: 'solPost', sid: b.dataset.id, post: to }) && s) toast(solName(s) + (to ? ' garde le ' + postName(me, me.b.find(x => x.id === to) || { id: to }).toLowerCase() + '.' : ' quitte son poste.')); },
+  solAuto: () => { const r = act({ type: 'solAuto' }); if (r) toast(r.n + ' soldat' + (r.n > 1 ? 's répartis' : ' réparti') + ' sur ' + r.p + ' poste' + (r.p > 1 ? 's' : '') + '.'); },
+  promote: b => { const s = me.sol && me.sol[b.dataset.id], r = act({ type: 'promote', sid: b.dataset.id }); if (r && s) toast(solName(s) + ' passe au niveau ' + r.lvl + (r.orb ? ' : un emplacement d’orbe s’ouvre !' : '.')); },
+  dismiss: b => { const s = me.sol && me.sol[b.dataset.id]; if (!s || !confirm('Renvoyer ' + solName(s) + ' (niveau ' + s.lvl + ') ? Ses orbes retournent dans la réserve, son équipement est fondu.')) return; if (act({ type: 'dismiss', sid: s.id })) { solSel = null; toast(solName(s) + ' quitte la garnison.'); } },
+  solForge: b => {
+    const s = me.sol && me.sol[b.dataset.id], k = b.dataset.k; if (!s) return;
+    if (s[k] && !confirm('Forger une nouvelle pièce ? L’ancienne (' + solItemName(s, k) + ') sera fondue.')) return;
+    const r = act({ type: 'solForge', sid: s.id, k, set: b.dataset.set }); if (r) toast('Forgé pour ' + solName(s) + ' : ' + r.name + (r.back ? ' (+' + r.back + ' fer de l’ancienne)' : '') + '.');
+  },
+  solImprove: b => { const r = act({ type: 'solImprove', sid: b.dataset.id, k: b.dataset.k }); if (r) toast('Amélioré : +' + r.up + '.'); },
+  orbSet: b => { const r = act({ type: 'orbSet', sid: b.dataset.id, s: +b.dataset.s, o: b.dataset.o }); if (r) toast(r.name + ' sertie.'); },
+  orbOff: b => { if (act({ type: 'orbOff', sid: b.dataset.id, s: +b.dataset.s })) toast('L’orbe retourne dans la réserve.'); },
+  orbFuse: b => { const r = act({ type: 'orbFuse', o: b.dataset.o }); if (r) toast('Fusion réussie : ' + r.name + ' !'); },
+  banSet: b => { const r = act({ type: 'banSet', id: +b.dataset.id, ban: b.dataset.ban }); if (r) toast(r.name + ' flotte sur le poste.'); },
+  banOff: b => { if (act({ type: 'banOff', id: +b.dataset.id })) toast('La bannière retourne dans la réserve.'); },
+  banSell: b => { const ban = me.bans && me.bans[b.dataset.ban]; if (!ban || (ban.r >= 2 && !confirm('Vendre ' + banLabel(ban) + ' pour ' + banPrice(ban) + ' or ?'))) return; const r = act({ type: 'banSell', ban: ban.id }); if (r) toast('+' + r.gain + ' or pour la bourse commune.'); },
+  postLook: b => { const p = me.b.find(x => x.id === +b.dataset.id); if (!p) return; closeSheet(true); sel = p.id; selP = null; if (gl) V3.focus(p.gx + 0.5, p.gz + 0.5); refreshScene(); renderAll(); },
 };
 
 /* ===================== APPLICATION (village commun) ===================== */
@@ -7007,6 +7778,8 @@ Object.assign(IC, {
 });
 /* Raids : bouclier, flamme (les mêmes que dans les donjons) */
 Object.assign(IC, { shield: DJ_IC.shield, flame: DJ_IC.flame, sword: DJ_IC.sword });
+/* Garnison : drapeau (postes de garde, bannières) */
+IC.flag = '<svg viewBox="0 0 24 24"><path d="M5 2.5v19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M6 4h12l-3 4 3 4H6z" fill="currentColor"/></svg>';
 const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k] || ''}</span>`;
 const RES_SHOW = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere', 'fer', 'or'];
 function chipsRes(c, have, cls) { return RES.filter(k => c[k]).map(k => `<span class="chip${have && (have[k] || 0) < c[k] ? ' short' : ''}${cls ? ' ' + cls : ''}">${ico(k)}${fmtN(c[k])}</span>`).join(''); }
@@ -7052,7 +7825,8 @@ function act(a, opts) {
   scheduleCommit(150);
   const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click', skill: 'star', spec: 'hero',
     equip: 'upgrade', unequip: 'click', sell: 'coin', melt: 'wallhit', craft: 'upgrade', improve: 'upgrade', socket: 'built', unsocket: 'click', fuse: 'star', buy: 'coin', pet: 'click',
-    walls: 'place', gate: 'place', upwalls: 'upgrade', repair: 'built' }[a.type];
+    walls: 'place', gate: 'place', upwalls: 'upgrade', repair: 'built',
+    recruit: 'hero', dismiss: 'click', promote: 'star', solPost: 'click', solAuto: 'place', solForge: 'upgrade', solImprove: 'upgrade', orbSet: 'built', orbOff: 'click', orbFuse: 'star', banSet: 'built', banOff: 'click', banSell: 'coin' }[a.type];
   if (fx && !(opts && opts.quiet)) SND.sfx(fx);
   return test;
 }
@@ -7102,7 +7876,7 @@ function onVillage(snap) {
   if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
-const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def']);
+const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def', 'sol']);
 const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch', 'portal']);
 /* Nouvelles du journal pendant qu'on joue : une bulle pour la plus récente. */
 function newsCheck() {
@@ -7122,7 +7896,7 @@ function items(v, editable) {
   const out = v.b.map(b => {
     let gx = b.gx, gz = b.gz;
     if (editable && place && place.kind === 'move' && place.id === b.id) { gx = place.gx; gz = place.gz; }
-    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined, dead: isBroken(b) };
+    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined, dead: isBroken(b), ban: b.type === 'poste' && banOk(b.ban) ? b.ban.r : undefined };
   });
   if (editable && place && place.kind === 'new') out.push({ key: 'ghost', id: 0, type: place.type, lvl: 1, gx: place.gx, gz: place.gz, up: null, col: safeColor(v.c) });
   /* Le marchand ambulant : sa charrette, près de la halle, les jours où il est là */
@@ -7143,6 +7917,8 @@ function peopleOf(v) {
     const at = h.at === 'bat' ? (open[0] ? 'm' + open[0].id : null) : h.at != null ? 'm' + h.at : hang != null ? 'm' + hang : null;
     out.push({ key: 'h' + k, kind: 'hero', race: h.race, cls: h.cls, sex: h.sex, col: safeColor(h.col), name: h.name, at });
   }
+  /* les soldats de la garnison : debout à leur poste, ou à la caserne */
+  for (const p of solPeople(v)) out.push(p);
   return out;
 }
 const placeValid = () => place && fits(me, place.type, place.gx, place.gz, place.kind === 'move' ? place.id : undefined);
@@ -7159,6 +7935,7 @@ function refreshScene() {
   if (editable && place && place.kind === 'wall') V3.ghost('rempart', place.gx, place.gz, true);
   else if (editable && place) V3.ghost(place.type, place.gx, place.gz, placeValid()); else V3.ghost(null);
   V3.setPeople(peopleOf(v));
+  postRings(v, editable);
   /* portails démoniaques : visibles pendant la charge */
   const ri = me ? raidInfo(v, t) : { p: [] };
   V3.setPortals(ri.p.map(p => Object.assign({ frac: ri.frac, ready: ri.st === 'ready' }, p)));
@@ -7183,8 +7960,9 @@ function onTap(cx, cy) {
     refreshScene(); renderAll(); return;
   }
   /* Un habitant touché de près passe avant le bâtiment derrière lui. */
-  const k = V3.pickBuilding(cx, cy);
-  const pk = V3.pickPerson(cx, cy, 16) || (k ? null : V3.pickPerson(cx, cy, 30));
+  const k = V3.pickBuilding(cx, cy), kb = k && k[0] === 'm' ? me.b.find(b => b.id === +k.slice(1)) : null;
+  /* un poste de garde touché passe avant ses gardes (ils se tiennent tout près du mât) */
+  const pk = V3.pickPerson(cx, cy, kb && kb.type === 'poste' ? 7 : 16) || (k ? null : V3.pickPerson(cx, cy, 30));
   if (pk) { selP = pk; sel = null; SND.sfx('click'); refreshScene(); renderAll(); return; }
   if (k === 'merch') { sel = null; selP = null; SND.sfx('click'); openSheet('merch'); return; }
   if (k && k.indexOf('portal') === 0) { sel = null; selP = null; SND.sfx('click'); openSheet('defense'); return; }
@@ -7196,7 +7974,7 @@ function startPlace(type) {
   if (type === 'rempart') { startWallMode(); return; }
   const d = BLD[type], hl = hallLvl(me);
   if ((d.hall || 1) > hl) { toast('Il faut une halle du village de niveau ' + d.hall + '.'); return; }
-  if (countOf(me, type) >= limitOf(type, hl)) { toast('Nombre maximum atteint : agrandissez la halle.'); return; }
+  if (countOf(me, type) >= limitV(me, type)) { toast(limitWhy(me, type)); return; }
   const m = missingTxt(me, costOf(type, 1)); if (m) { toast(m); return; }
   const spot = freeSpot(me, type); if (!spot) { toast('Plus de place libre dans le village.'); return; }
   place = { kind: 'new', type, gx: spot[0], gz: spot[1] };
@@ -7288,6 +8066,7 @@ function bldLine(v, b, t) {
   if (b.type === 'taverne') return '+' + (BLD.taverne.mor + 4 * (b.lvl - 1)) + ' de moral, et +' + BEER.mor + ' de plus quand on y sert de la bière. Attire de nouveaux villageois ; on peut y offrir une fête.';
   if (d.deco) return '+' + d.deco + ' de moral (les décorations comptent jusqu’à +' + DECO_MAX + ').';
   if (b.type === 'halle') return buildersMax(v) + ' bâtisseurs au plus · ' + sitesMax(v) + ' chantiers à la fois · bâtiments jusqu’au niveau ' + Math.min(3, hallLvl(v) + 1) + '.';
+  if (b.type === 'caserne') return 'Caserne de niveau ' + b.lvl + ' : ' + solList(v).length + ' soldat' + (solList(v).length > 1 ? 's' : '') + ' sur ' + solCap(v) + ', ' + postsOf(v).length + ' poste' + (postsOf(v).length > 1 ? 's' : '') + ' de garde sur ' + postCap(v) + '. On y recrute des soldats contre de l’or.';
   if (b.type === 'forge') return 'Forge de niveau ' + b.lvl + ' : objets ' + (b.lvl >= 3 ? 'jusqu’à légendaires' : b.lvl >= 2 ? 'jusqu’à épiques' : 'jusqu’à rares') + ', améliorations jusqu’à +' + maxUpOf(b.lvl) + ', sacs de ' + bagMax(v) + ' places' + (b.lvl >= 2 ? ', fusion des pierres' : '') + '.';
   return d.desc;
 }
@@ -7319,11 +8098,12 @@ function bldPanel() {
       else { const c = costOf(b.type, to), miss = missingTxt(v, c); h += `<div class="row split"><span class="chips2">${chipsRes(c, v.r)}</span><button class="btn${miss ? ' off' : ' primary'}" data-act="upgrade" data-id="${b.id}">Niveau ${to}</button></div>`; }
     } else if (b.lvl > 0) h += '<p class="note">Niveau maximum atteint.</p>';
   }
-  h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button>${b.type !== 'halle' ? `<button class="btn small" data-act="demolish" data-id="${b.id}">Démolir</button>` : ''}${b.type === 'taverne' && b.lvl > 0 ? '<button class="btn small" data-act="sheet" data-s="village" data-k="feast">' + ico('mug', '') + 'Fête</button>' : ''}${b.type === 'forge' && b.lvl > 0 ? '<button class="btn small primary" data-act="sheet" data-s="forge">' + ico('s_anvil', '') + 'Ouvrir la forge</button>' : ''}</div>`;
+  h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button>${b.type !== 'halle' ? `<button class="btn small" data-act="demolish" data-id="${b.id}">Démolir</button>` : ''}${b.type === 'taverne' && b.lvl > 0 ? '<button class="btn small" data-act="sheet" data-s="village" data-k="feast">' + ico('mug', '') + 'Fête</button>' : ''}${b.type === 'forge' && b.lvl > 0 ? '<button class="btn small primary" data-act="sheet" data-s="forge">' + ico('s_anvil', '') + 'Ouvrir la forge</button>' : ''}${b.type === 'caserne' && b.lvl > 0 ? '<button class="btn small primary" data-act="sheet" data-s="caserne">' + djIco('shield') + 'Ouvrir la caserne</button>' : ''}</div>`;
   return h + '</div>';
 }
 function personPanel() {
   const v = me;
+  if (selP && selP[0] === 'g') return solPersonPanel(v, selP.slice(1));
   if (selP && selP[0] === 'h') {
     const hh = v.heroes[selP.slice(1)]; if (!hh) return '';
     const mine = hh.own === uid, act = activeHero(v, hh.own) === hh;
@@ -7340,7 +8120,7 @@ function personPanel() {
 }
 function navBar() {
   const v = me;
-  const idle = v.vil.some(p => p.job == null), canBuild = SHOP.some(k => !BLD[k].inst && (BLD[k].hall || 1) <= hallLvl(v) && countOf(v, k) < limitOf(k, hallLvl(v)) && !missingTxt(v, costOf(k, 1)));
+  const idle = v.vil.some(p => p.job == null), canBuild = SHOP.some(k => !BLD[k].inst && (BLD[k].hall || 1) <= hallLvl(v) && countOf(v, k) < limitV(v, k) && !missingTxt(v, costOf(k, 1)));
   const unseen = v.log.some(l => l.t > (LS.get('mk2.read.' + vid) || 0) && AWAY_KINDS.has(l.k));
   const myHero = activeHero(v, uid);
   return `<nav class="glass nav" aria-label="Menus">
@@ -7348,7 +8128,7 @@ function navBar() {
     <button data-act="sheet" data-s="people">${ico('people', '')}Villageois${v.cands.length || idle ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="hero">${ico('crown', '')}${myHero ? esc(myHero.name) : 'Héros'}${myHero && myHero.sp ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="donjon">${djIco('sword')}Donjon</button>
-    <button data-act="sheet" data-s="defense">${djIco('shield')}Défense${raidInfo(v, now()).st !== 'calm' || v.b.some(b => repairCostOf(b)) ? '<span class="dot"></span>' : ''}</button>
+    <button data-act="sheet" data-s="defense">${djIco('shield')}Défense${raidInfo(v, now()).st !== 'calm' || v.b.some(b => repairCostOf(b)) || solList(v).some(solCanPromote) ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="journal">${ico('scroll', '')}Journal${unseen ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="village">${ico('house', '')}Village</button></nav>`;
 }
@@ -7393,9 +8173,9 @@ function sheetBuild() {
     const list = SHOP.filter(k => BLD[k].cat === cat); if (!list.length) continue;
     h += `<div class="sec"><h4>${label}</h4>`;
     for (const k of list) {
-      const d = BLD[k], n = countOf(v, k), lim = limitOf(k, hl), c = costOf(k, 1), locked = (d.hall || 1) > hl;
+      const d = BLD[k], n = countOf(v, k), lim = limitV(v, k), c = costOf(k, 1), locked = (d.hall || 1) > hl || (k === 'poste' && !caserneLvl(v));
       const miss = missingTxt(v, c), full = n >= lim;
-      h += `<div class="item"><div class="head"><b>${esc(d.name)}</b><small>${locked ? 'halle niveau ' + d.hall : n + ' sur ' + lim}</small></div><p>${esc(d.desc)}</p>
+      h += `<div class="item"><div class="head"><b>${esc(d.name)}</b><small>${locked ? (k === 'poste' ? 'caserne d’abord' : 'halle niveau ' + d.hall) : n + ' sur ' + lim}</small></div><p>${esc(d.desc)}</p>
         <div class="foot"><span class="chips2">${chipsRes(c, v.r)}<span class="dur">${ico('hammer', '')}${d.inst ? 'tout de suite' + (k === 'rempart' ? ', en ligne' : '') : fmtDur(workOf(k, 1) / Math.max(1, sr.perSite) * 3600000)}</span></span>
         <button class="btn small${locked || full || miss ? ' off' : ' primary'}" data-act="place" data-type="${k}">${locked ? 'Verrouillé' : full ? 'Maximum' : 'Construire'}</button></div></div>`;
     }
@@ -7517,7 +8297,7 @@ function sheetHero() {
   if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
-const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield' };
+const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield', sol: 'shield' };
 function sheetJournal() {
   const v = me;
   if (!v.log.length) return '<p class="note">Rien pour l’instant.</p>';
@@ -7553,7 +8333,7 @@ function sheetStock() {
   const v = me, t = now(), rt = ratesOf(v, t), cap = capOf(v);
   let h = `<p class="note">Chaque ressource peut monter jusqu’à <b>${fmtN(cap)}</b> : construisez des entrepôts pour en garder plus.</p><div class="item">`;
   for (const k of RES_SHOW) h += `<div class="row split stockrow"><b class="row">${ico(k)}${RES_LABEL[k]}</b><span><b>${fmtN(v.r[k] || 0)}</b> <small class="note">${fmtR(rt[k] || 0)}/h</small></span></div>`;
-  h += `<div class="row split stockrow"><b class="row">${ico('people', 'c-tro')}Repas des villageois</b><span><small class="note">${fmtR(rt.food)}/h (pain et viande)</small></span></div></div>`;
+  h += `<div class="row split stockrow"><b class="row">${ico('people', 'c-tro')}Repas ${v.sol ? '(villageois et soldats)' : 'des villageois'}</b><span><small class="note">${fmtR(rt.food)}/h (pain et viande)</small></span></div></div>`;
   h += '<p class="note">Le blé devient farine au moulin, puis pain à la boulangerie. Le pain et la viande nourrissent le village. L’orge devient bière à la brasserie : servie à la taverne, elle remonte le moral, et il en faut pour les fêtes. Le fer vient de la mine de fer : la forge s’en sert pour les objets des héros. L’or (la bourse commune, sans limite de place) se gagne en donjon et en vendant des objets.</p>';
   return h;
 }
@@ -7567,14 +8347,15 @@ function sheetHelp() {
     + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence (menu Héros, bouton +1) ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10.'])
     + sec('L’équipement', ['Chaque héros porte une arme, un casque, une armure, des bottes et, dès le niveau 8, un bijou (menu Héros). Chaque classe manie sa famille d’armes : lames, arcs ou bâtons.', 'Les objets ont 5 raretés : commun (gris), peu commun (vert), rare (bleu), épique (violet), légendaire (orange, avec un pouvoir). Les objets d’ensemble (turquoise) donnent un bonus à 2 et à 4 pièces portées.', 'On les trouve en donjon : dans les coffres, sur les boss, parfois sur un monstre ; mieux dans les donjons plus hauts. À deux, chacun trouve ses propres objets.', 'Dans le sac, les flèches comparent avec l’objet porté : ▲ mieux, ▼ moins bien. Vendre un objet rapporte de l’or (la bourse commune) ; le fondre à la forge rend du fer.', 'La forge (avec le fer de la mine) fabrique un objet au choix, l’améliore jusqu’à +5 et sertit les pierres précieuses : trois pierres pareilles se fusionnent en une plus belle.', 'Un jour sur deux, un marchand ambulant s’installe près de la halle avec quelques objets à vendre.', 'Au niveau 6, un familier accompagne le héros : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.'])
     + sec('Les raids et la défense', ['À partir du 3e jour, un portail démoniaque s’ouvre au bord de la vallée (au plus un raid par jour). Il se charge pendant 3 heures : vous voyez de quel côté viendront les gobelins.', 'Le raid ne part que quand vous êtes absents tous les deux depuis 2 heures. Il se joue tout seul ; à votre retour, un bilan s’affiche et vous pouvez revoir le combat.', 'Les gobelins foncent piller la halle, les voleurs filent vers l’entrepôt, les trolls cassent ce qui bloque (bien plus fort sur les palissades et les portes). Tous prennent le chemin le plus court, en comptant ce qu’il faudrait casser.', 'Ce qu’ils emportent est perdu s’ils regagnent le portail ; abattus avant, ils lâchent tout. Si la halle est pillée, le moral baisse pendant un jour.', 'Menu Défense : palissades (posées en ligne), portes (vos héros et villageois passent), tours d’archers, pièges à pointes et filets cachés. Vos héros défendent la halle et gagnent de l’expérience ; chaque ennemi abattu rapporte de l’or.', 'Refermez un portail avec votre héros (seul ou à deux) : un petit donjon et son gardien. Tous les portails refermés : pas de raid cette fois.', 'Après un raid, réparez les défenses abîmées (menu Défense).'])
+    + sec('La garnison', ['La caserne (halle niveau 2) loge 3 soldats par niveau, 12 au plus, et donne un poste de garde par niveau. On y recrute contre de l’or : fantassin, archer, lancier ou mage de guerre.', 'Pendant un raid, chaque soldat garde le cercle de son poste sans jamais en sortir : fantassins et lanciers devant, du côté du portail, archers et mages derrière. Améliorer un poste agrandit son cercle. « Répartir » met un peu de chaque type partout.', 'Les soldats qui tiennent gagnent de l’expérience ; vous les faites monter de niveau (jusqu’au 15) contre de l’or, de la viande et, plus tard, du fer. Ils mangent, un peu plus à chaque niveau.', 'Un soldat abattu se repose 8 heures à la caserne, sans rien perdre sauf sa série : 5 raids de suite sans tomber font un Vétéran, 10 un Briscard, 20 un Héros de la garde.', 'À la forge, chaque soldat reçoit une arme et une armure complète (avec son bonus d’ensemble). Orbes (3 emplacements, aux niveaux 4, 8 et 12) et bannières (une par poste) se gagnent en défense réussie, en donjon et sur le gardien du portail.'])
     + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de l’or, de la pierre et du bois pour le village, des objets et des pierres précieuses dans ton sac, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié (on garde les meilleurs objets).', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense' };
+  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense', caserne: 'La caserne' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense }[sheet];
+  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense, caserne: sheetCaserne }[sheet];
   setHTML(els.sheetBody, f ? f() : '');
   if (sheet === 'village' && sheetArg === 'feast' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#feastSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
@@ -7703,6 +8484,7 @@ document.addEventListener('pointercancel', release, true);
 const ACT = {
   ...ACT_EQ,
   ...ACT_RAID,
+  ...ACT_GAR,
   noop() {},
   orient: b => { orient = b.dataset.o; LS.set('mk2.orient', orient); applyOrientation(); renderAll(); },
   sheet: b => { renderSheet.scrolled = false; openSheet(b.dataset.s, b.dataset.k); },
@@ -7758,7 +8540,8 @@ const ACT = {
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
 const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill', 'djInvite', 'djYes', 'djDown',
-  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet', 'repair', 'upwalls', 'gate', 'raidReplay']);
+  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet', 'repair', 'upwalls', 'gate', 'raidReplay',
+  'recruit', 'dismiss', 'promote', 'solPost', 'solAuto', 'solForge', 'solImprove', 'orbSet', 'orbOff', 'orbFuse', 'banSet', 'banOff', 'banSell']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (!QUIET.has(b.dataset.act)) SND.sfx('click');

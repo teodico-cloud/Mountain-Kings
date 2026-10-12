@@ -109,12 +109,25 @@ function raidForce(v, R, open) {
   /* les trolls ouvrent la marche, les gobelins suivent, les voleurs se faufilent un peu après */
   return list.map((type, i) => [type, open[i % open.length], r1((type === 'troll' ? 0 : type === 'gobelin' ? 1.5 : 6) + i * 0.6 + rnd() * 0.8)]);
 }
+/* La garnison : les soldats affectés à un poste et pas blessés.
+   [id, type, race, sexe, niveau, vie, dégâts, armure, allonge, secondes entre deux coups, vitesse, poste, esquive, régénération (% par s), épines, numéro, titre]
+   Sans nourriture au village, ils frappent moins fort (−25 %). */
+function raidGuards(v, t) {
+  const posts = v.b.filter(b => b.type === 'poste' && b.lvl > 0), hungry = (v.hunger || 0) > 0 || foodOf(v) < 1;
+  return solList(v).filter(s => s.post && !solHurt(s, t) && posts.some(b => b.id === s.post)).map(s => {
+    const S = solStats(s, posts.find(b => b.id === s.post));
+    return [s.id, s.type, s.race === 'nain' || s.race === 'elfe' ? s.race : 'humain', s.sex === 'f' ? 'f' : 'm', Math.max(1, s.lvl | 0), S.hp, hungry ? r1(S.dmg * 0.75) : S.dmg, S.armor, S.range, S.cd, S.speed, s.post, S.dodge, S.regen, S.thorns, s.num | 0, solTitle(s) ? 1 : 0];
+  });
+}
 function raidInput(v, t) {
   const R = v.raid, open = R.p.map((p, i) => i).filter(i => !R.cl[i]);
-  const B = v.b.filter(b => BLD[b.type] && b.type !== 'marchand').map(b => [b.id, b.type, b.lvl | 0, b.gx, b.gz, BLD[b.type].hps ? Math.round(hpOf(b)) : 0]);
+  /* le 6e nombre : la solidité (palissade, porte, tour) ; pour un poste de garde, la rareté de sa bannière + 1 (0 : pas de bannière) */
+  const B = v.b.filter(b => BLD[b.type] && b.type !== 'marchand').map(b => [b.id, b.type, b.lvl | 0, b.gx, b.gz, b.type === 'poste' ? (banOk(b.ban) ? 1 + b.ban.r : 0) : BLD[b.type].hps ? Math.round(hpOf(b)) : 0]);
   const H = Object.values(v.heroes || {}).filter(Boolean).sort((a, b) => (a.n || 0) - (b.n || 0)).map(raidHeroStats);
   const stock = {}; for (const k of RAID_LOOT.concat(['or'])) stock[k] = Math.floor(v.r[k] || 0);
-  return { t, n: R.n | 0, sd: R.sd, L: raidLevel(v), P: R.p.map((p, i) => [p[0], p[1], p[2], R.cl[i] ? 1 : 0]), B, H, F: raidForce(v, R, open), R: stock };
+  const inp = { t, n: R.n | 0, sd: R.sd, L: raidLevel(v), P: R.p.map((p, i) => [p[0], p[1], p[2], R.cl[i] ? 1 : 0]), B, H, F: raidForce(v, R, open), R: stock };
+  const G = raidGuards(v, t); if (G.length) inp.G = G;
+  return inp;
 }
 
 /* ---------- le combat ---------- */
@@ -123,7 +136,7 @@ function raidStart(inp) {
   const N = GRID * GRID, L = Math.max(1, inp.L | 0);
   const st = {
     inp, t: 0, n: 0, rs: (inp.sd ^ 0x2545f491) >>> 0, over: false, ev: [],
-    S: [], occ: new Int16Array(N), trapAt: new Int16Array(N), traps: [], towers: [], foes: [], heroes: [],
+    S: [], occ: new Int16Array(N), trapAt: new Int16Array(N), traps: [], towers: [], foes: [], heroes: [], posts: [], guards: [],
     ff: {}, hf: new Map(), gen: 0, hall: -1, stores: [],
     stock: Object.assign({}, inp.R), taken: {}, lost: {}, back: {}, kills: 0, esc: 0, gold: 0, xp: 0, heart: 0, broke: 0,
     L, mul: raidPow(1.12, L - 1), lootMul: 1 + 0.15 * (L - 1),
@@ -131,6 +144,8 @@ function raidStart(inp) {
   };
   for (const e of inp.B) {
     const id = e[0], type = e[1], lvl = e[2] | 0, gx = e[3], gz = e[4], d = BLD[type]; if (!d) continue;
+    /* poste de garde : on passe à travers ; il garde un cercle (bannière : sa rareté + 1) */
+    if (d.def === 'post') { if (lvl >= 1) st.posts.push({ id, lvl, gx, gz, x: gx + 0.5, y: gz + 0.5, r: d.zone[Math.min(lvl, d.max) - 1], ban: e[5] | 0 }); continue; }
     if (d.def === 'trap') {
       if (lvl < 1) continue;
       const T = d.trap, k = Math.min(lvl, d.max) - 1;
@@ -156,6 +171,20 @@ function raidStart(inp) {
     st.heroes.push({ id: e[0], name: e[1], cls: e[2], race: e[3], sex: e[4], col: e[5], lvl: e[6], kind: 'hero', hp: e[7], hpMax: e[7], dmg: e[8], armor: e[9], range: e[10], cd: e[11], speed: e[12],
       r: 0.3, x: sp[0], y: sp[1], px: sp[0], py: sp[1], home: sp, atkT: 0.2 + 0.1 * i, atkN: 0, mv: false, ko: false, dead: false, fx: 0, fy: 1 });
   });
+  /* La garnison : chaque garde à sa place dans la formation de son poste, tournée vers le portail ouvert le plus proche */
+  const G = inp.G || [], open = inp.P.filter(p => !p[3]);
+  for (const P0 of st.posts) {
+    const mine = G.filter(e => e[11] === P0.id); if (!mine.length) continue;
+    let dx = 0, dy = -1, bd = 1e18;
+    for (const p of open) { const ex = p[0] + 0.5 - P0.x, ey = p[1] + 0.5 - P0.y, d2 = ex * ex + ey * ey; if (d2 < bd && d2 > 1e-6) { bd = d2; const L0 = Math.sqrt(d2); dx = ex / L0; dy = ey / L0; } }
+    const spots = solFormation(P0, mine.map(e => e[1]), dx, dy, (cx, cy) => raidBlocked(st, cx, cy));
+    mine.forEach((e, i) => {
+      const sp = spots[i];
+      st.guards.push({ id: e[0], type: SOLDIERS[e[1]] ? e[1] : 'fant', race: e[2], sex: e[3], lvl: e[4], kind: 'guard', hp: e[5], hpMax: e[5], dmg: e[6], armor: e[7], range: e[8], cd: e[9], speed: e[10],
+        post: P0, dodge: e[12], regen: e[13], thorns: e[14], num: e[15], title: e[16], r: 0.28, x: sp[0], y: sp[1], px: sp[0], py: sp[1], home: sp,
+        atkT: 0.3 + 0.07 * st.guards.length, atkN: 0, mv: false, ko: false, dead: false, fx: dx, fy: dy, kills: 0 });
+    });
+  }
   inp.F.forEach((f, i) => {
     const type = RAID_FOES[f[0]] ? f[0] : 'gobelin', D = RAID_FOES[type], k = st.mul;
     st.foes.push({ id: 100 + i, type, kind: 'mob', pi: Math.max(0, Math.min(inp.P.length - 1, f[1] | 0)), delay: +f[2] || 0, on: false, dead: false, out: false,
@@ -180,6 +209,37 @@ function raidSpots(st, n) {
   const step = Math.max(1, Math.floor(out.length / n)), pick = [];
   for (let i = 0; i < n; i++) pick.push(out[(i * step) % out.length]);
   return pick;
+}
+/* Une case où un défenseur ne peut pas aller : hors de la vallée, un mur, un bâtiment (pas une porte ni une ruine). */
+function raidBlocked(st, cx, cy) {
+  if (cx < 0 || cy < 0 || cx >= GRID || cy >= GRID) return true;
+  const o = st.occ[cy * GRID + cx] - 1; return o >= 0 && st.S[o].kind !== 'gate';
+}
+/* Formation d'un poste (P0 : { x, y, r }) : fantassins et lanciers devant, vers (dx, dy), archers et mages derrière ; 4 par rang.
+   Une place prise par un mur ou hors du cercle : la case libre la plus proche dans le cercle. Même résultat partout (raid et village). */
+function solFormation(P0, types, dx, dy, blocked) {
+  const px = -dy, py = dx, out = new Array(types.length), taken = [], fr = [], bk = [], rows = [];
+  types.forEach((ty, i) => ((SOLDIERS[ty] || SOLDIERS.fant).front ? fr : bk).push(i));
+  const lay = (idx, d0) => { for (let k = 0; k < idx.length; k += 4) rows.push([idx.slice(k, k + 4), d0 - 0.9 * (k / 4)]); };
+  lay(fr, Math.min(1.5, P0.r * 0.45)); lay(bk, -Math.min(0.6, P0.r * 0.15));
+  for (const [list, d] of rows) list.forEach((i, j) => {
+    const off = (j - (list.length - 1) / 2) * 0.9;
+    let x = P0.x + dx * d + px * off, y = P0.y + dy * d + py * off;
+    if (blocked(Math.floor(x), Math.floor(y)) || raidLen(x - P0.x, y - P0.y) > P0.r - 0.2) { const f = solFree(P0, x, y, blocked, taken); x = f[0]; y = f[1]; }
+    taken.push([x, y]); out[i] = [Math.round(x * 100) / 100, Math.round(y * 100) / 100];
+  });
+  return out;
+}
+function solFree(P0, x, y, blocked, taken) {
+  let best = null, bd = 1e18;
+  for (let cy = Math.floor(P0.y - P0.r); cy <= Math.floor(P0.y + P0.r); cy++) for (let cx = Math.floor(P0.x - P0.r); cx <= Math.floor(P0.x + P0.r); cx++) {
+    if (blocked(cx, cy)) continue;
+    const ox = cx + 0.5, oy = cy + 0.5; if (raidLen(ox - P0.x, oy - P0.y) > P0.r - 0.2) continue;
+    let used = 0; for (const q of taken) if (raidLen(q[0] - ox, q[1] - oy) < 0.5) used++;
+    const d = (ox - x) * (ox - x) + (oy - y) * (oy - y) + used * 4;
+    if (d < bd) { bd = d; best = [ox, oy]; }
+  }
+  return best || [P0.x, P0.y];
 }
 
 /* ---------- chemins : une carte des distances par but (halle, réserve, portail), refaite quand un mur tombe ---------- */
@@ -250,10 +310,18 @@ function raidHeroField(st, goal) {
 }
 
 /* ---------- dégâts ---------- */
-function raidHurtFoe(st, u, v) {
+function raidHurtFoe(st, u, v, by) {
   if (!raidAlive(u) || !(v > 0)) return;
   u.hp -= v; st.ev.push({ k: 'hit', id: u.id, v: Math.round(v) });
-  if (u.hp <= 0) raidKill(st, u);
+  if (u.hp <= 0) { raidKill(st, u); if (by && by.kind === 'guard') by.kills++; }
+}
+/* Un garde touché : il esquive peut-être, son armure encaisse, ses épines renvoient une part du coup ; à 0, il tombe (blessé). */
+function raidHurtGuard(st, g, v, u) {
+  if (g.ko) return;
+  if (g.dodge > 0 && raidRnd(st) < g.dodge) { st.ev.push({ k: 'dodge', id: g.id }); return; }
+  const n = v * (1 - g.armor); g.hp -= n; st.ev.push({ k: 'hurt', id: g.id, v: Math.round(n) });
+  if (g.thorns > 0 && u) raidHurtFoe(st, u, n * g.thorns, g);
+  if (g.hp <= 0) { g.hp = 0; g.ko = true; g.dead = true; st.ev.push({ k: 'ko', id: g.id, x: g.x, y: g.y }); }
 }
 function raidKill(st, u) {
   const D = RAID_FOES[u.type];
@@ -321,11 +389,12 @@ function raidTrapCheck(st, u) {
 function raidFoeStep(st, u) {
   if (!raidAlive(u)) return;
   u.mv = false; u.atkT -= RAID_DT; if (u.root > 0) u.root -= RAID_DT;
-  /* 1) un héros à portée : on se bat (les voleurs, eux, ne se battent jamais) */
+  /* 1) un héros ou un garde à portée : on se bat (les voleurs, eux, ne se battent jamais) */
   if (u.fight) {
     let h = null, bd = 1e9;
     for (const o of st.heroes) { if (o.ko) continue; const d = raidDist(u, o); if (d <= u.r + o.r + u.reach && d < bd) { bd = d; h = o; } }
-    if (h) { raidFace(u, h); if (u.atkT <= 1e-9) { u.atkT = u.rate; u.atkN++; raidHurtHero(st, h, u.dmg); } return; }
+    for (const o of st.guards) { if (o.ko) continue; const d = raidDist(u, o); if (d <= u.r + o.r + u.reach && d < bd) { bd = d; h = o; } }
+    if (h) { raidFace(u, h); if (u.atkT <= 1e-9) { u.atkT = u.rate; u.atkN++; if (h.kind === 'guard') raidHurtGuard(st, h, u.dmg, u); else raidHurtHero(st, h, u.dmg); } return; }
   }
   if (u.atkT < 0) u.atkT = 0;
   /* 2) en plein pillage */
@@ -416,6 +485,45 @@ function raidHeroStep(st, h) {
   if (far > RAID_ZONE + 3 && far > raidLen(h.x - H.x, h.y - H.y)) return;     // on ne s'éloigne pas trop de la halle
   h.x = nx; h.y = ny; h.mv = true; h.fx = dx / L; h.fy = dy / L;
 }
+/* Un garde de la garnison : il frappe ce qui est à sa portée ; au corps à corps, il va au-devant de ce qui entre dans le cercle
+   de son poste, sans jamais en sortir (ni traverser un mur) ; sinon, il reprend sa place dans la formation. */
+function raidGuardStep(st, g) {
+  if (g.ko) return;
+  g.atkT -= RAID_DT; g.mv = false;
+  if (g.regen > 0 && g.hp < g.hpMax) g.hp = Math.min(g.hpMax, g.hp + g.hpMax * g.regen / 100 * RAID_DT);
+  const P0 = g.post, melee = g.range < 2, lanc = g.type === 'lanc';
+  /* d'abord ceux qui emportent du butin ou qui pillent, puis les voleurs ; les lanciers visent les trolls */
+  const score = u => raidDist(g, u) - (u.loot ? 3 : 0) - (u.pl > 0 ? 2 : 0) - (u.thief ? 1.5 : 0) - (lanc && u.big ? 3 : 0);
+  let tgt = null, bd = 1e9;
+  for (const u of st.foes) { if (!raidAlive(u) || raidDist(g, u) > g.range + u.r) continue; const sc = score(u); if (sc < bd) { bd = sc; tgt = u; } }
+  if (tgt) {
+    raidFace(g, tgt);
+    if (g.atkT <= 1e-9) {
+      g.atkT = g.cd; g.atkN++;
+      st.ev.push({ k: 'ghit', id: g.id, tgt: tgt.id, sh: melee ? '' : g.type });
+      raidHurtFoe(st, tgt, g.dmg * (lanc && tgt.big ? SOLDIERS.lanc.troll : 1), g);
+      if (g.type === 'mage') for (const o of st.foes) if (o !== tgt && raidAlive(o) && raidDist(o, tgt) <= SOLDIERS.mage.splash + o.r) raidHurtFoe(st, o, g.dmg * 0.6, g);
+    }
+    return;
+  }
+  if (g.atkT < 0) g.atkT = 0;
+  let gx = g.home[0], gy = g.home[1];
+  if (melee) {
+    let ch = null; bd = 1e9;
+    for (const u of st.foes) { if (!raidAlive(u) || raidLen(u.x - P0.x, u.y - P0.y) > P0.r + 0.3) continue; const sc = score(u); if (sc < bd) { bd = sc; ch = u; } }
+    if (ch) { gx = ch.x; gy = ch.y; }
+  }
+  const dx = gx - g.x, dy = gy - g.y, L = raidLen(dx, dy); if (L < 0.12) return;
+  const k = Math.min(g.speed * RAID_DT, L) / L;
+  let nx = g.x + dx * k, ny = g.y + dy * k;
+  const ox = nx - P0.x, oy = ny - P0.y, oL = raidLen(ox, oy);
+  if (oL > P0.r) { nx = P0.x + ox / oL * P0.r; ny = P0.y + oy / oL * P0.r; }
+  if (raidBlocked(st, raidCell(nx), raidCell(ny))) {
+    if (!raidBlocked(st, raidCell(nx), raidCell(g.y))) ny = g.y; else if (!raidBlocked(st, raidCell(g.x), raidCell(ny))) nx = g.x; else return;
+  }
+  if (raidLen(nx - g.x, ny - g.y) < 1e-6) return;
+  g.fx = dx / L; g.fy = dy / L; g.x = nx; g.y = ny; g.mv = true;
+}
 function raidTowerStep(st, tw, i) {
   const S = st.S[tw.si]; if (S.dead) return;
   tw.cd -= RAID_DT; if (tw.cd > 1e-9) return;
@@ -447,10 +555,12 @@ function raidStep(st) {
   if (st.over) return;
   for (const u of st.foes) { u.px = u.x; u.py = u.y; }
   for (const h of st.heroes) { h.px = h.x; h.py = h.y; }
+  for (const g of st.guards) { g.px = g.x; g.py = g.y; }
   for (const u of st.foes) if (!u.on && !u.dead && !u.out && st.t + 1e-9 >= u.delay) raidSpawn(st, u);
   for (const T of st.traps) if (T.cd > 0) T.cd -= RAID_DT;
   st.towers.forEach((tw, i) => raidTowerStep(st, tw, i));
   for (const h of st.heroes) raidHeroStep(st, h);
+  for (const g of st.guards) raidGuardStep(st, g);
   for (const u of st.foes) raidFoeStep(st, u);
   raidSeparate(st);
   st.t = Math.round((st.t + RAID_DT) * 10) / 10; st.n++;
@@ -467,8 +577,11 @@ function raidResult(st) {
   const dmg = [];
   for (const S of st.S) if ((S.kind === 'wall' || S.kind === 'gate' || S.kind === 'tower') && S.hp !== S.hp0) dmg.push([S.id, Math.max(0, Math.round(S.hp))]);
   const round = o => { const out = {}; for (const k of RAID_LOOT.concat(['or'])) { const n = Math.round(o[k] || 0); if (n > 0) out[k] = n; } return out; };
-  return { k: st.kills, e: st.esc, f: st.foes.length, lost: round(st.lost), back: round(st.back), h: st.heart, g: Math.round(st.gold), xp: Math.round(st.xp), br: st.broke,
+  const res = { k: st.kills, e: st.esc, f: st.foes.length, lost: round(st.lost), back: round(st.back), h: st.heart, g: Math.round(st.gold), xp: Math.round(st.xp), br: st.broke,
     ko: st.heroes.filter(h => h.ko).map(h => h.id), dmg, s: Math.round(st.t) };
+  /* la garnison : ennemis abattus par chaque garde, et ceux qui sont tombés */
+  if (st.guards.length) { res.gd = st.guards.map(g => [g.id, g.kills, g.ko ? 1 : 0]); res.gk = st.guards.reduce((a, g) => a + g.kills, 0); }
+  return res;
 }
 /* Tout le raid d'un coup, à la minute où il part ; le village garde de quoi le rediffuser. */
 function raidResolve(v, t) {
@@ -483,6 +596,18 @@ function raidApply(v, t, inp, res) {
   const ups = [];
   if (res.xp) for (const h of Object.values(v.heroes || {}).filter(Boolean).sort((a, b) => (a.n || 0) - (b.n || 0))) if (heroAddXp(h, h.race === 'humain' ? res.xp * 1.1 : res.xp)) ups.push(h.name + ' (niveau ' + h.lvl + ')');
   if (res.h) v.raidMor = t + DAY;
+  /* la garnison : de l'expérience pour ceux qui ont tenu (et un raid de plus dans leur série), 8 heures de repos pour ceux qui sont tombés (série perdue) */
+  const gm = 1 + 0.2 * ((inp.L | 0) - 1), hurt = [], titles = [];
+  for (const [id, kills, ko] of res.gd || []) {
+    const s = v.sol && v.sol[id]; if (!s) continue;
+    s.kills = (s.kills | 0) + kills;
+    if (ko) { const had = solTitle(s); s.hurt = t + SOL_HURT; s.vet = 0; hurt.push(solName(s) + (had ? ' (perd son titre : ' + had[1].toLowerCase() + ')' : '')); continue; }
+    const was = solTitle(s);
+    s.vet = (s.vet | 0) + 1; s.raids = (s.raids | 0) + 1;
+    s.xp = Math.min(3 * solXpNeed(s.lvl), (s.xp | 0) + Math.round((15 + 5 * kills) * gm));
+    const ti = solTitle(s); if (ti && ti !== was) titles.push(solName(s) + ' devient ' + ti[1].toLowerCase());
+  }
+  const orbs = garRaidOrbs(v, inp, res);
   const lostTxt = Object.keys(res.lost).map(k => res.lost[k] + ' ' + RES_LABEL[k].toLowerCase()).join(', ');
   let m = (lostTxt ? 'Raid des gobelins : ' : 'Raid repoussé ! ') + res.k + ' ennemi' + (res.k > 1 ? 's' : '') + ' vaincu' + (res.k > 1 ? 's' : '') + ' sur ' + res.f;
   if (res.e) m += ', ' + res.e + ' enfui' + (res.e > 1 ? 's' : '') + (lostTxt ? ' avec ' + lostTxt : ' les mains vides');
@@ -490,9 +615,13 @@ function raidApply(v, t, inp, res) {
   addLog(v, t, m, 'raid');
   if (res.h) addLog(v, t, 'Les gobelins ont pillé la halle, le cœur du village : le moral baisse pour un jour.', 'raid');
   if (ups.length) addLog(v, t, 'En défendant le village : ' + ups.join(', ') + ' !', 'hero');
+  if (res.gd) addLog(v, t, 'La garnison abat ' + res.gk + ' ennemi' + (res.gk > 1 ? 's' : '') + '.' + (hurt.length ? ' Blessé' + (hurt.length > 1 ? 's' : '') + ' (8 h de repos à la caserne) : ' + hurt.join(', ') + '.' : '') + (titles.length ? ' ' + titles.join(', ') + ' !' : ''), 'sol');
+  if (orbs.length) addLog(v, t, 'Défense réussie : ' + orbs.map(orbLabel).join(', ') + ' pour la garnison.', 'sol');
   v.lastRaid = { t, n: inp.n, sd: inp.sd, L: inp.L, P: inp.P, B: inp.B, H: inp.H, F: inp.F, R: inp.R, res };
+  if (inp.G) v.lastRaid.G = inp.G;
+  if (orbs.length) v.lastRaid.orbs = orbs;
   const rnd = mulberry32((inp.sd ^ 0x63d83595) >>> 0);
   v.raid = { n: (inp.n | 0) + 1, next: t + RAID_GAP + Math.floor(rnd() * (RAID_GAP_RND / MIN)) * MIN, closed: (v.raid && v.raid.closed) | 0 };
 }
 /* Rediffusion : le même combat, rejoué à partir de ce que le village a gardé. */
-const raidReplay = lr => raidStart({ t: lr.t, n: lr.n, sd: lr.sd, L: lr.L, P: lr.P, B: lr.B, H: lr.H, F: lr.F, R: lr.R });
+const raidReplay = lr => raidStart({ t: lr.t, n: lr.n, sd: lr.sd, L: lr.L, P: lr.P, B: lr.B, H: lr.H, F: lr.F, R: lr.R, G: lr.G });

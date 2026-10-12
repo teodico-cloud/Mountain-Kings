@@ -815,6 +815,9 @@ const V3 = (() => {
   function setRay(cx, cy) { const [lx, ly] = mapPt(cx, cy), w = canvas.clientWidth || 1, h = canvas.clientHeight || 1; ndc.set(lx / w * 2 - 1, -(ly / h) * 2 + 1); ray.setFromCamera(ndc, camera); }
   function pickGround(cx, cy) { setRay(cx, cy); if (!ray.ray.intersectPlane(plane, hit)) return null; return [hit.x + half, hit.z + half]; }
   function pickBuilding(cx, cy) {
+    /* un poste de garde (un simple mât) caché derrière un grand bâtiment : toucher sa case suffit */
+    const g0 = pickGround(cx, cy);
+    if (g0) { const gx = Math.floor(g0[0]), gz = Math.floor(g0[1]); for (const [k, r] of blds) if (r.item.type === 'poste' && r.item.gx === gx && r.item.gz === gz) return k; }
     setRay(cx, cy);
     const hits = ray.intersectObjects(bldGroup.children, true);
     for (const h of hits) { let o = h.object; while (o && o.parent !== bldGroup) o = o.parent; if (o && o.userData.key != null) return o.userData.key; }
@@ -864,7 +867,7 @@ const V3 = (() => {
     o.scale.setScalar(k); o.rotation.y = ry || 0; o.userData.h = sz.y * k;
     return o;
   }
-  function sigOf(it) { return [it.type, it.lvl, it.gx, it.gz, it.up ? 1 : 0, it.dead ? 1 : 0, it.col, it.orc ? 1 : 0, it.id || 0, LIB.ver].join('|'); }
+  function sigOf(it) { return [it.type, it.lvl, it.gx, it.gz, it.up ? 1 : 0, it.dead ? 1 : 0, it.col, it.orc ? 1 : 0, it.id || 0, LIB.ver, it.ban == null ? '' : it.ban].join('|'); }
   function placeGroup(g, it) { const s = BLD[it.type].size; g.position.set(it.gx + s / 2 - half, 0, it.gz + s / 2 - half); }
   function makeGlow(color, size, y) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.5 }));
@@ -1033,7 +1036,45 @@ const V3 = (() => {
     for (let i = 0; i < 4; i++) g.add(P('box', 0x8a7856, 0.62, 0.02, 0.025, 0, 0.05, 0, i * Math.PI / 4, true));
     return { g, info: { top: 0.5, muzzle: 0.2, emit: [] } };
   }
-  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG };
+  /* Caserne : long bâtiment de pierre au toit d'ardoise, cour d'entraînement (mannequin de paille, râtelier de lances), drapeau du village. */
+  function caserneG(it) {
+    const g = new THREE.Group(), lv = Math.max(1, it.lvl), y0 = 0.14, H = 0.8 + 0.14 * (lv - 1), col = it.col || COLORS[0];
+    g.add(P('box', 0x8a8378, 1.76, y0, 1.62, 0, 0, 0));
+    g.add(P('box', 0xb7ad9c, 1.52, H, 0.76, 0, y0, -0.4));
+    for (const x of [-0.76, 0.76]) g.add(P('box', 0x8f8a80, 0.12, H, 0.8, x, y0, -0.4, 0, true));
+    g.add(P('prism', 0x46576a, 1.7, 0.56, 0.96, 0, y0 + H, -0.4));
+    g.add(P('box', 0x3e2716, 0.3, 0.52, 0.04, 0, y0, -0.01, 0, true));
+    for (const x of [-0.5, 0.5]) g.add(P('box', winMat, 0.18, 0.2, 0.04, x, y0 + H * 0.5, -0.01, 0, true));
+    g.add(P('box', col, 1.54, 0.07, 0.03, 0, y0 + H * 0.86, -0.01, 0, true));
+    g.add(P('box', 0xb39669, 1.56, 0.02, 0.66, 0, y0, 0.42, 0, true));
+    g.add(P('cyl6', 0x6b4a2b, 0.07, 0.62, 0.07, -0.48, y0, 0.44));
+    g.add(P('cyl8', 0xd8c07a, 0.24, 0.3, 0.2, -0.48, y0 + 0.34, 0.44));
+    g.add(P('sph', 0xd8c07a, 0.18, 0.18, 0.18, -0.48, y0 + 0.64, 0.44));
+    g.add(P('box', 0x6b4a2b, 0.44, 0.05, 0.05, -0.48, y0 + 0.52, 0.44, 0, true));
+    g.add(P('box', 0x5f4127, 0.56, 0.05, 0.08, 0.42, y0 + 0.4, 0.66, 0, true));
+    for (const x of [0.22, 0.36, 0.5, 0.64]) { g.add(P('box', 0x6b4a2b, 0.025, 0.66, 0.025, x, y0, 0.62, 0, true)); g.add(P('cone4', 0xc9d0d6, 0.05, 0.1, 0.05, x, y0 + 0.66, 0.62, 0, true)); }
+    if (lv >= 2) { g.add(P('box', 0x9a9488, 0.5, H + 0.5, 0.5, -0.62, y0, -0.55)); g.add(P('cone4', 0x3c4552, 0.66, 0.5, 0.66, -0.62, y0 + H + 0.5, -0.55)); }
+    if (lv >= 3) for (const x of [-0.3, 0.3]) g.add(P('cyl12', col, 0.2, 0.03, 0.2, x, y0 + H * 0.45, 0.0, 0, true));
+    if (lv >= 4) { g.add(P('box', 0x9a9488, 0.42, H + 0.3, 0.42, 0.64, y0, -0.58)); g.add(P('cone4', 0x3c4552, 0.56, 0.42, 0.56, 0.64, y0 + H + 0.3, -0.58)); }
+    g.add(flag(0.78, y0, 0.78, col, 1.15));
+    return { g, info: { top: y0 + H + (lv >= 2 ? 1.0 : 0.7), muzzle: 1, emit: [] } };
+  }
+  /* Poste de garde : un mât et son fanion aux couleurs du village (une grande bannière couleur de sa rareté quand on en pose une), sur un socle qui grandit avec le niveau. */
+  const RAR_COL = [0xa3abb4, 0x5cc27a, 0x5b9cf0, 0xb07ce8, 0xf59a3c];
+  function posteG(it) {
+    const g = new THREE.Group(), lv = Math.max(1, it.lvl | 0), col = it.col || COLORS[0], ban = it.ban != null && it.ban >= 0 ? RAR_COL[Math.min(4, it.ban | 0)] : null;
+    if (lv >= 3) g.add(P('cyl8', 0x8f8a80, 0.7, 0.22, 0.7, 0, 0, 0));
+    const y = lv >= 3 ? 0.22 : 0, H = 1.45 + 0.15 * lv;
+    g.add(P(lv >= 2 ? 'cyl8' : 'cyl6', lv >= 2 ? 0x9a9488 : 0x6b5a44, 0.4, 0.14, 0.4, 0, y, 0));
+    g.add(P('cyl6', 0x5f4127, 0.07, H, 0.07, 0, y + 0.14, 0));
+    g.add(P('box', 0x5f4127, 0.5, 0.05, 0.05, 0.2, y + 0.14 + H - 0.1, 0, 0, true));
+    const cloth = piv(0, y + 0.14 + H - 0.12, 0, [P('box', ban || col, ban ? 0.44 : 0.36, ban ? 0.62 : 0.3, 0.025, ban ? 0.22 : 0.18, ban ? -0.31 : -0.15, 0, 0, true)]);
+    g.add(cloth); anims.push({ k: 'flag', o: cloth, ph: Math.random() * 6 });
+    if (ban) { const gl2 = makeGlow(ban, 0.9, y + H - 0.3); gl2.position.x = 0.22; gl2.material.opacity = 0.35; g.add(gl2); }
+    if (lv >= 2) g.add(P('cone6', 0xc9d0d6, 0.12, 0.18, 0.12, 0, y + 0.14 + H, 0, 0, true));
+    return { g, info: { top: y + H + 0.45, muzzle: 1, emit: [] } };
+  }
+  const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG, caserne: caserneG, poste: posteG };
   function build(it) {
     const s = BLD[it.type].size, g = new THREE.Group();
     let info = { top: 1.2, muzzle: 1, emit: [] };
@@ -1294,7 +1335,7 @@ const V3 = (() => {
   const people = new Map(), lifeGroup = new THREE.Group();
   let vilBlocked = null, vilSpots = [], bldSpots = new Map(), bldCenters = new Map();
   function planVillage(items) {
-    const PASS = new Set(['porte', 'piege', 'filet']);           // on passe les portes, on marche sur les pièges
+    const PASS = new Set(['porte', 'piege', 'filet', 'poste']);  // on passe les portes, on marche sur les pièges, on contourne à peine un poste de garde
     const blds = items.filter(it => it.type !== 'rempart' && !PASS.has(it.type) && it.key !== 'ghost' && !it.dead);
     vilBlocked = new Uint8Array(GRID * GRID); vilSpots = []; bldSpots = new Map(); bldCenters = new Map();
     for (const b of items) { if (b.key === 'ghost' || PASS.has(b.type) || (b.dead && BLD[b.type].hps)) continue; const sz = BLD[b.type].size; for (let i = 0; i < sz; i++) for (let j = 0; j < sz; j++) { const x = b.gx + i, z = b.gz + j; if (x >= 0 && z >= 0 && x < GRID && z < GRID) vilBlocked[z * GRID + x] = 1; } }
@@ -1334,6 +1375,12 @@ const V3 = (() => {
     rodeur: { humain: ['2H_Crossbow', 'Knight_Cape'], nain: ['2H_Crossbow', 'Barbarian_Hat'], elfe: ['2H_Crossbow', 'Rogue_Cape'] },
     mage: { humain: ['Throwable', 'Knight_Cape'], nain: ['Throwable', 'Barbarian_Cape'], elfe: ['Throwable', 'Rogue_Cape'] },
   };
+  const SOL_GEAR = {
+    fant: { humain: ['1H_Sword', 'Round_Shield', 'Knight_Helmet'], nain: ['1H_Axe', 'Barbarian_Round_Shield', 'Barbarian_Hat'], elfe: ['1H_Sword', 'Round_Shield'] },
+    arch: { humain: ['2H_Crossbow', 'Knight_Helmet'], nain: ['2H_Crossbow', 'Barbarian_Hat'], elfe: ['2H_Crossbow', 'Rogue_Cape'] },
+    lanc: { humain: ['2H_Sword', 'Knight_Helmet'], nain: ['2H_Axe', 'Barbarian_Hat'], elfe: ['2H_Sword', 'Rogue_Cape'] },
+    mage: { humain: ['Throwable', 'Knight_Cape'], nain: ['Throwable', 'Barbarian_Cape'], elfe: ['Throwable', 'Rogue_Cape'] },
+  };
   const GEAR_NAMES = new Set(['1H_Axe_Offhand', 'Barbarian_Round_Shield', '1H_Axe', '2H_Axe', 'Mug', 'Barbarian_Hat', 'Barbarian_Cape', 'Knife_Offhand', '1H_Crossbow', '2H_Crossbow', 'Knife', 'Throwable', 'Rogue_Cape',
     '1H_Sword_Offhand', 'Badge_Shield', 'Rectangle_Shield', 'Round_Shield', 'Spike_Shield', '1H_Sword', '2H_Sword', 'Knight_Helmet', 'Knight_Cape']);
   function nameTag(text, col) {
@@ -1352,8 +1399,8 @@ const V3 = (() => {
     const def = P_DEF[p.race] || P_DEF.humain, src = LIB.ch[def.m];
     if (!src || !THREE.SkeletonUtils) return null;
     const obj = THREE.SkeletonUtils.clone(src.scene);
-    const hero = p.kind === 'hero';
-    const gear = hero ? ((HERO_GEAR[p.cls] || {})[p.race] || CLASS_GEAR[p.cls] || []) : (JOB_GEAR[p.job] || []);
+    const hero = p.kind === 'hero', sol = p.kind === 'sol';
+    const gear = hero ? ((HERO_GEAR[p.cls] || {})[p.race] || CLASS_GEAR[p.cls] || []) : sol ? ((SOL_GEAR[p.type] || SOL_GEAR.fant)[p.race] || SOL_GEAR.fant.humain) : (JOB_GEAR[p.job] || []);
     const have = new Set();
     obj.traverse(o => {
       if (GEAR_NAMES.has(o.name)) { o.visible = gear.includes(o.name); if (o.visible) have.add(o.name); }
@@ -1375,6 +1422,7 @@ const V3 = (() => {
     const wk = hero ? null : JOB_WORK[p.job];
     const A = { idle: act('Idle'), walk: act('Walking_A'), work: wk ? act(wk) : null, cheer: act('Cheer') };
     g.userData = { body, mixer, A, cur: null, hero };
+    if (sol) { const ring = new THREE.Mesh(geo('plane'), basic(0x9fb4c8, { transparent: true, opacity: 0.55, depthWrite: false })); ring.scale.set(0.62, 1, 0.62); ring.position.y = 0.02; ring.renderOrder = 2; g.add(ring); }
     if (hero) {
       const ring = new THREE.Mesh(geo('plane'), basic(p.col || COLORS[0], { transparent: true, opacity: 0.75, depthWrite: false }));
       ring.scale.set(0.85, 1, 0.85); ring.position.y = 0.02; ring.renderOrder = 2; g.add(ring);
@@ -1390,17 +1438,19 @@ const V3 = (() => {
     for (const p of list) {
       seen.add(p.key);
       let r = people.get(p.key);
-      const sig = [p.race, p.cls || '', p.job || '', p.col || '', p.name || ''].join('|');
+      const sig = [p.race, p.cls || '', p.job || '', p.col || '', p.name || '', p.type || ''].join('|');
       if (!r || r.sig !== sig) {
         const g = makePerson(p); if (!g) continue;
         let x, z;
         if (r) { x = r.x; z = r.z; lifeGroup.remove(r.g); }
+        else if (p.fixed) { x = p.fixed[0]; z = p.fixed[1]; }
         else { const sps = p.at && bldSpots.get(p.at), sp = (sps && sps.length && sps[Math.floor(Math.random() * sps.length)]) || vilSpots[Math.floor(Math.random() * vilSpots.length)] || [half, half]; x = sp[0] + 0.5; z = sp[1] + 0.5; }
         const nr = { g, x, z, path: [], wait: Math.random() * 2, sig, data: p, working: false };
         g.position.set(x - half, 0, z - half); lifeGroup.add(g); people.set(p.key, nr);
         r = nr;
       }
       if (r.data.at !== p.at) { r.path = []; r.wait = 0; r.working = false; }
+      if (String(r.data.fixed) !== String(p.fixed)) { r.path = []; r.wait = 0; r.working = false; r.fixKey = null; }
       r.data = p;
     }
     for (const [k, r] of people) if (!seen.has(k)) { lifeGroup.remove(r.g); people.delete(k); }
@@ -1417,6 +1467,7 @@ const V3 = (() => {
       const U = r.g.userData; if (U.mixer) U.mixer.update(dt);
       if (U.halo) U.halo.material.opacity = 0.22 + 0.1 * Math.sin(tNow * 3 + r.x);
       const p = r.data;
+      if (p.fixed) { stepFixed(r, p, dt); continue; }
       if (r.wait > 0) {
         r.wait -= dt;
         play(r.g, r.working && U.A.work ? 'work' : 'idle', 1);
@@ -1441,6 +1492,25 @@ const V3 = (() => {
       r.g.position.set(r.x - half, 0, r.z - half);
       if (r.path.length) play(r.g, 'walk', p.kind === 'hero' ? 0.62 : 0.55);
     }
+  }
+  /* Un soldat de la garnison : il rejoint sa place dans la formation de son poste, puis monte la garde, tourné vers le danger. */
+  function stepFixed(r, p, dt) {
+    const fx = p.fixed[0], fz = p.fixed[1], key = fx + ',' + fz;
+    if (r.fixKey !== key) {
+      r.fixKey = key;
+      const x0 = cellOf(r.x), z0 = cellOf(r.z), x1 = cellOf(fx), z1 = cellOf(fz);
+      r.path = x0 === x1 && z0 === z1 ? [] : findPath(x0, z0, x1, z1);
+      r.path.push([fx, fz]);
+    }
+    if (r.path.length) {
+      const [tx, tz] = r.path[0], dx = tx - r.x, dz = tz - r.z, L = Math.sqrt(dx * dx + dz * dz), step = 0.85 * dt;
+      if (L <= step) { r.x = tx; r.z = tz; r.path.shift(); } else { r.x += dx / L * step; r.z += dz / L * step; r.g.rotation.y = Math.atan2(dx, dz); }
+      r.g.position.set(r.x - half, 0, r.z - half);
+      play(r.g, 'walk', 0.6);
+      return;
+    }
+    play(r.g, 'idle', 1);
+    if (p.face) { const want = Math.atan2(p.face[0], p.face[1]); let d = want - r.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); r.g.rotation.y += d * Math.min(1, dt * 4); }
   }
   /* Habitant le plus proche de l'endroit touché (à l'écran). */
   function pickPerson(cx, cy, maxPx) {
@@ -2283,6 +2353,16 @@ const V3 = (() => {
   let RD = null;
   const RD_U = { gobelin: DJ_U.gobelin, voleur: { m: 'rogue', tex: 'orc_rogue', show: ['Knife', 'Rogue_Cape'], atk: '1H_Melee_Attack_Slice_Diagonal', h: 0.85, w: 0.9 }, troll: DJ_U.troll };
   const RD_SHOT = { mage: 0xff7a2a, pretre: 0xffe08a, druide: 0x7bd36a, necro: 0xa070ff };
+  const RD_GUARD_ATK = { fant: '1H_Melee_Attack_Chop', arch: '2H_Ranged_Shoot', lanc: '2H_Melee_Attack_Chop', mage: '1H_Melee_Attack_Slice_Diagonal' };
+  function rdGuardRec(e) {
+    let g = LIB.ok ? makePerson({ kind: 'sol', race: e.race, sex: e.sex, type: e.type }) : null;
+    if (!g) { g = djSimple(0xb8c4d0, 1.0); g.add(djRing(0x9fb4c8, 0.62, 0.55)); }
+    const U = g.userData;
+    if (U.mixer) { const act = n => LIB.clips[n] ? U.mixer.clipAction(LIB.clips[n]) : null; U.A.atk = act(RD_GUARD_ATK[e.type] || '1H_Melee_Attack_Chop'); U.A.death = act('Death_A'); }
+    djPrepAnims(g);
+    const bar = makeBar(0.6, 0x7fb8e8); bar.position.y = 1.5; bar.visible = false; g.add(bar);
+    return { g, kind: 'guard', bar, atkN: e.atkN, atkT: -9, lx: e.x, ly: e.y };
+  }
   function rdFoeRec(u) {
     const def = RD_U[u.type] || RD_U.gobelin, g = djModel(def);
     djPrepAnims(g);
@@ -2320,6 +2400,7 @@ const V3 = (() => {
     rdGroup.visible = true;
     for (const p of st.inp.P) if (!p[3]) { const r = makePortalRec({ x: p[0], y: p[1], side: p[2] }); r.frac = 1; r.ready = true; rdGroup.add(r.g); RD.portals.push(r); }
     setMood('raid');
+    showRanges(st.posts && st.posts.length ? st.posts.map(p => ({ x: p.x, z: p.y, r: p.r })) : null);   // les cercles des postes de garde
     /* caméra : sur la halle, un peu tournée vers le portail */
     const H = st.S[st.hall], P0 = st.inp.P.find(p => !p[3]) || st.inp.P[0], k = 0.35;
     cam.tx = clampT(H.x + (P0[0] + 0.5 - H.x) * k - half); cam.tz = clampT(H.y + (P0[1] + 0.5 - H.y) * k - half); cam.view = aspect < 0.8 ? 24 : 15; frustum();
@@ -2328,7 +2409,7 @@ const V3 = (() => {
     if (!RD) return;
     for (const r of RD.portals) disposePortal(r);
     clearGroup(rdGroup); RD = null; rdGroup.visible = false;
-    lifeGroup.visible = true; portalGroup.visible = true;
+    lifeGroup.visible = true; portalGroup.visible = true; showRanges(null);
     for (const s of shots) fxGroup.remove(s.m); shots.length = 0;
     mood = ''; setMood('warm');
   }
@@ -2337,6 +2418,7 @@ const V3 = (() => {
     RD.frame++; const fr = RD.frame;
     const upd = (e, make) => { let r = RD.ents.get(e.id); if (!r) { r = make(e); RD.ents.set(e.id, r); rdGroup.add(r.g); } r.seen = fr; return r; };
     for (const h of st.heroes) { const r = upd(h, djHeroRec); djPose(r, h, alpha, tNow); djBar(r, h.hp / h.hpMax, !h.ko); }
+    for (const g of st.guards || []) { const r = upd(g, rdGuardRec); djPose(r, g, alpha, tNow); djBar(r, g.hp / g.hpMax, !g.ko && g.hp < g.hpMax); }
     for (const u of st.foes) {
       if (!u.on || u.out || u.dead) continue;
       const r = upd(u, rdFoeRec);
@@ -2359,7 +2441,7 @@ const V3 = (() => {
   }
   function rdFx(e, st) {
     if (!RD) return;
-    const pos = id => { const h = st.heroes.find(q => q.id === id); if (h) return [h.x, h.y]; const u = st.foes.find(q => q.id === id); return u ? [u.x, u.y] : null; };
+    const pos = id => { const h = st.heroes.find(q => q.id === id) || (st.guards || []).find(q => q.id === id); if (h) return [h.x, h.y]; const u = st.foes.find(q => q.id === id); return u ? [u.x, u.y] : null; };
     const aimAtId = (id, b) => () => { const q = pos(id) || b; return [q[0], 0.8, q[1]]; };
     switch (e.k) {
       case 'hit': { const p = pos(e.id); if (p) { rdNum(p[0], p[1], String(e.v), '#ffffff'); spark(p[0], 0.8, p[1], 0xfff0d0); } break; }
@@ -2373,6 +2455,14 @@ const V3 = (() => {
         break;
       }
       case 'tshot': { const b = pos(e.tgt); if (b) spawnShot('arrow', e.x, 2.4, e.y, aimAtId(e.tgt, b), 0.32, 0.7); break; }
+      case 'ghit': {
+        if (!e.sh) break;
+        const a = pos(e.id), b = pos(e.tgt); if (!a || !b) break;
+        if (e.sh === 'arch') spawnShot('arrow', a[0], 1.0, a[1], aimAtId(e.tgt, b), 0.25, 0.4);
+        else { const s2 = makeGlow(0xff7a2a, 0.8, 1); s2.position.set(a[0] - half, 1, a[1] - half); rdGroup.add(s2); RD.dying.push({ fly: s2, t: 0, T: 0.24, a, b }); }
+        break;
+      }
+      case 'dodge': { const p = pos(e.id); if (p) rdNum(p[0], p[1], 'esquive', '#9fd8ff'); break; }
       case 'die': burst(e.x, e.y, 0.4, e.big ? 0xff7a3a : 0xbfb8a8, e.big ? 10 : 5); if (e.big) shake(0.25); break;
       case 'loot': { const p = pos(e.id); if (p) rdNum(p[0], p[1], '−' + e.n + ' ' + RES_LABEL[e.r].toLowerCase(), '#ffb347', true); break; }
       case 'drop': rdNum(e.x, e.y, e.n + ' ' + RES_LABEL[e.r].toLowerCase() + ' repris', '#7dff8a', true); for (let i = 0; i < 6; i++) spark(e.x + (Math.random() - 0.5) * 0.6, 0.4 + Math.random(), e.y + (Math.random() - 0.5) * 0.6, 0xffd27a); break;

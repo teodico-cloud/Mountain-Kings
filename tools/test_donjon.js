@@ -1,6 +1,6 @@
 /* Essais des donjons : fabrication, puis combats joués par un petit robot pour chaque classe. Usage : node tools/test_donjon.js [--long] */
 const fs = require('fs'), path = require('path');
-const src = ['p2_rules.js', 'p2e_equip.js', 'p2r_raid.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
+const src = ['p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2d_donjon.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
 const D = new Function(src + '\nreturn { genDungeon, djReach, DJ_MONSTERS, DJ_BOSSES, djStart, djStep, djResult, djFlee, djProgress, djCast, DJ_DT, DJ_SKILLS, CLASS_KEYS, RACE_KEYS, djFree, djLos, djSnap, djApplySnap, djLocalMove, djFloorCfg, djFloor, djCarry, djRunAdd, djRunResult, genItem, mulberry32, gearOf, djPack, djUnpack, SLOTS, djHalfItems, itemInfo, djHurt };')();
 const LONG = process.argv.includes('--long');
 let fails = 0;

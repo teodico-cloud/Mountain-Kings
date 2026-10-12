@@ -72,6 +72,8 @@ Object.assign(IC, {
 });
 /* Raids : bouclier, flamme (les mêmes que dans les donjons) */
 Object.assign(IC, { shield: DJ_IC.shield, flame: DJ_IC.flame, sword: DJ_IC.sword });
+/* Garnison : drapeau (postes de garde, bannières) */
+IC.flag = '<svg viewBox="0 0 24 24"><path d="M5 2.5v19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M6 4h12l-3 4 3 4H6z" fill="currentColor"/></svg>';
 const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k] || ''}</span>`;
 const RES_SHOW = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere', 'fer', 'or'];
 function chipsRes(c, have, cls) { return RES.filter(k => c[k]).map(k => `<span class="chip${have && (have[k] || 0) < c[k] ? ' short' : ''}${cls ? ' ' + cls : ''}">${ico(k)}${fmtN(c[k])}</span>`).join(''); }
@@ -117,7 +119,8 @@ function act(a, opts) {
   scheduleCommit(150);
   const fx = { build: 'place', move: 'place', upgrade: 'upgrade', accept: 'built', hero: 'hero', feast: 'coin', demolish: 'wallbreak', job: 'click', heroAt: 'click', heroAct: 'click', claim: 'coin', crop: 'click', skill: 'star', spec: 'hero',
     equip: 'upgrade', unequip: 'click', sell: 'coin', melt: 'wallhit', craft: 'upgrade', improve: 'upgrade', socket: 'built', unsocket: 'click', fuse: 'star', buy: 'coin', pet: 'click',
-    walls: 'place', gate: 'place', upwalls: 'upgrade', repair: 'built' }[a.type];
+    walls: 'place', gate: 'place', upwalls: 'upgrade', repair: 'built',
+    recruit: 'hero', dismiss: 'click', promote: 'star', solPost: 'click', solAuto: 'place', solForge: 'upgrade', solImprove: 'upgrade', orbSet: 'built', orbOff: 'click', orbFuse: 'star', banSet: 'built', banOff: 'click', banSell: 'coin' }[a.type];
   if (fx && !(opts && opts.quiet)) SND.sfx(fx);
   return test;
 }
@@ -167,7 +170,7 @@ function onVillage(snap) {
   if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
-const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def']);
+const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def', 'sol']);
 const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch', 'portal']);
 /* Nouvelles du journal pendant qu'on joue : une bulle pour la plus récente. */
 function newsCheck() {
@@ -187,7 +190,7 @@ function items(v, editable) {
   const out = v.b.map(b => {
     let gx = b.gx, gz = b.gz;
     if (editable && place && place.kind === 'move' && place.id === b.id) { gx = place.gx; gz = place.gz; }
-    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined, dead: isBroken(b) };
+    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined, dead: isBroken(b), ban: b.type === 'poste' && banOk(b.ban) ? b.ban.r : undefined };
   });
   if (editable && place && place.kind === 'new') out.push({ key: 'ghost', id: 0, type: place.type, lvl: 1, gx: place.gx, gz: place.gz, up: null, col: safeColor(v.c) });
   /* Le marchand ambulant : sa charrette, près de la halle, les jours où il est là */
@@ -208,6 +211,8 @@ function peopleOf(v) {
     const at = h.at === 'bat' ? (open[0] ? 'm' + open[0].id : null) : h.at != null ? 'm' + h.at : hang != null ? 'm' + hang : null;
     out.push({ key: 'h' + k, kind: 'hero', race: h.race, cls: h.cls, sex: h.sex, col: safeColor(h.col), name: h.name, at });
   }
+  /* les soldats de la garnison : debout à leur poste, ou à la caserne */
+  for (const p of solPeople(v)) out.push(p);
   return out;
 }
 const placeValid = () => place && fits(me, place.type, place.gx, place.gz, place.kind === 'move' ? place.id : undefined);
@@ -224,6 +229,7 @@ function refreshScene() {
   if (editable && place && place.kind === 'wall') V3.ghost('rempart', place.gx, place.gz, true);
   else if (editable && place) V3.ghost(place.type, place.gx, place.gz, placeValid()); else V3.ghost(null);
   V3.setPeople(peopleOf(v));
+  postRings(v, editable);
   /* portails démoniaques : visibles pendant la charge */
   const ri = me ? raidInfo(v, t) : { p: [] };
   V3.setPortals(ri.p.map(p => Object.assign({ frac: ri.frac, ready: ri.st === 'ready' }, p)));
@@ -248,8 +254,9 @@ function onTap(cx, cy) {
     refreshScene(); renderAll(); return;
   }
   /* Un habitant touché de près passe avant le bâtiment derrière lui. */
-  const k = V3.pickBuilding(cx, cy);
-  const pk = V3.pickPerson(cx, cy, 16) || (k ? null : V3.pickPerson(cx, cy, 30));
+  const k = V3.pickBuilding(cx, cy), kb = k && k[0] === 'm' ? me.b.find(b => b.id === +k.slice(1)) : null;
+  /* un poste de garde touché passe avant ses gardes (ils se tiennent tout près du mât) */
+  const pk = V3.pickPerson(cx, cy, kb && kb.type === 'poste' ? 7 : 16) || (k ? null : V3.pickPerson(cx, cy, 30));
   if (pk) { selP = pk; sel = null; SND.sfx('click'); refreshScene(); renderAll(); return; }
   if (k === 'merch') { sel = null; selP = null; SND.sfx('click'); openSheet('merch'); return; }
   if (k && k.indexOf('portal') === 0) { sel = null; selP = null; SND.sfx('click'); openSheet('defense'); return; }
@@ -261,7 +268,7 @@ function startPlace(type) {
   if (type === 'rempart') { startWallMode(); return; }
   const d = BLD[type], hl = hallLvl(me);
   if ((d.hall || 1) > hl) { toast('Il faut une halle du village de niveau ' + d.hall + '.'); return; }
-  if (countOf(me, type) >= limitOf(type, hl)) { toast('Nombre maximum atteint : agrandissez la halle.'); return; }
+  if (countOf(me, type) >= limitV(me, type)) { toast(limitWhy(me, type)); return; }
   const m = missingTxt(me, costOf(type, 1)); if (m) { toast(m); return; }
   const spot = freeSpot(me, type); if (!spot) { toast('Plus de place libre dans le village.'); return; }
   place = { kind: 'new', type, gx: spot[0], gz: spot[1] };
@@ -353,6 +360,7 @@ function bldLine(v, b, t) {
   if (b.type === 'taverne') return '+' + (BLD.taverne.mor + 4 * (b.lvl - 1)) + ' de moral, et +' + BEER.mor + ' de plus quand on y sert de la bière. Attire de nouveaux villageois ; on peut y offrir une fête.';
   if (d.deco) return '+' + d.deco + ' de moral (les décorations comptent jusqu’à +' + DECO_MAX + ').';
   if (b.type === 'halle') return buildersMax(v) + ' bâtisseurs au plus · ' + sitesMax(v) + ' chantiers à la fois · bâtiments jusqu’au niveau ' + Math.min(3, hallLvl(v) + 1) + '.';
+  if (b.type === 'caserne') return 'Caserne de niveau ' + b.lvl + ' : ' + solList(v).length + ' soldat' + (solList(v).length > 1 ? 's' : '') + ' sur ' + solCap(v) + ', ' + postsOf(v).length + ' poste' + (postsOf(v).length > 1 ? 's' : '') + ' de garde sur ' + postCap(v) + '. On y recrute des soldats contre de l’or.';
   if (b.type === 'forge') return 'Forge de niveau ' + b.lvl + ' : objets ' + (b.lvl >= 3 ? 'jusqu’à légendaires' : b.lvl >= 2 ? 'jusqu’à épiques' : 'jusqu’à rares') + ', améliorations jusqu’à +' + maxUpOf(b.lvl) + ', sacs de ' + bagMax(v) + ' places' + (b.lvl >= 2 ? ', fusion des pierres' : '') + '.';
   return d.desc;
 }
@@ -384,11 +392,12 @@ function bldPanel() {
       else { const c = costOf(b.type, to), miss = missingTxt(v, c); h += `<div class="row split"><span class="chips2">${chipsRes(c, v.r)}</span><button class="btn${miss ? ' off' : ' primary'}" data-act="upgrade" data-id="${b.id}">Niveau ${to}</button></div>`; }
     } else if (b.lvl > 0) h += '<p class="note">Niveau maximum atteint.</p>';
   }
-  h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button>${b.type !== 'halle' ? `<button class="btn small" data-act="demolish" data-id="${b.id}">Démolir</button>` : ''}${b.type === 'taverne' && b.lvl > 0 ? '<button class="btn small" data-act="sheet" data-s="village" data-k="feast">' + ico('mug', '') + 'Fête</button>' : ''}${b.type === 'forge' && b.lvl > 0 ? '<button class="btn small primary" data-act="sheet" data-s="forge">' + ico('s_anvil', '') + 'Ouvrir la forge</button>' : ''}</div>`;
+  h += `<div class="row"><button class="btn small" data-act="move" data-id="${b.id}">Déplacer</button>${b.type !== 'halle' ? `<button class="btn small" data-act="demolish" data-id="${b.id}">Démolir</button>` : ''}${b.type === 'taverne' && b.lvl > 0 ? '<button class="btn small" data-act="sheet" data-s="village" data-k="feast">' + ico('mug', '') + 'Fête</button>' : ''}${b.type === 'forge' && b.lvl > 0 ? '<button class="btn small primary" data-act="sheet" data-s="forge">' + ico('s_anvil', '') + 'Ouvrir la forge</button>' : ''}${b.type === 'caserne' && b.lvl > 0 ? '<button class="btn small primary" data-act="sheet" data-s="caserne">' + djIco('shield') + 'Ouvrir la caserne</button>' : ''}</div>`;
   return h + '</div>';
 }
 function personPanel() {
   const v = me;
+  if (selP && selP[0] === 'g') return solPersonPanel(v, selP.slice(1));
   if (selP && selP[0] === 'h') {
     const hh = v.heroes[selP.slice(1)]; if (!hh) return '';
     const mine = hh.own === uid, act = activeHero(v, hh.own) === hh;
@@ -405,7 +414,7 @@ function personPanel() {
 }
 function navBar() {
   const v = me;
-  const idle = v.vil.some(p => p.job == null), canBuild = SHOP.some(k => !BLD[k].inst && (BLD[k].hall || 1) <= hallLvl(v) && countOf(v, k) < limitOf(k, hallLvl(v)) && !missingTxt(v, costOf(k, 1)));
+  const idle = v.vil.some(p => p.job == null), canBuild = SHOP.some(k => !BLD[k].inst && (BLD[k].hall || 1) <= hallLvl(v) && countOf(v, k) < limitV(v, k) && !missingTxt(v, costOf(k, 1)));
   const unseen = v.log.some(l => l.t > (LS.get('mk2.read.' + vid) || 0) && AWAY_KINDS.has(l.k));
   const myHero = activeHero(v, uid);
   return `<nav class="glass nav" aria-label="Menus">
@@ -413,7 +422,7 @@ function navBar() {
     <button data-act="sheet" data-s="people">${ico('people', '')}Villageois${v.cands.length || idle ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="hero">${ico('crown', '')}${myHero ? esc(myHero.name) : 'Héros'}${myHero && myHero.sp ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="donjon">${djIco('sword')}Donjon</button>
-    <button data-act="sheet" data-s="defense">${djIco('shield')}Défense${raidInfo(v, now()).st !== 'calm' || v.b.some(b => repairCostOf(b)) ? '<span class="dot"></span>' : ''}</button>
+    <button data-act="sheet" data-s="defense">${djIco('shield')}Défense${raidInfo(v, now()).st !== 'calm' || v.b.some(b => repairCostOf(b)) || solList(v).some(solCanPromote) ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="journal">${ico('scroll', '')}Journal${unseen ? '<span class="dot"></span>' : ''}</button>
     <button data-act="sheet" data-s="village">${ico('house', '')}Village</button></nav>`;
 }
@@ -458,9 +467,9 @@ function sheetBuild() {
     const list = SHOP.filter(k => BLD[k].cat === cat); if (!list.length) continue;
     h += `<div class="sec"><h4>${label}</h4>`;
     for (const k of list) {
-      const d = BLD[k], n = countOf(v, k), lim = limitOf(k, hl), c = costOf(k, 1), locked = (d.hall || 1) > hl;
+      const d = BLD[k], n = countOf(v, k), lim = limitV(v, k), c = costOf(k, 1), locked = (d.hall || 1) > hl || (k === 'poste' && !caserneLvl(v));
       const miss = missingTxt(v, c), full = n >= lim;
-      h += `<div class="item"><div class="head"><b>${esc(d.name)}</b><small>${locked ? 'halle niveau ' + d.hall : n + ' sur ' + lim}</small></div><p>${esc(d.desc)}</p>
+      h += `<div class="item"><div class="head"><b>${esc(d.name)}</b><small>${locked ? (k === 'poste' ? 'caserne d’abord' : 'halle niveau ' + d.hall) : n + ' sur ' + lim}</small></div><p>${esc(d.desc)}</p>
         <div class="foot"><span class="chips2">${chipsRes(c, v.r)}<span class="dur">${ico('hammer', '')}${d.inst ? 'tout de suite' + (k === 'rempart' ? ', en ligne' : '') : fmtDur(workOf(k, 1) / Math.max(1, sr.perSite) * 3600000)}</span></span>
         <button class="btn small${locked || full || miss ? ' off' : ' primary'}" data-act="place" data-type="${k}">${locked ? 'Verrouillé' : full ? 'Maximum' : 'Construire'}</button></div></div>`;
     }
@@ -582,7 +591,7 @@ function sheetHero() {
   if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
-const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield' };
+const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield', sol: 'shield' };
 function sheetJournal() {
   const v = me;
   if (!v.log.length) return '<p class="note">Rien pour l’instant.</p>';
@@ -618,7 +627,7 @@ function sheetStock() {
   const v = me, t = now(), rt = ratesOf(v, t), cap = capOf(v);
   let h = `<p class="note">Chaque ressource peut monter jusqu’à <b>${fmtN(cap)}</b> : construisez des entrepôts pour en garder plus.</p><div class="item">`;
   for (const k of RES_SHOW) h += `<div class="row split stockrow"><b class="row">${ico(k)}${RES_LABEL[k]}</b><span><b>${fmtN(v.r[k] || 0)}</b> <small class="note">${fmtR(rt[k] || 0)}/h</small></span></div>`;
-  h += `<div class="row split stockrow"><b class="row">${ico('people', 'c-tro')}Repas des villageois</b><span><small class="note">${fmtR(rt.food)}/h (pain et viande)</small></span></div></div>`;
+  h += `<div class="row split stockrow"><b class="row">${ico('people', 'c-tro')}Repas ${v.sol ? '(villageois et soldats)' : 'des villageois'}</b><span><small class="note">${fmtR(rt.food)}/h (pain et viande)</small></span></div></div>`;
   h += '<p class="note">Le blé devient farine au moulin, puis pain à la boulangerie. Le pain et la viande nourrissent le village. L’orge devient bière à la brasserie : servie à la taverne, elle remonte le moral, et il en faut pour les fêtes. Le fer vient de la mine de fer : la forge s’en sert pour les objets des héros. L’or (la bourse commune, sans limite de place) se gagne en donjon et en vendant des objets.</p>';
   return h;
 }
@@ -632,14 +641,15 @@ function sheetHelp() {
     + sec('Vos héros', ['Chacun commence avec un héros. Chaque niveau de taverne permet d’en recruter un de plus (4 au plus chacun).', 'Le héros actif part en donjon ; on le choisit dans le menu Héros. Les autres travaillent au village.', 'Un héros affecté à un bâtiment donne +25 % là où sa race excelle (humain : construction, nain : minage, elfe : chasse, orque : bûcheronnage, halfelin : agriculture, mort-vivant : artisanat), +10 % ailleurs. Un héros par bâtiment, deux sur les chantiers.', 'Chaque niveau apporte plus de vie et de dégâts et un point de compétence (menu Héros, bouton +1) ; les compétences s’ouvrent aux niveaux 1, 3 et 5, la spécialisation au niveau 10.'])
     + sec('L’équipement', ['Chaque héros porte une arme, un casque, une armure, des bottes et, dès le niveau 8, un bijou (menu Héros). Chaque classe manie sa famille d’armes : lames, arcs ou bâtons.', 'Les objets ont 5 raretés : commun (gris), peu commun (vert), rare (bleu), épique (violet), légendaire (orange, avec un pouvoir). Les objets d’ensemble (turquoise) donnent un bonus à 2 et à 4 pièces portées.', 'On les trouve en donjon : dans les coffres, sur les boss, parfois sur un monstre ; mieux dans les donjons plus hauts. À deux, chacun trouve ses propres objets.', 'Dans le sac, les flèches comparent avec l’objet porté : ▲ mieux, ▼ moins bien. Vendre un objet rapporte de l’or (la bourse commune) ; le fondre à la forge rend du fer.', 'La forge (avec le fer de la mine) fabrique un objet au choix, l’améliore jusqu’à +5 et sertit les pierres précieuses : trois pierres pareilles se fusionnent en une plus belle.', 'Un jour sur deux, un marchand ambulant s’installe près de la halle avec quelques objets à vendre.', 'Au niveau 6, un familier accompagne le héros : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.'])
     + sec('Les raids et la défense', ['À partir du 3e jour, un portail démoniaque s’ouvre au bord de la vallée (au plus un raid par jour). Il se charge pendant 3 heures : vous voyez de quel côté viendront les gobelins.', 'Le raid ne part que quand vous êtes absents tous les deux depuis 2 heures. Il se joue tout seul ; à votre retour, un bilan s’affiche et vous pouvez revoir le combat.', 'Les gobelins foncent piller la halle, les voleurs filent vers l’entrepôt, les trolls cassent ce qui bloque (bien plus fort sur les palissades et les portes). Tous prennent le chemin le plus court, en comptant ce qu’il faudrait casser.', 'Ce qu’ils emportent est perdu s’ils regagnent le portail ; abattus avant, ils lâchent tout. Si la halle est pillée, le moral baisse pendant un jour.', 'Menu Défense : palissades (posées en ligne), portes (vos héros et villageois passent), tours d’archers, pièges à pointes et filets cachés. Vos héros défendent la halle et gagnent de l’expérience ; chaque ennemi abattu rapporte de l’or.', 'Refermez un portail avec votre héros (seul ou à deux) : un petit donjon et son gardien. Tous les portails refermés : pas de raid cette fois.', 'Après un raid, réparez les défenses abîmées (menu Défense).'])
+    + sec('La garnison', ['La caserne (halle niveau 2) loge 3 soldats par niveau, 12 au plus, et donne un poste de garde par niveau. On y recrute contre de l’or : fantassin, archer, lancier ou mage de guerre.', 'Pendant un raid, chaque soldat garde le cercle de son poste sans jamais en sortir : fantassins et lanciers devant, du côté du portail, archers et mages derrière. Améliorer un poste agrandit son cercle. « Répartir » met un peu de chaque type partout.', 'Les soldats qui tiennent gagnent de l’expérience ; vous les faites monter de niveau (jusqu’au 15) contre de l’or, de la viande et, plus tard, du fer. Ils mangent, un peu plus à chaque niveau.', 'Un soldat abattu se repose 8 heures à la caserne, sans rien perdre sauf sa série : 5 raids de suite sans tomber font un Vétéran, 10 un Briscard, 20 un Héros de la garde.', 'À la forge, chaque soldat reçoit une arme et une armure complète (avec son bonus d’ensemble). Orbes (3 emplacements, aux niveaux 4, 8 et 12) et bannières (une par poste) se gagnent en défense réussie, en donjon et sur le gardien du portail.'])
     + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4).', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de l’or, de la pierre et du bois pour le village, des objets et des pierres précieuses dans ton sac, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié (on garde les meilleurs objets).', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense' };
+  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense', caserne: 'La caserne' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense }[sheet];
+  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense, caserne: sheetCaserne }[sheet];
   setHTML(els.sheetBody, f ? f() : '');
   if (sheet === 'village' && sheetArg === 'feast' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#feastSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
@@ -768,6 +778,7 @@ document.addEventListener('pointercancel', release, true);
 const ACT = {
   ...ACT_EQ,
   ...ACT_RAID,
+  ...ACT_GAR,
   noop() {},
   orient: b => { orient = b.dataset.o; LS.set('mk2.orient', orient); applyOrientation(); renderAll(); },
   sheet: b => { renderSheet.scrolled = false; openSheet(b.dataset.s, b.dataset.k); },
@@ -823,7 +834,8 @@ const ACT = {
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
 const QUIET = new Set(['noop', 'upgrade', 'placeOk', 'accept', 'feast', 'setjob', 'heroAt', 'heroAct', 'claim', 'crop', 'djGo', 'skill', 'djInvite', 'djYes', 'djDown',
-  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet', 'repair', 'upwalls', 'gate', 'raidReplay']);
+  'equip', 'unequip', 'sell', 'sellJunk', 'melt', 'craft', 'improve', 'socket', 'unsocket', 'fuse', 'buy', 'buyGem', 'pet', 'repair', 'upwalls', 'gate', 'raidReplay',
+  'recruit', 'dismiss', 'promote', 'solPost', 'solAuto', 'solForge', 'solImprove', 'orbSet', 'orbOff', 'orbFuse', 'banSet', 'banOff', 'banSell']);
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   if (!QUIET.has(b.dataset.act)) SND.sfx('click');
