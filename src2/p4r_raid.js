@@ -35,6 +35,7 @@ function raidReportHTML(v, lr, btn) {
     ${lr.orbs && lr.orbs.length ? `<div class="row split"><span>Pour la garnison</span><span class="chips2">${lr.orbs.map(k => orbChip(k)).join('')}</span></div>` : ''}
   </div>`;
   if (r.h) h += '<p class="why">Ils ont pillé la halle, le cœur du village : le moral baisse pendant un jour.</p>';
+  if (r.c) h += '<p class="why">Ils ont fouillé la chambre de Lilou : elle a eu très peur (−' + CROWN_FEAR + ' d’humeur). Protégez-la : palissades, pièges, poste de garde.</p>';
   if (!heroes.length) h += '<p class="note">Aucun héros pour défendre la halle : créez votre héros, il défendra le village.</p>';
   if (btn) h += `<div class="row"><button class="btn small primary" data-act="raidReplay">${djIco('eye')}Revoir le raid</button></div>`;
   return h;
@@ -235,6 +236,7 @@ function rpEvents(st) {
       case 'loot': SND.sfx('coin'); break;
       case 'drop': SND.sfx('star', pan); break;
       case 'heart': SND.sfx('alarm'); break;
+      case 'lilou': SND.sfx('alarm'); break;
       case 'ko': SND.sfx('death'); break;
     }
   }

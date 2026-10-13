@@ -31,6 +31,10 @@ const TIPS = [
     txt: 'Ton héros a un point de compétence à dépenser (menu Héros, bouton +1). À ta place, je ne le garderais pas sous le coussin.' },
   { id: 'caprice', ic: 'heart', go: 'lilou', btn: 'Sa chambre', when: v => !!(v.lilou && v.lilou.d && !v.lilou.d.ok),
     txt: 'Lilou a un caprice aujourd’hui. On le fabrique dans sa chambre, avec les ressources du village. Contente, les monstres frappent moins fort.' },
+  { id: 'chambreRaid', ic: 'shield', go: 'defense', btn: 'Défense', when: v => crownRaidOn(v),
+    txt: 'Les gobelins savent où dort Lilou : pendant les raids, la moitié d’entre eux visera sa chambre. Une palissade autour, un piège sur le chemin ou un poste de garde à côté, et ils y réfléchiront à deux fois.' },
+  { id: 'faille', ic: 'flame', go: 'donjon', btn: 'Donjon', when: v => crownCan(v, 'portail', 1, 0, true) >= 0 && !raidInfo(v, now()).p.some(p => !p.cl),
+    txt: 'Pas de portail démoniaque ouvert ? Il y a une faille vers l’abîme au fond de la vieille mine : menu Donjon, la couronne. Le gardien du portail t’y attend.' },
   { id: 'recrue', ic: 'flag', go: 'caserne', btn: 'Caserne', when: v => caserneLvl(v) > 0 && !solList(v).length,
     txt: 'La caserne est prête : recrute tes premiers soldats contre de l’or. Fantassins et lanciers devant, archers et mages derrière. Moi, je garde le coussin.' },
   { id: 'poste', ic: 'flag', go: 'build', btn: 'Construire', when: v => solList(v).length > 0 && !postsOf(v).length,
@@ -71,6 +75,8 @@ const TIPS = [
     txt: 'L’hiver. Les champs dorment, la chasse rapporte moins, et le village vit sur ses réserves. Moi, je dors aussi.' },
   { id: 'inviter', ic: 'link', go: 'village', btn: 'Inviter', when: v => !partnerId(v) && tipAge(v) > 24 * 3600000,
     txt: 'Envie de jouer à deux ? Envoie le lien d’invitation (menu Village) : ta partenaire arrivera dans ton village, avec tout ce que tu as construit.' },
+  { id: 'chronique', ic: 'scroll', go: 'chron', btn: 'La lire', when: v => (v.chron || []).length >= 8,
+    txt: 'Le village a sa chronique : tous vos grands moments y sont écrits (menu Village). J’y suis citée au moins trois fois. Au moins.' },
 ];
 function tipTest(T) { try { return !!T.when(me); } catch (e) { return false; } }
 function tipClose(seen) { if (tipCur && seen) tipMark(tipCur.id); tipCur = null; tipNext = Date.now() + TIP_GAP; }

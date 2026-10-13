@@ -1,7 +1,7 @@
 /* Essais des règles du nouveau jeu (village commun). Usage : node tools/test_v2.js */
 const fs = require('fs'), path = require('path');
 const src = ['p0_fb.js', 'p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2s_histoire.js'].map(f => fs.readFileSync(path.join(__dirname, '../src2/' + f), 'utf8')).join('\n');
-const R = new Function(src + '\nreturn { normVillage, solList, solStats, solCap, postCap, postsOf, guardsOf, solHurt, solXpNeed, recruitCost, promoteCost, solEat, solFood, solTitle, solName, orbOf, orbAdd, banAdd, banOk, garLoot, solFormation, raidGuards, SOLDIERS, ORB_LVLS, ORBS, BANNERS, SOL_SETS, POST_SLOTS, limitV, caserneLvl, VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone, genItem, cleanItem, itemInfo, canWear, gearOf, compareItem, bagOf, bagMax, mulberry32, merchHere, merchDay, RARITY, SETS, POWERS, GEMS, gemOf, craftCost, improveCost, SLOTS, DROP, rollRarity, forgeLvlOf, hpOf, hpMaxOf, repairCostOf, raidTick, raidInput, raidStart, raidStep, raidResult, raidReplay, raidInfo, raidLevel, raidClosePortal, raidField, raidFoeStep, raidHurtFoe, RAID_FIRST, RAID_CHARGE, RAID_AWAY, RAID_FOES, limitOf, fits, lilouTick, lilouArrive, lilouMood, lilouMul, capCost, CAPRICES, BIG_CAPRICES, LILOU, LILOU_MOODS, DAY };')();
+const R = new Function(src + '\nreturn { normVillage, solList, solStats, solCap, postCap, postsOf, guardsOf, solHurt, solXpNeed, recruitCost, promoteCost, solEat, solFood, solTitle, solName, orbOf, orbAdd, banAdd, banOk, garLoot, solFormation, raidGuards, SOLDIERS, ORB_LVLS, ORBS, BANNERS, SOL_SETS, POST_SLOTS, limitV, caserneLvl, VERSION, BLD, RES, SEASONS, SPEC, GOALS, FEAST, RACES, CLASSES, RACE_KEYS, CLASS_KEYS, heroSlots, heroesOf, activeHero, newVillage, simulateVillage, applyV, ratesOf, moraleOf, moraleParts, seasonIdx, capOf, housingOf, freeHousing, costOf, workOf, hallLvl, workersOf, builders, foodOf, clone, freeSpot, bldRate, goalsOf, goalProg, goalDone, genItem, cleanItem, itemInfo, canWear, gearOf, compareItem, bagOf, bagMax, mulberry32, merchHere, merchDay, RARITY, SETS, POWERS, GEMS, gemOf, craftCost, improveCost, SLOTS, DROP, rollRarity, forgeLvlOf, hpOf, hpMaxOf, repairCostOf, raidTick, raidInput, raidStart, raidStep, raidResult, raidReplay, raidInfo, raidLevel, raidClosePortal, raidField, raidFoeStep, raidHurtFoe, RAID_FIRST, RAID_CHARGE, RAID_AWAY, RAID_FOES, limitOf, fits, lilouTick, lilouArrive, lilouMood, lilouMul, capCost, CAPRICES, BIG_CAPRICES, LILOU, LILOU_MOODS, DAY, crownCan, crownNeed, crownBits, crownRaidOn, CROWN_DELAY, CROWN_FEAR, CROWN_LETTERS, chronInit, raidApply };')();
 let fails = 0;
 const ok = (c, m) => { if (c) console.log('ok : ' + m); else { fails++; console.log('ÉCHEC : ' + m); } };
 const H = 3600000, D = 24 * H, T0 = Date.UTC(2026, 9, 12, 8, 0, 0);
@@ -633,6 +633,86 @@ ok(vh2.cnt.win === 0, 'un hiver avec famine ne compte pas');
   ok(vx.lastRaid && vx.lastRaid.M === 1.1 && JSON.stringify(rep(R.raidReplay(JSON.parse(JSON.stringify(vx.lastRaid))))) === JSON.stringify(vx.lastRaid.res), 'raid avec Lilou en colère : la rediffusion rejoue exactement le même combat');
   const back = R.normVillage(JSON.parse(JSON.stringify(vl)));
   ok(JSON.stringify(back.lilou) === JSON.stringify(vl.lilou), 'Lilou intacte après un aller-retour par la base');
+}
+
+/* 20. L'histoire (lot B) : la Couronne de la Montagne (cycles), les lettres du Roi Déchu, les raids sur la chambre de Lilou, la chronique */
+{
+  const vc = R.newVillage('vcour', 'Couronnebourg', '#D27A22', T0, 'u1', 'Téo');
+  ok(vc.chron && vc.chron.length === 1 && vc.chron[0][1] === 'found' && /fonde le village/.test(vc.chron[0][2]), 'la chronique commence à la fondation');
+  R.applyV(vc, { type: 'hero', name: 'Brokk', race: 'nain', cls: 'guerrier', sex: 'm' }, who);
+  const hb = Object.values(vc.heroes)[0];
+  ok(vc.chron.some(e => e[1] === 'hero' && /Brokk/.test(e[2])), 'le premier héros entre dans la chronique');
+  R.simulateVillage(vc, vc.t + 2 * H);
+  ok(!vc.crown && R.crownCan(vc, 'mine', 5, 0, true) === -1, 'pas de quête de la couronne avant Lilou');
+  R.applyV(vc, { type: 'djEnd', hid: hb.id, lvl: 1, win: true, xp: 120, theme: 'source' }, who);
+  const at = vc.lilou.at;
+  R.simulateVillage(vc, at + R.CROWN_DELAY - 2 * 60000);
+  ok(!vc.crown, 'juste après l’arrivée de Lilou : pas encore de lettre');
+  R.simulateVillage(vc, at + R.CROWN_DELAY + 2 * 60000);
+  ok(vc.crown && vc.crown.cy === 1 && vc.crown.got === 0 && vc.crown.rank === 0 && vc.log.some(l => l.k === 'roi' && /Roi Déchu/.test(l.m)), 'dix minutes après : la lettre du Roi Déchu, la quête commence (chapitre 1)');
+  ok(vc.chron.filter(e => e[1] === 'lilou').length === 1 && vc.chron.some(e => e[1] === 'roi'), 'chronique : l’arrivée de Lilou (une fois) et la lettre');
+  ok(R.crownNeed(1, 0) === 3 && R.crownNeed(1, 1) === 4 && R.crownNeed(1, 3) === 5 && R.crownNeed(2, 0) === 6 && R.crownNeed(2, 1) === 7 && R.crownNeed(2, 3) === 10 && R.crownNeed(3, 3) === 15, 'niveaux demandés : mine 3, 6, 9… ; crypte 4, 7, 10… ; Profondeurs 5, 10, 15…');
+  hb.dj = 12;
+  const end = (theme, lvl, win, deep) => R.applyV(vc, { type: 'djEnd', hid: hb.id, lvl, win, xp: 50, theme, deep: deep || 0 }, who);
+  let r = end('crypte', 6, true);
+  ok(r.ok && !r.crown && vc.crown.got === 0, 'chapitre 1 : la crypte ne compte pas encore (les chapitres se suivent)');
+  ok(!end('mine', 2, true).crown && !end('mine', 3, false).crown && vc.crown.got === 0, 'mine niveau 2 gagnée ou niveau 3 perdue : rien');
+  const or0 = vc.r.or, n0 = Object.keys(R.bagOf(vc, 'u1').it).length;
+  r = end('mine', 3, true);
+  const gift = Object.values(R.bagOf(vc, 'u1').it).find(it => it.r === 2);
+  ok(r.crown && r.crown.k === 0 && r.crown.n === 1 && vc.crown.got === 1 && vc.r.or >= or0 + r.crown.gold && Object.keys(R.bagOf(vc, 'u1').it).length === n0 + 1 && gift, 'chef troll au niveau 3 : le bandeau, ' + r.crown.gold + ' or et un objet rare (' + (gift ? R.itemInfo(gift).name : '?') + ')');
+  ok(vc.log.some(l => l.k === 'crown' && /bandeau/.test(l.m)) && vc.chron.some(e => e[1] === 'crown' && /bandeau/.test(e[2])), 'journal et chronique : le bandeau');
+  ok(!end('mine', 5, true).crown && !end('portail', 3, true).crown && vc.crown.got === 1, 'pas deux fois le même morceau, et le portail attend son chapitre');
+  ok(!R.crownRaidOn(vc), 'chapitres 1 et 2 : les raids ne visent pas encore la chambre de Lilou');
+  r = end('crypte', 4, true);
+  ok(r.crown && r.crown.k === 1 && vc.crown.got === 3 && R.crownRaidOn(vc), 'roi squelette au niveau 4 : le fleuron ; chapitre 3, les gobelins visent maintenant la chambre de Lilou');
+  r = end('portail', 2, true);
+  ok(r.crown && r.crown.k === 2 && vc.crown.got === 7, 'un portail refermé : l’arche (chapitre 4)');
+  ok(!end('prof', 6, true, 4).crown, 'Profondeurs : 4 étages ne suffisent pas');
+  const orbs0 = JSON.stringify(vc.orbs || {}), mor0 = R.moraleOf(vc, vc.t), bag1 = Object.keys(R.bagOf(vc, 'u1').it).length, gold1 = vc.r.or;
+  r = end('prof', 6, false, 5);
+  ok(r.crown && r.crown.k === 3 && r.crown.done && r.crown.done.rank === 1 && vc.crown.rank === 1 && vc.crown.cy === 2 && vc.crown.got === 0, 'étage 5 des Profondeurs terminé (même en remontant de force) : la pierre de cœur, la couronne est reconstituée (rang 1), le cycle 2 commence');
+  ok(JSON.stringify(vc.orbs || {}) !== orbs0 && Object.keys(R.bagOf(vc, 'u1').it).length === bag1 + 2 && vc.r.or >= gold1 + 100 && vc.crown.lc && vc.crown.lc.g === 100, 'le coffre : 100 or, une orbe, un objet épique pour le héros actif (et celui de la pierre de cœur)');
+  ok(R.moraleOf(vc, vc.t) === Math.min(100, mor0 + 1) && R.moraleParts(vc, vc.t).some(p => p[0] === 'Couronne de la Montagne' && p[1] === 1), 'rang 1 : +1 de moral pour toujours');
+  ok(vc.log.some(l => l.k === 'roi' && /s’éteignent/.test(l.m)) && vc.chron.some(e => /Rois de la Montagne/.test(e[2])), 'la malédiction du Roi Déchu (au journal) ; la chronique garde le couronnement');
+  /* cycle 2 : les joyaux, dans l'ordre qu'on veut, plus durs */
+  ok(!end('mine', 5, true).crown && !end('prof', 8, true, 9).crown, 'cycle 2 : mine 5 et étage 9 ne suffisent plus');
+  r = end('prof', 8, true, 10);
+  ok(r.crown && r.crown.k === 3 && /joyau des Profondeurs/.test(r.crown.name) && vc.crown.got === 8, 'cycle 2 : le joyau des Profondeurs d’abord (étage 10)');
+  ok(end('crypte', 7, true).crown && end('mine', 6, true).crown && vc.crown.got === 11, 'puis la crypte (7) et la mine (6), dans n’importe quel ordre');
+  const g2 = vc.r.or;
+  r = end('portail', 4, true);
+  ok(r.crown && r.crown.done && vc.crown.rank === 2 && vc.crown.cy === 3 && vc.r.or >= g2 + 200 && R.moraleParts(vc, vc.t).some(p => p[0] === 'Couronne de la Montagne' && p[1] === 2), 'les quatre joyaux : rang 2, coffre de 200 or, +2 de moral ; le cycle 3 commence');
+  ok(R.crownNeed(vc.crown.cy, 0) === 9 && R.crownNeed(vc.crown.cy, 3) === 15, 'cycle 3 : mine 9, étage 15…');
+  /* les lettres du Roi Déchu, de temps en temps, pareilles sur les deux téléphones */
+  const la = R.clone(vc), lb = R.clone(vc), l0 = la.crown.ln;
+  R.simulateVillage(la, la.t + 6 * D); R.simulateVillage(lb, lb.t + 6 * D);
+  const letters = la.log.filter(l => l.k === 'roi' && /Sukhoï/.test(l.m));
+  ok(la.crown.ln - l0 >= 2 && la.crown.ln - l0 <= 4 && letters.length >= 2 && JSON.stringify(la.crown) === JSON.stringify(lb.crown) && JSON.stringify(la.chron) === JSON.stringify(lb.chron), 'en 6 jours : ' + (la.crown.ln - l0) + ' lettres (« ' + letters[0].m.slice(21, 70) + '… »), les mêmes sur les deux téléphones');
+  /* les raids sur la chambre de Lilou */
+  const vr = R.clone(vc); vr.lilou.mood = 60;
+  vr.raid = { n: 3, next: vr.t }; R.simulateVillage(vr, vr.t + 60000);
+  const inp = R.raidInput(vr, vr.t), st = R.raidStart(inp), gob = st.foes.filter(u => u.type === 'gobelin');
+  ok(inp.C === 1 && st.ch >= 0 && st.S[st.ch].type === 'chambre' && gob.some(u => u.tk === 'c') && gob.some(u => u.tk === 'h'), 'raid : un gobelin sur deux vise la chambre de Lilou, les autres la halle');
+  const run = s => { let n = 0; while (!s.over && n++ < 4000) { R.raidStep(s); s.ev.length = 0; } return R.raidResult(s); };
+  const alone = run(R.raidStart(Object.assign({}, inp, { H: [], G: undefined })));
+  ok(alone.c === 1, 'sans défenseurs, les gobelins atteignent la chambre de Lilou');
+  const vf = R.clone(vr), m1 = vf.lilou.mood; R.raidApply(vf, vf.t, inp, alone);
+  ok(vf.lilou.mood === m1 - R.CROWN_FEAR && vf.log.some(l => /chambre de Lilou/.test(l.m)) && vf.lastRaid.C === 1, 'chambre fouillée : Lilou a très peur (−' + R.CROWN_FEAR + ' d’humeur), c’est au journal');
+  const old = R.raidStart(Object.assign({}, inp, { C: undefined }));
+  ok(old.ch === -1 && old.foes.every(u => u.tk === 'h' || u.thief), 'sans la quête (anciens raids) : tous les gobelins vont à la halle, comme avant');
+  R.simulateVillage(vr, vr.raid.at + 3 * H + 2 * 60000);
+  ok(vr.lastRaid && vr.lastRaid.C === 1 && JSON.stringify(run(R.raidReplay(JSON.parse(JSON.stringify(vr.lastRaid))))) === JSON.stringify(vr.lastRaid.res), 'raid réel (chambre ' + (vr.lastRaid.res.c ? 'fouillée' : 'protégée') + ') : la rediffusion rejoue exactement le même combat');
+  /* la chronique : bornée, la fondation toujours en tête ; et pour les villages d'avant */
+  const vk = R.clone(vc); for (let i = 0; i < 80; i++) R.applyV(vk, { type: 'djEnd', hid: hb.id, lvl: 1, win: true, xp: 4000, theme: 'mine' }, who);
+  ok(vk.chron.length <= 60 && vk.chron[0][1] === 'found' && vk.chron.some(e => e[1] === 'hero' && /niveau 10/.test(e[2])), 'la chronique garde 60 moments au plus, la fondation en tête (et les caps de niveau : ' + vk.chron.filter(e => e[1] === 'hero').length + ')');
+  const vo = R.clone(vc); delete vo.chron; R.simulateVillage(vo, vo.t + 2 * 60000);
+  ok(vo.chron && vo.chron[0][1] === 'found' && vo.chron.some(e => e[1] === 'lilou'), 'village d’avant la chronique : elle commence avec la fondation et l’arrivée de Lilou');
+  const back = R.normVillage(JSON.parse(JSON.stringify(vc)));
+  ok(JSON.stringify(back.crown) === JSON.stringify(vc.crown) && JSON.stringify(back.chron) === JSON.stringify(vc.chron), 'couronne et chronique intactes après un aller-retour par la base');
+  /* la base temps réel range les listes comme des objets : la chronique doit s'en remettre */
+  const asObj = JSON.parse(JSON.stringify(vc)); asObj.chron = Object.assign({}, asObj.chron.map(e => Object.assign({}, e)));
+  ok(JSON.stringify(R.normVillage(asObj).chron) === JSON.stringify(vc.chron), 'chronique rangée en objets par la base : remise en listes');
 }
 
 /* 14. Rapidité : simuler 3 jours */

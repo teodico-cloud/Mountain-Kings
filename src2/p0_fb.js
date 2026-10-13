@@ -81,6 +81,14 @@ function normVillage(v) {
     if (cap(L.d)) v.lilou.d = cap(L.d);
     if (cap(L.w)) v.lilou.w = cap(L.w);
   } else delete v.lilou;
+  /* La Couronne de la Montagne (lot B) et la chronique du village */
+  if (v.crown && typeof v.crown === 'object') {
+    const C = v.crown;
+    v.crown = { cy: Math.max(1, C.cy | 0), got: (C.got | 0) & 15, rank: Math.max(0, C.rank | 0), at: +C.at || 0, nl: +C.nl || 0, ln: Math.max(0, C.ln | 0) };
+    if (C.lc && typeof C.lc === 'object') v.crown.lc = { g: C.lc.g | 0, o: String(C.lc.o || ''), r: C.lc.r | 0 };
+  } else delete v.crown;
+  if (v.chron) { v.chron = fbArr(v.chron).map(fbArr).filter(e => e.length >= 3).map(e => [+e[0] || 0, String(e[1]), String(e[2])]); if (!v.chron.length) delete v.chron; }
+  else delete v.chron;
   return v;
 }
 const fbItem = x => x && typeof x === 'object' && x.sl ? Object.assign({}, x, { gm: Object.assign({}, fbObj(x.gm)) }) : null;

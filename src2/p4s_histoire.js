@@ -122,6 +122,125 @@ function sheetLilou() {
 let lilouLull = 0;
 function lilouOpened() { if (performance.now() - lilouLull > 20000) { lilouLull = performance.now(); SND.sfx('berceuse'); } }
 
+/* ===================== L'HISTOIRE, lot B : la Couronne de la Montagne (interface) =====================
+   L'objectif du moment en tête du menu Donjon, les scènes (une fois par téléphone), la chronique du village, le morceau annoncé au bilan. */
+const CROWN_SRC_LABEL = ['Mine', 'Crypte', 'Portail', 'Profondeurs'];
+const crownLetterHTML = txt => `<blockquote class="letter"><p>${esc(txt)}</p><cite>Le Roi Déchu, dernier Roi de la Montagne</cite></blockquote>`;
+const SUK_CROWN = {
+  goal: [
+    'Le chef troll de la mine travaille pour le Roi Déchu, j’en mettrais ma queue à couper. Bats-le au niveau 3 ou plus : il porte le premier morceau.',
+    'Le deuxième morceau dort dans la crypte des rois. Le roi squelette ne le lâchera pas sans se battre : niveau 4 ou plus.',
+    'Le troisième morceau est chez le démon. Referme un portail démoniaque, ou passe par la faille de la vieille mine : son gardien le serre dans sa griffe.',
+    'Le dernier morceau est tout au fond des Profondeurs. Termine l’étage 5, et la couronne sera à nous.',
+  ],
+  joyaux: 'Rallume les quatre joyaux, dans l’ordre que tu veux. Leurs gardiens sont plus forts à chaque cycle.',
+  start: 'Le Roi Déchu… Je croyais cette vieille histoire enterrée. Autrefois, les Rois de la Montagne portaient une couronne qui commandait à toute la vallée. Le dernier a vendu son âme à un démon des Profondeurs, et la couronne s’est brisée en quatre morceaux. S’il les retrouve avant nous… Bon. On commence par la mine : ses gobelins travaillent pour lui.',
+  p: [
+    'Le bandeau de la couronne, sur le chef troll ! Et une lettre dans sa poche : « Ramenez-moi la Source. Et des couches. » Il est mal renseigné : on en manque nous-mêmes. Le deuxième morceau dort dans la crypte des rois, avec ses ancêtres.',
+    'Le roi squelette, c’était son père. Il gardait le fleuron par honte de son fils ; avant de tomber en poussière, il a soufflé : « Protégez l’enfant. » Le troisième morceau est chez le démon, de l’autre côté des portails. Et maintenant, ses gobelins savent où dort Lilou : pendant les raids, la moitié d’entre eux visera sa chambre. Barricade-la.',
+    'Le gardien serrait l’arche dans sa griffe. Le dernier morceau, la pierre de cœur, est tout au fond des Profondeurs, là où le Roi Déchu a son trône. Descends, termine l’étage 5. Moi, je garde Lilou.',
+  ],
+  crowned: 'Les quatre morceaux… La couronne est reconstituée ! Elle brille sur la halle, et toute la vallée le sait : vous êtes les nouveaux Rois de la Montagne. Lilou a applaudi. Enfin, elle a tapé sur son hochet, mais c’est pareil.',
+  curse: 'Ses quatre joyaux se sont éteints et envolés vers les donjons. Il faudra les rallumer, et leurs gardiens seront plus forts. Ça ne s’arrêtera jamais, hein ? Tant mieux : je m’ennuyais.',
+  ranks: [
+    'Les quatre joyaux brillent de nouveau. La couronne gagne en éclat, et le Roi Déchu doit en manger sa barbe.',
+    'Et un rang de plus ! La vallée n’a jamais eu de rois aussi têtus.',
+    'À ce train-là, la couronne va finir par éblouir les gobelins. Tant mieux, ils viseront moins bien.',
+    'La couronne brille si fort que Lilou ne veut plus s’endormir sans la regarder.',
+  ],
+  piece: ['Le bandeau de la couronne !', 'Le fleuron des rois !', 'L’arche de l’abîme !', 'La pierre de cœur ! La couronne est complète !'],
+};
+const CHAPTER_OF = k => 'Chapitre ' + (k + 1) + ' · ' + CROWN_CHAPTERS[k];
+function crownGoalTxt(cy, k) {
+  const n = crownNeed(cy, k);
+  return k === 0 ? 'battre le chef troll de la mine au niveau ' + n + ' ou plus' : k === 1 ? 'battre le roi squelette de la crypte au niveau ' + n + ' ou plus'
+    : k === 2 ? 'refermer un portail démoniaque (ou passer par la faille)' : 'terminer l’étage ' + n + ' des Profondeurs';
+}
+const crownCycleTxt = cy => 'mine ' + crownNeed(cy, 0) + ', crypte ' + crownNeed(cy, 1) + ', un portail, étage ' + crownNeed(cy, 3) + ' des Profondeurs';
+const crownPips = C => `<div class="crownpips">${[0, 1, 2, 3].map(k => `<span class="pip${C.got & (1 << k) ? ' on' : ''}">${ico('crown', '')}<small>${CROWN_SRC_LABEL[k]}</small></span>`).join('')}</div>`;
+/* La couronne posée sur la halle (rendu 3D) : « r<rang>g<trouvés> », rien tant qu'aucun morceau n'est trouvé */
+const crownCode = C => (!C ? '' : C.rank ? 'r' + Math.min(C.rank, 9) + 'g' + C.got : crownBits(C.got) ? 'r0g' + C.got : '');
+/* La faille vers l'abîme : le donjon du portail quand aucun portail n'est ouvert (pour le morceau du portail) */
+const crownRift = () => !!me && crownCan(me, 'portail', 1, 0, true) >= 0;
+/* Une ligne d'objectif, avec ses boutons (seul, à deux) quand c'est possible */
+function crownGoalRow(hh, C, k) {
+  const done = !!(C.got & (1 << k)), name = crownName(C.cy, k), n = crownNeed(C.cy, k), top = Math.max(1, hh.dj || 1);
+  const pk = partnerId(me), ph = pk ? activeHero(me, pk) : null, on = pk && isOnline(pk);
+  const go = (th, lvl, pi, label) => `<div class="row"><button class="btn small primary grow" data-act="djGo" data-th="${th}" data-k="${lvl}"${pi != null ? ' data-pi="' + pi + '"' : ''}>${djIco('sword')}${label}</button>`
+    + (pk && ph ? `<button class="btn small grow${on ? '' : ' off'}" data-act="djInvite" data-th="${th}" data-k="${lvl}"${pi != null ? ' data-pi="' + pi + '"' : ''}${on ? '' : ' disabled'}>${djIco('shield')}À deux</button>` : '') + '</div>';
+  let act = '';
+  if (!done) {
+    if (k === 0) act = top >= n ? go('mine', n, null, 'La mine, niveau ' + n) : `<p class="note">D’abord, gagner la mine au niveau ${n - 1}.</p>`;
+    else if (k === 1) act = top >= n && top >= DJ_OPEN.crypte ? go('crypte', n, null, 'La crypte, niveau ' + n) : `<p class="note">D’abord, gagner la mine ou la crypte au niveau ${n - 1}.</p>`;
+    else if (k === 2) { const ri = raidInfo(me, now()), open = ri.p.filter(p => !p.cl); act = open.length ? go('portail', raidLevel(me), open[0].i, 'Refermer le portail ' + RAID_OF[open[0].side]) : go('portail', raidLevel(me), -1, 'Passer par la faille'); }
+    else act = top >= DJ_OPEN.prof ? go('prof', hh.lvl, null, 'Les Profondeurs') : `<p class="note">Les Profondeurs s’ouvrent après une victoire au niveau ${DJ_OPEN.prof - 1}.</p>`;
+  }
+  return `<div class="crowngoal${done ? ' done' : ''}"><div class="row split"><b class="row">${ico('crown', done ? 'c-gold' : 'muted')}${esc(cap1(name))}</b><small>${done ? (C.cy === 1 ? 'trouvé' : 'rallumé') + ' ✓' : esc(cap1(crownGoalTxt(C.cy, k)))}</small></div>${act}</div>`;
+}
+/* En tête du menu Donjon : le chapitre (1er cycle) ou les joyaux (cycles suivants) */
+function crownEntryHTML(hh) {
+  const C = me && me.crown; if (!C || !hh) return '';
+  if (C.cy === 1) {
+    const k = crownBits(C.got);
+    return `<div class="item feature story crown"><div class="row split"><b class="row">${ico('crown', 'c-gold')}${esc(CHAPTER_OF(k))}</b><small class="note">la Couronne de la Montagne</small></div>
+      ${crownPips(C)}${sukBubble(SUK_CROWN.goal[k])}${crownGoalRow(hh, C, k)}
+      <button class="btn small" data-act="sheet" data-s="chron">${ico('scroll', '')}La chronique du village</button></div>`;
+  }
+  return `<div class="item feature story crown"><div class="row split"><b class="row">${ico('crown', 'c-gold')}Cycle ${C.cy} · Les joyaux de la couronne</b><span class="chip">rang ${C.rank}</span></div>
+    ${crownPips(C)}<p class="note">${esc(SUK_CROWN.joyaux)}</p>${[0, 1, 2, 3].map(k => crownGoalRow(hh, C, k)).join('')}
+    <button class="btn small" data-act="sheet" data-s="chron">${ico('scroll', '')}La chronique du village</button></div>`;
+}
+/* Au bilan d'un donjon : le morceau (ou le joyau) qu'il rapporte */
+function crownWinHTML(r) {
+  if (!me || !me.crown || !r) return '';
+  const C = me.crown, k = crownCan(me, r.theme, r.lvl, r.deep || 0, r.win); if (k < 0) return '';
+  return `<div class="item story crownwin"><b class="row">${ico('crown', 'c-gold')}${C.cy === 1 ? esc(SUK_CROWN.piece[k]) : esc(cap1(crownName(C.cy, k))) + ' se rallume !'}</b>
+    <p class="note">${C.cy === 1 ? 'Un morceau de la Couronne de la Montagne (' + (crownBits(C.got) + 1) + ' sur 4).' : 'Un joyau de la couronne (' + (crownBits(C.got) + 1) + ' sur 4).'} Avec de l’or pour la bourse et un objet pour ton sac.</p></div>`;
+}
+
+/* ---------- les scènes : une fois par téléphone, quand l'histoire avance ---------- */
+const crownSceneKey = C => !C ? '' : C.cy === 1 ? 'c1g' + crownBits(C.got) : 'c' + C.cy;
+function crownSceneHTML(key) {
+  const C = me && me.crown; if (!C) return '';
+  const goal = txt => `<div class="item crowngoalbox"><b class="row">${djIco('star')}Objectif</b><p>${esc(txt)}</p></div>`;
+  const btns = `<div class="row sceneact"><button class="btn grow" data-act="closeModal">Plus tard</button><button class="btn primary grow" data-act="crownGo">${djIco('sword')}Voir le menu Donjon</button></div>`;
+  const chest = C.lc ? `<div class="item"><div class="row split"><b>Le coffre de la couronne</b><span class="chips2"><span class="chip plus">${ico('or')}+${fmtN(C.lc.g)}</span>${orbChip(C.lc.o)}</span></div>
+    <p class="note">Et un objet ${C.lc.r % 3 === 0 ? 'légendaire' : 'épique'} dans le sac de chaque héros actif. La couronne au rang ${C.lc.r} : +${Math.min(10, C.lc.r)} de moral pour toujours.</p></div>` : '';
+  if (key === 'c1g0') return `<p class="eyebrow">${esc(CHAPTER_OF(0))}</p><h2>Une lettre cachetée de noir</h2>${crownLetterHTML(CROWN_FIRST)}${sukBubble(SUK_CROWN.start)}${goal(cap1(crownGoalTxt(1, 0)) + '.')}${btns}`;
+  if (key === 'c1g1' || key === 'c1g2' || key === 'c1g3') {
+    const k = +key.slice(3), titles = ['Le bandeau de la couronne', 'Le père du Roi Déchu', 'L’arche de l’abîme'];
+    return `<p class="eyebrow">${esc(CHAPTER_OF(k))}</p><h2>${titles[k - 1]}</h2>${crownPips(C)}${sukBubble(SUK_CROWN.p[k - 1])}${goal(cap1(crownGoalTxt(1, k)) + '.')}
+      ${k === 2 ? '<p class="why">Dès maintenant, la moitié des gobelins des raids vise la chambre de Lilou : palissades, pièges ou poste de garde autour d’elle.</p>' : ''}${btns}`;
+  }
+  const n = +key.slice(1); if (!(n >= 2)) return '';
+  if (n === 2) return `<p class="eyebrow">La Couronne de la Montagne</p><h2>Les Rois de la Montagne</h2>${sukBubble(SUK_CROWN.crowned)}${chest}${crownLetterHTML(CROWN_CURSES[0])}${sukBubble(SUK_CROWN.curse)}${goal('Cycle 2 : rallumer les quatre joyaux, dans l’ordre que tu veux (' + crownCycleTxt(2) + ').')}${btns}`;
+  return `<p class="eyebrow">La Couronne de la Montagne · rang ${C.rank}</p><h2>La couronne brille plus fort</h2>${sukBubble(SUK_CROWN.ranks[(n - 3) % SUK_CROWN.ranks.length])}${chest}
+    ${crownLetterHTML(CROWN_CURSES[(n - 2) % CROWN_CURSES.length])}${goal('Cycle ' + n + ' : ' + crownCycleTxt(n) + '.')}${btns}`;
+}
+/* Appelé par la boucle de l'interface : une nouvelle scène à montrer ? (rien en donjon, dans un menu ou une fenêtre) */
+function crownSceneCheck() {
+  if (!me || !me.crown || mode !== 'home' || modal || sheet || dj || rp || place) return;
+  const key = crownSceneKey(me.crown), lk = 'mk2.crown.' + vid;
+  if (!key || LS.get(lk) === key) return;
+  LS.set(lk, key);
+  modal = { kind: 'crown', key }; SND.sfx(key === 'c1g0' ? 'alarm' : 'star'); renderAll();
+}
+
+/* ---------- la chronique du village ---------- */
+const CHRON_ICO = { found: ['house', 'c-tro'], join: ['link', 'c-tro'], hero: ['crown', 'c-tro'], lilou: ['heart', 'c-heart'], crown: ['crown', 'c-gold'], roi: ['scroll', 'c-gold'], hall: ['hammer', 'c-tro'], raid: ['star', 'c-tro'], win: ['s3', 'c-tro'], leg: ['star', 'c-gold'], deep: ['star', 'c-tro'] };
+function sheetChron() {
+  const v = me, list = v.chron || [];
+  if (!list.length) return '<p class="note">La chronique est encore vierge.</p>';
+  let h = `<p class="note">Les grands moments de ${esc(v.name)}, écrits au fil des jours${v.crown && v.crown.rank ? ' par ses Rois de la Montagne' : ''}.</p><div class="chron">`, day = -1;
+  for (const [t, k, m] of list) {
+    const d = Math.floor((t - v.born) / DAY) + 1;
+    if (d !== day) { day = d; h += `<h5>Jour ${d} · ${SEASONS[seasonIdx(v, t)].name.toLowerCase()}</h5>`; }
+    const I = CHRON_ICO[k] || ['star', 'c-tro'];
+    h += `<p class="ce ck-${esc(k)}">${ico(I[0], I[1])}<span>${esc(m)}</span></p>`;
+  }
+  return h + '</div>';
+}
+
 const ACT_STORY = {
   lilouCap: b => {
     const big = b.dataset.w === '1', r = act({ type: 'lilouCap', w: big ? 1 : 0 });   // en cas de refus, act dit pourquoi (ressources, taverne…)
@@ -133,4 +252,5 @@ const ACT_STORY = {
   lilouSee: () => { modal = null; openSheet('lilou'); },
   lilouMove: b => { closeSheet(true); startMove(+b.dataset.id); },
   sukGo: () => { modal = null; renderAll(); djBegin(1, 'source', 0); },
+  crownGo: () => { modal = null; openSheet('donjon'); },
 };

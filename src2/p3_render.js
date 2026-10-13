@@ -875,7 +875,7 @@ const V3 = (() => {
     o.scale.setScalar(k); o.rotation.y = ry || 0; o.userData.h = sz.y * k;
     return o;
   }
-  function sigOf(it) { return [it.type, it.lvl, it.gx, it.gz, it.up ? 1 : 0, it.dead ? 1 : 0, it.col, it.orc ? 1 : 0, it.id || 0, LIB.ver, it.ban == null ? '' : it.ban].join('|'); }
+  function sigOf(it) { return [it.type, it.lvl, it.gx, it.gz, it.up ? 1 : 0, it.dead ? 1 : 0, it.col, it.orc ? 1 : 0, it.id || 0, LIB.ver, it.ban == null ? '' : it.ban, it.crown || ''].join('|'); }
   function placeGroup(g, it) { const s = BLD[it.type].size; g.position.set(it.gx + s / 2 - half, 0, it.gz + s / 2 - half); }
   function makeGlow(color, size, y) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, opacity: 0.5 }));
@@ -1122,6 +1122,19 @@ const V3 = (() => {
     g.add(flag(0.72, y0, -0.7, col, 1.0));
     return { g, info: { top: y0 + 1.35, muzzle: 1, emit: [[-0.4, y0 + 1.2, -0.5]] } };
   }
+  /* La Couronne de la Montagne (lot B) : au 1er cycle, elle se reconstitue morceau par morceau (bandeau, fleurons, arches) ;
+     ensuite, entière, avec ses quatre joyaux allumés ou éteints (code « r<rang>g<trouvés> »). */
+  function crownG(code) {
+    const m = /r(\d+)g(\d+)/.exec(code) || [0, '0', '0'], rank = +m[1], got = +m[2], n = rank ? 4 : crownBits(got);
+    const g = new THREE.Group(), gold = 0xf2c14e, k = 1.25;
+    const add = o => { o.scale.multiplyScalar(k); o.position.multiplyScalar(k); g.add(o); return o; };
+    if (n >= 1) { add(P('cyl12', gold, 0.62, 0.16, 0.62, 0, 0, 0, 0, true)); add(P('cyl12', 0x8e2a3e, 0.52, 0.18, 0.52, 0, 0.005, 0, 0, true)); }
+    if (n >= 2) for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + Math.PI / 4; add(P('cone6', gold, 0.12, 0.2, 0.12, 0.27 * Math.cos(a), 0.16, 0.27 * Math.sin(a), 0, true)); add(P('sph', 0xfff0c0, 0.05, 0.05, 0.05, 0.27 * Math.cos(a), 0.36, 0.27 * Math.sin(a), 0, true)); }
+    if (n >= 3) for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; const p0 = piv(0.27 * Math.cos(a), 0.16, 0.27 * Math.sin(a), [P('box', gold, 0.035, 0.3, 0.035, 0, 0, 0, 0, true)], 0, -a, 0.95); add(p0); }
+    if (n >= 4) { add(P('dode', basic(0xff4a6a), 0.1, 0.1, 0.1, 0, 0.33, 0, 0, true)); const gl = makeGlow(0xffd27a, 1.4, 0.36 * k); g.add(gl); }
+    if (rank) { const JC = [0x6ad0ff, 0x7dffb0, 0xff5a4a, 0xffd04a]; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2, on = !!(got & (1 << i)); add(P('sph', on ? basic(JC[i]) : 0x3a3844, 0.075, 0.075, 0.075, 0.315 * Math.cos(a), 0.05, 0.315 * Math.sin(a), 0, true)); } }
+    return g;
+  }
   const PROC2 = { maison: houseG, chasse: lodgeG, champ: fieldG, banc: benchG, fleurs: flowersG, fontaine: fountainG, statue: statueG, brasserie: brasserieG, forge: forgeG, mine: mineG, marchand: cartG, piege: piegeG, filet: filetG, caserne: caserneG, poste: posteG, chambre: chambreG };
   function build(it) {
     const s = BLD[it.type].size, g = new THREE.Group();
@@ -1146,6 +1159,8 @@ const V3 = (() => {
       if (it.up) g.add(makeScaffold(s, Math.min(2.4, info.top * 0.7)));
     }
     if (!it.dead && it.lvl > 0 && !small) { glow = makeGlow(0xffc070, s * 1.6, Math.min(1.4, info.top * 0.45)); g.add(glow); }
+    /* la Couronne de la Montagne, au-dessus de la halle : elle tourne doucement */
+    if (it.crown && !it.dead && it.lvl > 0) { const c = crownG(it.crown); c.position.y = info.top * 0.78 + 0.1; g.add(c); anims.push({ k: 'spin', o: c, s: 0.55 }); }   // posée juste au-dessus du toit
     g.userData.key = it.key;
     placeGroup(g, it);
     const rec = { g, sig: sigOf(it), item: it, info, bar: null, hp: null, glow, ph: Math.random() * 6, burnT: 0 };
@@ -2044,8 +2059,12 @@ const V3 = (() => {
     if (e.remote) { const k = Math.min(1, (DJ.dt || 0.016) * 12); r.sx = r.sx == null ? e.x : r.sx + (e.x - r.sx) * k; r.sy = r.sy == null ? e.y : r.sy + (e.y - r.sy) * k; x = r.sx; y = r.sy; }
     const dx = x - r.lx, dy = y - r.ly;
     r.g.position.set(x - half, 0, y - half);
-    if (dx * dx + dy * dy > 1e-6 && e.mv) r.g.rotation.y = Math.atan2(dx, dy);
-    else if (e.fx || e.fy) { const want = Math.atan2(e.fx, e.fy); let d = want - r.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); r.g.rotation.y += d * 0.35; }
+    /* en attaquant (même en marchant), il se tourne vers sa cible le temps du coup */
+    const aim = r.aim != null && tNow - r.aimT < 0.6 && DJ && DJ.st ? djEntPos(DJ.st, r.aim) : null;
+    const turn = want => { let d = want - r.g.rotation.y; d = Math.atan2(Math.sin(d), Math.cos(d)); r.g.rotation.y += d * 0.45; };
+    if (aim && (aim[0] - x) * (aim[0] - x) + (aim[1] - y) * (aim[1] - y) > 1e-4) turn(Math.atan2(aim[0] - x, aim[1] - y));
+    else if (dx * dx + dy * dy > 1e-6 && e.mv) r.g.rotation.y = Math.atan2(dx, dy);
+    else if (e.fx || e.fy) turn(Math.atan2(e.fx, e.fy));
     r.lx = x; r.ly = y;
     if (e.atkN !== r.atkN) { r.atkN = e.atkN; r.atkT = tNow; if (r.g.userData.A && r.g.userData.A.atk) djPlay(r, 'atk', (r.g.userData.A.atk.getClip().duration / 0.55), true); }
     if (e.dead) { if (!r.down) { r.down = true; djPlay(r, 'death', 1.2, true); } return; }
@@ -2192,6 +2211,7 @@ const V3 = (() => {
     if (!DJ) return;
     const P2 = id => djEntPos(st, id);
     switch (e.k) {
+      case 'atk': { const r = DJ.ents.get(e.id); if (r && e.tgt != null) { r.aim = e.tgt; r.aimT = performance.now() / 1000; } break; }     // il regarde sa cible pendant le coup
       case 'hit': { const p = P2(e.id); if (p) { spark(p[0], 0.8, p[1], e.crit ? 0xffd27a : 0xfff0d0); djNum(p[0], p[1], String(e.v), e.ally ? '#c9b3ff' : e.crit ? '#ffd23f' : '#ffffff', e.crit); } break; }
       case 'hurt': { const p = P2(e.id); if (p) djNum(p[0], p[1], String(e.v), '#ff6b5b', false); if (e.id === DJ.me && e.v > 25) shake(0.15); break; }
       case 'heal': { const p = P2(e.id); if (p && e.v >= 2) djNum(p[0], p[1], '+' + e.v, '#7dff8a', false); break; }
@@ -2560,6 +2580,7 @@ const V3 = (() => {
         break;
       case 'ko': wave(e.x, e.y, 0xffe08a, 1.2, 0.6); rdNum(e.x, e.y, 'à terre', '#ffd27a', true); break;
       case 'heart': { const H = st.S[st.hall]; wave(H.x, H.y, 0xff3a2a, 3.5, 0.9); shake(0.3); rdNum(H.x, H.y, 'La halle est pillée !', '#ff6b5b', true); break; }
+      case 'lilou': { const C = st.S[st.ch]; if (C) { wave(C.x, C.y, 0xff7ab8, 2.5, 0.9); rdNum(C.x, C.y, 'Lilou a peur !', '#ff9ad0', true); } break; }
       case 'spawn': smokeAt(e.x - half, 0.3, e.y - half, true); dustRing(e.x, e.y, 0.3); break;
     }
   }

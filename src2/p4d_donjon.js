@@ -39,7 +39,7 @@ function sheetDonjon() {
   let h = `<div class="item feature"><div class="head"><b class="row">${ico('crown', 'c-tro')}${esc(hh.name)}</b><small>${esc(heroLine(hh))}</small></div>
     <p>${heroesOf(v, uid).length > 1 ? 'C’est ton héros actif. Pour en envoyer un autre, choisis-le dans le menu Héros.' : 'C’est lui qui part à l’aventure.'}${hh.sp ? ` <b>${hh.sp} point${hh.sp > 1 ? 's' : ''} de compétence à dépenser</b> (menu Héros).` : ''}</p>
     ${pk && ph ? `<p class="note">${on ? 'À deux avec ' + esc(pname) + ' (' + esc(ph.name) + ') : les monstres sont plus solides, chacun gagne toute l’expérience, et vos combos font mal.' : 'Pour partir à deux, ' + esc(pname) + ' doit avoir le jeu ouvert en même temps que toi.'}</p>` : ''}</div>`;
-  h += sourceEntryHTML();
+  h += sourceEntryHTML() + crownEntryHTML(hh);
   h += `<div class="sec"><h4>Niveau des donjons</h4><div class="row djlv">${lvls.map(l => `<button class="btn small${l === pick ? ' primary' : ''}" data-act="sheet" data-s="donjon" data-k="${l}" aria-pressed="${l === pick}">Niveau ${l}</button>`).join('')}</div>
     <p class="note">Niveau ${pick} : conseillé pour un héros de niveau ${pick}${hh.lvl < pick ? ' (le tien est plus faible : prudence)' : ''}. Chaque victoire ouvre le niveau suivant.</p></div>`;
   h += `<div class="sec"><h4>La mine des gobelins</h4><div class="item"><p>Gobelins, archers, chamans qui soignent et trolls, avec le chef troll au fond. Récompenses : expérience, or, pierre, bois et objets (le chef troll laisse parfois une pièce de sa tenue).</p>${btns('mine', pick, ' (niveau ' + pick + ')')}</div></div>`;
@@ -86,7 +86,7 @@ const djTheme = th => th === 'crypte' || th === 'prof' || th === 'portail' || th
 async function djInvite(lvl, th, pi) {
   if (!me || dj || djLobby) return;
   th = djTheme(th); pi = pi | 0;
-  if (th === 'portail' && !djPortalOpen(pi)) { toast('Ce portail est déjà refermé.'); return; }
+  if (th === 'portail' && !djPortalOk(pi)) { toast(pi < 0 ? 'La faille vers l’abîme s’est refermée.' : 'Ce portail est déjà refermé.'); return; }
   const hh = activeHero(me, uid), pk = partnerId(me); if (!hh || !pk) return;
   if (!isOnline(pk)) { toast(me.members[pk].name + ' n’est pas connecté·e en ce moment.'); return; }
   if (!activeHero(me, pk)) { toast(me.members[pk].name + ' n’a pas encore de héros.'); return; }
@@ -138,6 +138,8 @@ function djWaitHTML() {
 /* ---------- entrée et sortie ---------- */
 /* Un portail démoniaque encore ouvert ? (on ne referme pas deux fois le même) */
 const djPortalOpen = pi => { const R = me && me.raid; return !!(R && R.p && R.p[pi] && R.cl && !R.cl[pi]); };
+/* pi < 0 : la faille vers l'abîme (la quête de la couronne, quand le morceau du portail manque encore) */
+const djPortalOk = pi => (pi < 0 ? crownRift() : djPortalOpen(pi));
 function djBegin(lvl, th, pi) {
   if (!me || dj) return;
   const hh = activeHero(me, uid); if (!hh) { toast('Crée d’abord ton héros.'); return; }
@@ -151,11 +153,11 @@ function djBegin(lvl, th, pi) {
   }
   const dmgMul = lilouMul(me);         // l'humeur de Lilou : les monstres frappent plus ou moins fort
   if (th === 'portail') {
-    if (!djPortalOpen(pi)) { toast('Ce portail est déjà refermé.'); return; }
+    if (!djPortalOk(pi)) { toast(pi < 0 ? 'La faille vers l’abîme s’est refermée.' : 'Ce portail est déjà refermé.'); return; }
     const L = raidLevel(me), seed = hash((Math.floor(now()) ^ hashStr(hh.id + 'portail')) >>> 0) || 1, d = genDungeon(seed, L, 'portail');
     djRun(djStart(d, [hh], { seed, dmgMul }), L, seed, hh.id, null);
     dj.pi = pi;
-    toast('Le portail démoniaque, niveau ' + L + '. Au fond, son gardien : bats-le et le portail se refermera.');
+    toast(pi < 0 ? 'La faille vers l’abîme, niveau ' + L + '. Au fond, le gardien du portail et ' + crownName(me.crown.cy, 2) + '.' : 'Le portail démoniaque, niveau ' + L + '. Au fond, son gardien : bats-le et le portail se refermera.');
     return;
   }
   const seed = hash((Math.floor(now()) ^ hashStr(hh.id)) >>> 0) || 1;
@@ -226,7 +228,9 @@ function djBack() {
     or: guest ? 0 : r.gold || 0, items, gems, pi: dj.pi | 0, gar: guest ? 0 : 1 }, { quiet: true });
   djLeave();
   if (res && res.lilou) { modal = { kind: 'lilou' }; SND.sfx('giggle'); renderAll(); return; }
-  if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
+  /* un morceau de la couronne (ou un joyau) : c'est l'annonce la plus importante ; la scène suivra si un chapitre se termine */
+  if (res && res.crown) { SND.sfx('star'); toast(res.crown.done ? (res.crown.cy === 1 ? 'La Couronne de la Montagne est reconstituée !' : 'La couronne brille plus fort : rang ' + res.crown.done.rank + ' !') : cap1(res.crown.name) + (res.crown.cy === 1 ? ' de la couronne' : ' se rallume') + ' (' + res.crown.n + ' sur 4) !'); }
+  else if (res && res.up) { toast(name + ' passe au niveau ' + res.lvl + ' ! Point' + (res.up > 1 ? 's' : '') + ' de compétence à dépenser dans le menu Héros.'); SND.sfx('star'); }
   else if (res && res.closed) toast((res.closed.all ? 'Le portail est refermé : pas de raid cette fois !' : 'Le portail est refermé. Il en reste d’autres ouverts (menu Défense).') + garGainTxt(res));
   else if (res && res.pris) toast(res.pris + ' vous attend au village : touchez « Accueillir ».');
   else if (res && ((res.orbs && res.orbs.length) || res.ban)) toast(garGainTxt(res).trim());
@@ -289,7 +293,7 @@ function djResHTML() {
   const myItems = (r.items && r.items[dj.hid]) || [], myGems = (r.gems && r.gems[dj.hid]) || {};
   const where = r.prof ? 'Les Profondeurs · départ niveau ' + r.lvl : (DJ_THEMES[r.theme] || DJ_THEMES.mine).name + (r.theme === 'source' ? '' : ' · niveau ' + r.lvl);
   const story = r.theme === 'source' && r.win, word = me && me.lilou && r.theme !== 'source' ? '<p class="lilword">' + lilouFace(lilouMood(me.lilou).k) + '<span><b>Lilou</b> ' + esc(LILOU_WORDS[lilouMood(me.lilou).k]) + '</span></p>' : '';
-  return `<p class="eyebrow">${where}${duo ? ' · à deux' : ''}</p><h2>${story ? 'La Source du Mal… ?!' : title}</h2>${story ? sukBubble(SUK.found) : '<p>' + esc(lead) + '</p>'}${word}
+  return `<p class="eyebrow">${where}${duo ? ' · à deux' : ''}</p><h2>${story ? 'La Source du Mal… ?!' : title}</h2>${story ? sukBubble(SUK.found) : '<p>' + esc(lead) + '</p>'}${word}${crownWinHTML(r)}
     <div class="item"><div class="row split"><b>Expérience</b><span class="chip plus">+${fmtN(xpH)}</span></div>
       ${up ? `<p><b>${esc(hh.name)} passe au niveau ${lv} !</b> ${up > 1 ? up + ' niveaux d’un coup.' : ''} De nouveaux points de compétence l’attendent.</p>` : hh ? `<div class="bar"><i style="width:${Math.min(100, xp / heroXpNeed(lv) * 100).toFixed(0)}%"></i></div>` : ''}
       ${r.own ? '<p class="note">Le butin reste avec ' + esc(mate) + ', qui le rapportera au village.</p>' : `<div class="row split"><b>Butin pour le village</b><span class="chips2">${Object.keys(lootAll).length ? rewChips(lootAll) : '<span class="note">rien</span>'}</span></div>
@@ -325,6 +329,7 @@ function djFloorHTML() {
     <div class="item"><div class="row split"><b>Gagné jusqu’ici</b><span class="chip plus">+${fmtN(run.xp)} d’expérience</span></div>
       <div class="row split"><b>Butin</b><span class="chips2">${Object.keys(run.loot).length || run.gold ? rewChips(Object.assign({}, run.loot, run.gold ? { or: run.gold } : {})) : '<span class="note">rien encore</span>'}</span></div>
       ${(run.items && run.items[dj.hid] || []).length ? `<div class="row split"><b>Objets trouvés</b><span class="chip">${run.items[dj.hid].length}</span></div>` : ''}
+      ${me && crownCan(me, 'prof', run.start, st.d.floor, true) >= 0 ? `<p class="crownnote">${ico('crown', 'c-gold')} ${esc(cap1(crownName(me.crown.cy, 3)))} est à toi : elle rentrera au village, même si tu tombes plus bas.</p>` : ''}
       <p class="note">${djNextLine()} ${dj.duo && !dj.duo.gone ? 'Si vous tombez tous les deux' : 'Si tu tombes'}, ${dj.duo && !dj.duo.gone ? 'vous ne gardez' : 'tu ne gardes'} que la moitié de tout.</p></div>
     <div class="row"><button class="btn grow" data-act="djUp">Remonter (tout garder)</button><button class="btn primary grow" data-act="djDown">${djIco('sword')}Descendre</button></div>`;
 }

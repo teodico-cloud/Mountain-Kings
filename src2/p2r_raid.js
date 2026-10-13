@@ -127,8 +127,9 @@ function raidInput(v, t) {
   const stock = {}; for (const k of RAID_LOOT.concat(['or'])) stock[k] = Math.floor(v.r[k] || 0);
   const inp = { t, n: R.n | 0, sd: R.sd, L: raidLevel(v), P: R.p.map((p, i) => [p[0], p[1], p[2], R.cl[i] ? 1 : 0]), B, H, F: raidForce(v, R, open), R: stock };
   const G = raidGuards(v, t); if (G.length) inp.G = G;
-  /* L'humeur de Lilou (l'histoire) : les gobelins frappent plus ou moins fort */
+  /* L'humeur de Lilou (l'histoire) : les gobelins frappent plus ou moins fort ; dès le chapitre 3, la moitié d'entre eux vise sa chambre */
   const M = lilouMul(v); if (M !== 1) inp.M = M;
+  if (crownRaidOn(v)) inp.C = 1;
   return inp;
 }
 
@@ -139,7 +140,7 @@ function raidStart(inp) {
   const st = {
     inp, t: 0, n: 0, rs: (inp.sd ^ 0x2545f491) >>> 0, over: false, ev: [], mood: +inp.M || 1,
     S: [], occ: new Int16Array(N), trapAt: new Int16Array(N), traps: [], towers: [], foes: [], heroes: [], posts: [], guards: [],
-    ff: {}, hf: new Map(), gen: 0, hall: -1, stores: [],
+    ff: {}, hf: new Map(), gen: 0, hall: -1, stores: [], ch: -1, lil: 0,
     stock: Object.assign({}, inp.R), taken: {}, lost: {}, back: {}, kills: 0, esc: 0, gold: 0, xp: 0, heart: 0, broke: 0,
     L, mul: raidPow(1.12, L - 1), lootMul: 1 + 0.15 * (L - 1),
     defMul: raidPow(1.08, L - 1),        // tours et pièges suivent un peu le niveau des ennemis (moins vite : il faut les améliorer)
@@ -155,13 +156,15 @@ function raidStart(inp) {
       st.trapAt[gz * GRID + gx] = st.traps.length;
       continue;
     }
-    const s = d.size, kind = type === 'halle' ? 'halle' : type === 'rempart' ? 'wall' : type === 'porte' ? 'gate' : type === 'tour' && lvl > 0 ? 'tower' : type === 'entrepot' && lvl > 0 ? 'store' : 'bld';
+    const s = d.size, kind = type === 'halle' ? 'halle' : type === 'rempart' ? 'wall' : type === 'porte' ? 'gate' : type === 'tour' && lvl > 0 ? 'tower' : type === 'entrepot' && lvl > 0 ? 'store'
+      : type === 'chambre' && inp.C ? 'chambre' : 'bld';
     const def = kind === 'wall' || kind === 'gate' || kind === 'tower', max = def ? hpMaxOf({ type, lvl }) : RAID_BLD_HP * s, hp = def ? Math.max(0, Math.min(max, e[5])) : max;
     const S = { id, type, kind, lvl, x0: gx, y0: gz, s, x: gx + s / 2, y: gz + s / 2, hp, max, hp0: hp, dead: hp <= 0 };
     st.S.push(S);
     const si = st.S.length - 1;
     if (!S.dead) raidMark(st, S, si + 1);
     if (kind === 'halle' && st.hall < 0) st.hall = si;
+    if (kind === 'chambre' && st.ch < 0) st.ch = si;
     if (kind === 'store') st.stores.push(si);
     if (kind === 'tower') { const T = d.tw, k = Math.min(lvl, d.max) - 1; st.towers.push({ si, cd: 0.6, range: T.range[k], dmg: T.dmg[k], rate: T.rate, n: 0 }); }
   }
@@ -191,7 +194,8 @@ function raidStart(inp) {
     const type = RAID_FOES[f[0]] ? f[0] : 'gobelin', D = RAID_FOES[type], k = st.mul;
     st.foes.push({ id: 100 + i, type, kind: 'mob', pi: Math.max(0, Math.min(inp.P.length - 1, f[1] | 0)), delay: +f[2] || 0, on: false, dead: false, out: false,
       r: D.r, big: type === 'troll', hp: r1(D.hp * k), hpMax: r1(D.hp * k), dmg: r1(D.dmg * k * st.mood), sdmg: r1(D.sdmg * k * st.mood), rate: D.rate, reach: D.reach, speed: D.speed,
-      carry: D.carry, wall: D.wall, fight: !!D.fight, thief: !!D.thief, x: 0, y: 0, px: 0, py: 0, fx: 0, fy: 1, mv: false, atkT: 0.5, atkN: 0, goal: 't', tk: 'h', pl: 0, loot: null, root: 0 });
+      carry: D.carry, wall: D.wall, fight: !!D.fight, thief: !!D.thief, x: 0, y: 0, px: 0, py: 0, fx: 0, fy: 1, mv: false, atkT: 0.5, atkN: 0, goal: 't',
+      tk: st.ch >= 0 && type === 'gobelin' && i % 2 === 0 ? 'c' : 'h', pl: 0, loot: null, root: 0 });     // un gobelin sur deux vise la chambre de Lilou (inp.C)
   });
   return st;
 }
@@ -257,7 +261,7 @@ function raidGoals(st, key) {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = P[0] + dx, y = P[1] + dy; if (x >= 0 && y >= 0 && x < GRID && y < GRID) out.push(y * GRID + x); }
     return out;
   }
-  const S = st.S[key === 'h' ? st.hall : st.stores[+key.slice(1)]];
+  const S = st.S[key === 'h' ? st.hall : key === 'c' ? st.ch : st.stores[+key.slice(1)]];
   for (let y = S.y0 - 1; y <= S.y0 + S.s; y++) for (let x = S.x0 - 1; x <= S.x0 + S.s; x++) {
     if (x < 0 || y < 0 || x >= GRID || y >= GRID) continue;
     if (x >= S.x0 && x < S.x0 + S.s && y >= S.y0 && y < S.y0 + S.s) continue;
@@ -267,7 +271,7 @@ function raidGoals(st, key) {
 }
 function raidField(st, key) {
   const f0 = st.ff[key]; if (f0 && f0.g === st.gen) return f0;
-  const N = GRID * GRID, d = new Float64Array(N).fill(1e9), ti = key === 'h' ? st.hall : key[0] === 's' ? st.stores[+key.slice(1)] : -1;
+  const N = GRID * GRID, d = new Float64Array(N).fill(1e9), ti = key === 'h' ? st.hall : key === 'c' ? st.ch : key[0] === 's' ? st.stores[+key.slice(1)] : -1;
   /* tas binaire ; à égalité, la plus petite case d'abord (même ordre partout) */
   const hd = [], hi = [];
   const less = (da, ia, db, ib) => da < db || (da === db && ia < ib);
@@ -342,7 +346,7 @@ function raidHurtStruct(st, si, v) {
   S.hp -= v; S.hitT = st.t;
   if (S.hp <= 0) {
     S.hp = 0; S.dead = true; raidMark(st, S, 0); st.gen++;
-    if (S.kind !== 'bld' && S.kind !== 'store') st.broke++;
+    if (S.kind !== 'bld' && S.kind !== 'store' && S.kind !== 'chambre') st.broke++;
     st.ev.push({ k: 'break', si, x: S.x, y: S.y, kind: S.kind });
   }
 }
@@ -364,9 +368,10 @@ function raidMoveTo(u, tx, ty, sp) {
 /* Pillage : chacun emporte sa part (le voleur prend de l'or s'il y en a) ; à la halle, le cœur du village, la part est plus grosse.
    Jamais plus de 30 % d'une ressource par raid. */
 function raidTake(st, u) {
-  const T = st.S[raidField(st, u.tk).ti], heart = !!T && T.kind === 'halle';
+  const T = st.S[raidField(st, u.tk).ti], heart = !!T && T.kind === 'halle', lil = !!T && T.kind === 'chambre';
   if (heart && !st.heart) { st.heart = 1; st.ev.push({ k: 'heart', id: u.id }); }
-  const want = Math.round(u.carry * st.lootMul * (heart ? 1.5 : 1));
+  if (lil && !st.lil) { st.lil = 1; st.ev.push({ k: 'lilou', id: u.id }); }        // la chambre de Lilou fouillée : elle a très peur
+  const want = Math.round(u.carry * st.lootMul * (heart || lil ? 1.5 : 1));
   const avail = k => Math.max(0, Math.min(st.stock[k] || 0, Math.floor((st.inp.R[k] || 0) * 0.3) - (st.taken[k] || 0)));
   let res = null;
   if (u.thief && avail('or') >= 5) res = 'or';
@@ -583,6 +588,7 @@ function raidResult(st) {
     ko: st.heroes.filter(h => h.ko).map(h => h.id), dmg, s: Math.round(st.t) };
   /* la garnison : ennemis abattus par chaque garde, et ceux qui sont tombés */
   if (st.guards.length) { res.gd = st.guards.map(g => [g.id, g.kills, g.ko ? 1 : 0]); res.gk = st.guards.reduce((a, g) => a + g.kills, 0); }
+  if (st.inp.C) res.c = st.lil | 0;                    // la chambre de Lilou a-t-elle été fouillée ?
   return res;
 }
 /* Tout le raid d'un coup, à la minute où il part ; le village garde de quoi le rediffuser. */
@@ -596,8 +602,10 @@ function raidApply(v, t, inp, res) {
   for (const k in res.lost) v.r[k] = Math.max(0, (v.r[k] || 0) - res.lost[k]);
   if (res.g) v.r.or = (v.r.or || 0) + res.g;
   const ups = [];
-  if (res.xp) for (const h of Object.values(v.heroes || {}).filter(Boolean).sort((a, b) => (a.n || 0) - (b.n || 0))) if (heroAddXp(h, h.race === 'humain' ? res.xp * 1.1 : res.xp)) ups.push(h.name + ' (niveau ' + h.lvl + ')');
+  if (res.xp) for (const h of Object.values(v.heroes || {}).filter(Boolean).sort((a, b) => (a.n || 0) - (b.n || 0))) { const lv0 = h.lvl; if (heroAddXp(h, h.race === 'humain' ? res.xp * 1.1 : res.xp)) { ups.push(h.name + ' (niveau ' + h.lvl + ')'); chronLvl(v, t, h, lv0); } }
   if (res.h) v.raidMor = t + DAY;
+  /* la chambre de Lilou fouillée (dès le chapitre 3 de la couronne) : elle a très peur */
+  if (res.c && v.lilou) { lilouAdd(v.lilou, -CROWN_FEAR); }
   /* la garnison : de l'expérience pour ceux qui ont tenu (et un raid de plus dans leur série), 8 heures de repos pour ceux qui sont tombés (série perdue) */
   const gm = 1 + 0.2 * ((inp.L | 0) - 1), hurt = [], titles = [];
   for (const [id, kills, ko] of res.gd || []) {
@@ -616,15 +624,22 @@ function raidApply(v, t, inp, res) {
   m += '.' + (res.g ? ' +' + res.g + ' or.' : '') + (res.br ? ' ' + res.br + ' défense' + (res.br > 1 ? 's détruites' : ' détruite') + ' : à réparer (menu Défense).' : '');
   addLog(v, t, m, 'raid');
   if (res.h) addLog(v, t, 'Les gobelins ont pillé la halle, le cœur du village : le moral baisse pour un jour.', 'raid');
+  if (res.c && v.lilou) addLog(v, t, 'Les gobelins ont fouillé la chambre de Lilou : elle a eu très peur. Elle est maintenant ' + lilouMood(v.lilou).name + '.', 'lilou');
+  /* la chronique : le tout premier raid, le premier repoussé */
+  const lostAny = Object.keys(res.lost).length > 0;
+  if (!(inp.n | 0)) chron(v, t, 'raid', lostAny ? 'Premier raid des gobelins : ils repartent avec une partie des réserves.' : 'Premier raid des gobelins, repoussé !');
+  else if (!lostAny && !cntOf(v, 'rr')) chron(v, t, 'raid', 'Premier raid repoussé sans rien perdre !');
+  if (!lostAny) { if (!v.cnt) v.cnt = { acc: 0, fete: 0, win: 0 }; v.cnt.rr = (v.cnt.rr | 0) + 1; }
   if (ups.length) addLog(v, t, 'En défendant le village : ' + ups.join(', ') + ' !', 'hero');
   if (res.gd) addLog(v, t, 'La garnison abat ' + res.gk + ' ennemi' + (res.gk > 1 ? 's' : '') + '.' + (hurt.length ? ' Blessé' + (hurt.length > 1 ? 's' : '') + ' (8 h de repos à la caserne) : ' + hurt.join(', ') + '.' : '') + (titles.length ? ' ' + titles.join(', ') + ' !' : ''), 'sol');
   if (orbs.length) addLog(v, t, 'Défense réussie : ' + orbs.map(orbLabel).join(', ') + ' pour la garnison.', 'sol');
   v.lastRaid = { t, n: inp.n, sd: inp.sd, L: inp.L, P: inp.P, B: inp.B, H: inp.H, F: inp.F, R: inp.R, res };
   if (inp.G) v.lastRaid.G = inp.G;
   if (inp.M) v.lastRaid.M = inp.M;
+  if (inp.C) v.lastRaid.C = inp.C;
   if (orbs.length) v.lastRaid.orbs = orbs;
   const rnd = mulberry32((inp.sd ^ 0x63d83595) >>> 0);
   v.raid = { n: (inp.n | 0) + 1, next: t + RAID_GAP + Math.floor(rnd() * (RAID_GAP_RND / MIN)) * MIN, closed: (v.raid && v.raid.closed) | 0 };
 }
 /* Rediffusion : le même combat, rejoué à partir de ce que le village a gardé. */
-const raidReplay = lr => raidStart({ t: lr.t, n: lr.n, sd: lr.sd, L: lr.L, P: lr.P, B: lr.B, H: lr.H, F: lr.F, R: lr.R, G: lr.G, M: lr.M });
+const raidReplay = lr => raidStart({ t: lr.t, n: lr.n, sd: lr.sd, L: lr.L, P: lr.P, B: lr.B, H: lr.H, F: lr.F, R: lr.R, G: lr.G, M: lr.M, C: lr.C });

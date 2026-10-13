@@ -250,6 +250,7 @@ function moraleParts(v, t) {
   if (v.feast > t) out.push(['Fête à la taverne', FEAST.mor]);
   if (v.raidMor > t) out.push(['Halle pillée par les gobelins', -10]);
   if (v.lilou && v.lilou.party > t) out.push(['Fête pour Lilou', LILOU.party]);
+  if (v.crown && v.crown.rank) out.push(['Couronne de la Montagne', Math.min(10, v.crown.rank)]);
   return out;
 }
 const moraleOf = (v, t) => Math.max(0, Math.min(100, 50 + moraleParts(v, t).reduce((a, p) => a + p[1], 0)));
@@ -379,6 +380,7 @@ function newVillage(vid, name, col, t, uid, pname) {
   const free = v.vil.slice();
   for (const [job, s] of slots) { free.sort((a, b) => b.st[s] - a.st[s]); const p = free.shift(); if (p) p.job = job; }
   addLog(v, t, pname + ' fonde le village de ' + name + '.', 'found');
+  v.chron = [[t, 'found', pname + ' fonde le village de ' + name + '.']];
   return v;
 }
 
@@ -389,8 +391,9 @@ function stepVillage(v) {
   const add = (k, n) => { v.r[k] = NO_CAP.has(k) ? (v.r[k] || 0) + n : Math.min(Math.max(cap, v.r[k] || 0), (v.r[k] || 0) + n); };
   /* Portails démoniaques et raids (p2r_raid.js) : le portail s'ouvre, se charge, puis le raid vient quand les deux joueurs sont absents. */
   raidTick(v);
-  /* Lilou (l'histoire, p2s_histoire.js) : un caprice par jour, un gros par semaine */
+  /* Lilou (l'histoire, p2s_histoire.js) : un caprice par jour, un gros par semaine ; puis la quête de la couronne et les lettres du Roi Déchu */
   lilouTick(v);
+  crownTick(v);
   /* Le marchand ambulant : un jour sur deux, il s'installe sur la place avec quelques objets */
   const md = merchDay(v, t);
   if (md % 2 === 1 && (!v.merch || v.merch.d !== md)) { v.merch = genMerch(v, md); addLog(v, t, 'Un marchand ambulant s’installe sur la place du village, jusqu’à demain.', 'merch'); }
@@ -399,7 +402,7 @@ function stepVillage(v) {
     const prev = v.ws, warm = prev === 3 && si === 0 && v.wok;
     v.ws = si;
     if (!v.cnt) v.cnt = { acc: 0, fete: 0, win: 0 };
-    if (warm) v.cnt.win = (v.cnt.win || 0) + 1;
+    if (warm) { v.cnt.win = (v.cnt.win || 0) + 1; chron(v, t, 'win', v.cnt.win > 1 ? v.cnt.win + 'e hiver passé sans famine.' : 'Premier hiver passé sans famine.'); }
     v.wok = S.cold ? 1 : 0;                        // début de l'hiver : réussi tant que personne n'a faim
     addLog(v, t, S.name + ' arrive sur la vallée.' + (S.cold ? ' Les champs dorment : pensez aux réserves de nourriture.' : si === 0 ? ' Les champs repartent.' + (warm ? ' L’hiver s’est passé sans famine : bravo !' : '') : ''), 'season');
   }
@@ -444,6 +447,8 @@ function stepVillage(v) {
       if (b.up.done >= b.up.need) {
         b.lvl = b.up.to; b.up = null; if (BLD[b.type].hps) delete b.hp;   // une tour agrandie est aussi remise à neuf
         addLog(v, t, (b.lvl > 1 ? BLD[b.type].name + ' agrandi(e) au niveau ' + b.lvl : BLD[b.type].name + ' terminé(e)') + '.', 'built');
+        if (b.type === 'halle' && b.lvl > 1) chron(v, t, 'hall', 'La halle passe au niveau ' + b.lvl + '.');
+        else if (b.lvl === 1 && (b.type === 'taverne' || b.type === 'forge' || b.type === 'caserne')) chron(v, t, 'hall', 'Le village a sa ' + BLD[b.type].name.toLowerCase() + '.');
       }
     }
   }
@@ -541,6 +546,7 @@ function applyV(v, a, who) {
       if (m.hi) return { ok: true };
       m.hi = 1;
       addLog(v, t, m.name + ' rejoint le village.', 'join');
+      chron(v, t, 'join', m.name + ' rejoint le village.');
       return { ok: true };
     }
     case 'hero': {
@@ -554,6 +560,7 @@ function applyV(v, a, who) {
       v.heroes[id] = { id, n, own: who.uid, name, race: a.race, cls: a.cls, sex, col: COLORS.includes(a.col) ? a.col : COLORS[0], lvl: 1, xp: 0, sp: 0, sk: {}, spec: null, at: null, dj: 1 };
       if (!activeHero(v, who.uid) || !v.members[who.uid].hero) v.members[who.uid].hero = id;
       addLog(v, t, name + ', ' + raceName(a.race, sex).toLowerCase() + ' ' + className(a.cls, sex).toLowerCase() + ', ' + (mine.length ? 'rejoint la compagnie de ' + nm : 'arrive au village') + '.', 'hero');
+      if (!mine.length) chron(v, t, 'hero', name + ', ' + raceName(a.race, sex).toLowerCase() + ' ' + className(a.cls, sex).toLowerCase() + ', devient le héros de ' + nm + '.');
       return { ok: true, id };
     }
     case 'heroAct': {
@@ -724,9 +731,15 @@ function applyV(v, a, who) {
       const L = Math.max(1, Math.min(99, a.lvl | 0)), win = !!a.win, th = DJ_END_THEMES.includes(a.theme) ? a.theme : 'mine', deep = Math.max(0, Math.min(200, a.deep | 0));
       let xp = Math.max(0, Math.min(DJ_XP_CAP(L) * (th === 'prof' ? 1 + deep : 1), Math.round(+a.xp || 0)));
       if (hh.race === 'humain') xp = Math.round(xp * 1.1);                 // Apprend vite
-      const up = heroAddXp(hh, xp);
+      const lv0 = hh.lvl, up = heroAddXp(hh, xp);
+      if (up) chronLvl(v, t, hh, lv0);
       if (win && (th === 'mine' || th === 'crypte')) hh.dj = Math.max(hh.dj || 1, Math.min(99, L + 1));
-      if (th === 'prof') hh.deep = Math.max(hh.deep || 0, deep);
+      if (th === 'prof') {
+        hh.deep = Math.max(hh.deep || 0, deep);
+        const rec = cntOf(v, 'deep');                                  // record du village, pour la chronique (tous les 5 étages)
+        if (deep >= 5 && Math.floor(deep / 5) > Math.floor(rec / 5)) chron(v, t, 'deep', hh.name + ' atteint l’étage ' + deep + ' des Profondeurs.');
+        if (deep > rec) { if (!v.cnt) v.cnt = { acc: 0, fete: 0, win: 0 }; v.cnt.deep = deep; }
+      }
       hh.runs = (hh.runs || 0) + 1; if (win) hh.wins = (hh.wins || 0) + 1;
       const cap = capOf(v), got = {};
       for (const k of ['bois', 'pierre', 'viande', 'pain', 'biere']) {
@@ -744,6 +757,7 @@ function applyV(v, a, who) {
         const it = cleanItem(x, maxIl); if (!it) continue;
         if (bagCount(bag) >= bagMax(v)) { autoSold++; autoGold += itemInfo(it).sell; continue; }
         bagAdd(v, who.uid, it); nItems++;
+        if (it.r === 4) chron(v, t, 'leg', hh.name + ' trouve un objet légendaire : ' + itemInfo(it).name + '.');
       }
       for (const g in (a.gems && typeof a.gems === 'object' ? a.gems : {})) { const G = gemOf(g), n = Math.max(0, Math.min(10, a.gems[g] | 0)); if (G && n) bag.gm[G.key] = (bag.gm[G.key] || 0) + n; }
       if (gold + autoGold) v.r.or = (v.r.or || 0) + gold + autoGold;
@@ -761,7 +775,9 @@ function applyV(v, a, who) {
       /* La mission d'intro gagnée : Lilou arrive au village (une seule fois) */
       const story = th === 'source' && win ? lilouArrive(v, t, hh) : null;
       if (gar.orbs.length || gar.ban) addLog(v, t, 'Pour la garnison : ' + gar.orbs.map(orbLabel).concat(gar.ban ? [banLabel(gar.ban) + (gar.ban.sold ? ' (réserve pleine : vendue)' : '')] : []).join(', ') + '.', 'sol');
-      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed, orbs: gar.orbs, ban: gar.ban, lilou: story };
+      /* La Couronne de la Montagne (l'histoire, lot B) : un morceau ou un joyau rapporté ? */
+      const crown = th !== 'source' ? crownFound(v, t, th, L, deep, win, hh, who.uid) : null;
+      return { ok: true, xp, up, lvl: hh.lvl, got, pris: pris ? pris.name : null, dj: hh.dj, deep: hh.deep || 0, items: nItems, autoSold, autoGold, closed, orbs: gar.orbs, ban: gar.ban, lilou: story, crown };
     }
     /* ---------- équipement (étape 3) ---------- */
     case 'equip': {
@@ -806,6 +822,7 @@ function applyV(v, a, who) {
       const it = genItem(R, { il: hh.lvl, src: 'forge' + Math.min(3, f), cls: hh.cls, sl: a.sl });
       const id = bagAdd(v, who.uid, it), I = itemInfo(it);
       if (it.r >= 3) addLog(v, t, nm + ' forge un objet ' + RARITY[it.r].name.toLowerCase() + ' : ' + I.name + ' !', 'forge');
+      if (it.r === 4) chron(v, t, 'leg', nm + ' forge un objet légendaire : ' + I.name + '.');
       return { ok: true, id, r: it.r, name: I.name };
     }
     case 'improve': {
@@ -855,6 +872,7 @@ function applyV(v, a, who) {
       const c = { or: merchPrice(src) }, m = missingTxt(v, c); if (m) return fail(m);
       pay(v, c); const it = cleanItem(src), id = bagAdd(v, who.uid, it); M.sold = sold + 'i' + i + ';';
       addLog(v, t, nm + ' achète au marchand : ' + itemInfo(it).name + '.', 'merch');
+      if (it.r === 4) chron(v, t, 'leg', nm + ' achète un objet légendaire au marchand : ' + itemInfo(it).name + '.');
       return { ok: true, id, name: itemInfo(it).name };
     }
     case 'pet': {

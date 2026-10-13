@@ -7,7 +7,7 @@ const S = new Function(src + `
 return { newVillage, simulateVillage, applyV, clone, goalsOf, goalDone, freeSpot, freeHousing, housingOf, hallLvl, BLD, costOf, missingTxt, limitV, countOf, maxLvlOf, sites, sitesMax,
   builders, buildersMax, workersOf, jobsOf, SPEC, heroesOf, activeHero, compareItem, canWear, itemInfo, bagOf, CLASSES, SKILL_LVLS, SPEC_LVL, PET_LVL, raidInfo, raidLevel,
   solList, solCap, postCap, postsOf, recruitCost, solCanPromote, promoteCost, caserneLvl, forgeLvlOf, solForgeCost, repairCostOf, FEAST, foodOf, moraleOf, ratesOf, capOf,
-  genDungeon, djStart, djStep, djResult, djLos, mulberry32, hash, solFood, SOL_TYPES };`)();
+  genDungeon, djStart, djStep, djResult, djLos, mulberry32, hash, solFood, SOL_TYPES, djFloor, djCarry, crownNeed, crownBits, capCost, missingTxt, lilouMood };`)();
 const DAYS = +process.argv[2] || 10, DETAIL = process.argv.includes('--detail'), SOLO = process.argv.includes('--solo');
 const H = 3600000, D = 24 * H, T0 = Date.UTC(2026, 9, 13, 6, 0);       // 8 h à Paris
 const U = { u1: { uid: 'u1', name: 'Téo' }, u2: { uid: 'u2', name: 'Léa' } };
@@ -70,6 +70,34 @@ function runDungeon(hh, lvl, theme, seed) {
   while (!st.over && st.t < 20 * 60) { S.djStep(st, { [st.heroes[0].id]: bot(st.heroes[0]) }); st.ev.length = 0; }
   return S.djResult(st);
 }
+/* Les Profondeurs : étage après étage (vie et potions gardées), jusqu'à l'étage visé ou la défaite */
+function runProf(hh, target, seed) {
+  const start = hh.lvl, out = { win: true, deep: 0, xp: 0, gold: 0, loot: {}, secs: 0, lvl: start };
+  let carry = null;
+  for (let f = 1; f <= target; f++) {
+    const d = S.djFloor(seed, f, start), st = S.djStart(d, [S.clone(hh)], { seed: d.seed, carry }), bot = makeBot(st);
+    while (!st.over && st.t < 20 * 60) { S.djStep(st, { [st.heroes[0].id]: bot(st.heroes[0]) }); st.ev.length = 0; }
+    const r = S.djResult(st); out.secs += r.secs; out.xp += r.xp; out.gold += r.gold || 0;
+    for (const k in r.loot) out.loot[k] = (out.loot[k] || 0) + r.loot[k];
+    if (!r.win) { out.win = false; break; }
+    out.deep = f; carry = S.djCarry(st);
+  }
+  if (!out.win) { out.xp = Math.round(out.xp / 2); out.gold = Math.round(out.gold / 2); for (const k in out.loot) out.loot[k] = Math.round(out.loot[k] / 2); }
+  return out;
+}
+/* La quête de la couronne : le donjon qui rapporte le prochain morceau (ou un joyau), s'il est à la portée du héros */
+function crownWant(v, hh) {
+  const C = v.crown; if (!C) return null;
+  const ks = C.cy === 1 ? [S.crownBits(C.got)] : [0, 1, 2, 3].filter(k => !(C.got & (1 << k)));
+  for (const k of ks) {
+    const need = S.crownNeed(C.cy, k), dj = hh.dj || 1;
+    if (k === 0 && dj >= need) return { theme: 'mine', lvl: Math.max(need, Math.min(dj, need + 1)) };
+    if (k === 1 && dj >= need && dj >= 3) return { theme: 'crypte', lvl: Math.max(need, Math.min(dj, need + 1)) };
+    if (k === 2) return { theme: 'portail', lvl: S.raidLevel(v), pi: -1 };          // la faille vers l'abîme (sans attendre un portail)
+    if (k === 3 && dj >= 5) return { theme: 'prof', target: need };
+  }
+  return null;
+}
 
 /* ---------- ce que font les joueurs à chaque visite ---------- */
 const PLAN = [
@@ -77,7 +105,7 @@ const PLAN = [
   ['forge', 1], ['caserne', 1], ['entrepot', 1, 2], ['maison', 5], ['tour', 1], ['champ', 3], ['bucheron', 2], ['carriere', 2], ['halle', 3], ['chasse', 2],
   ['caserne', 1, 2], ['brasserie', 1], ['maison', 7], ['entrepot', 2], ['entrepot', 1, 3], ['halle', 4], ['entrepot', 2, 3], ['caserne', 1, 3], ['maison', 9], ['tour', 2], ['caserne', 1, 4], ['maison', 11], ['halle', 5],
 ];
-const stats = { dj: 0, djWin: 0, raids: [], built: [], recruits: 0, promotes: 0, famine: 0, gold: { donjons: 0, sacPlein: 0, ventes: 0, raids: 0 } };
+const stats = { crown: [], caps: 0, dj: 0, djWin: 0, raids: [], built: [], recruits: 0, promotes: 0, famine: 0, gold: { donjons: 0, sacPlein: 0, ventes: 0, raids: 0 } };
 function placeNear(v, type) { const hall = v.b.find(b => b.type === 'halle'); return S.freeSpot(v, type, hall ? hall.gx + 1 : 11, hall ? hall.gz + 1 : 11); }
 function tryBuild(v, uid, type, want, lvl) {
   const t = v.t;
@@ -119,13 +147,18 @@ function heroTurn(v, uid, seedBase) {
     /* un donjon par visite : le portail s'il est ouvert, sinon la mine (ou la crypte) au plus haut niveau ouvert */
     const ri = S.raidInfo(v, v.t), open = ri.p.filter(p => !p.cl);
     let theme = 'mine', lvl = hh.dj || 1, pi = 0;
+    const cw = crownWant(v, hh);
     if (open.length) { theme = 'portail'; lvl = S.raidLevel(v); pi = open[0].i; }
+    else if (cw && cw.theme !== 'prof') { theme = cw.theme; lvl = cw.lvl; if (cw.pi != null) pi = cw.pi; }
+    else if (cw) theme = 'prof';
     else if ((hh.dj || 1) >= 3 && seedBase % 2) theme = 'crypte';
-    const r = runDungeon(hh, lvl, theme, (S.hash(seedBase) >>> 0) || 1);
+    const r = theme === 'prof' ? runProf(hh, cw.target, (S.hash(seedBase) >>> 0) || 1) : runDungeon(hh, lvl, theme, (S.hash(seedBase) >>> 0) || 1);
+    if (theme === 'prof') lvl = r.lvl;
     stats.dj++; if (r.win) stats.djWin++;
-    const res = act(v, { type: 'djEnd', hid: hh.id, lvl: r.lvl, win: r.win, xp: r.xp, loot: r.loot, pris: r.pris, theme, deep: 0, or: r.gold || 0, items: (r.items || {})[hh.id] || [], gems: (r.gems || {})[hh.id] || {}, pi }, uid);
+    const res = act(v, { type: 'djEnd', hid: hh.id, lvl: r.lvl, win: r.win, xp: r.xp, loot: r.loot, pris: r.pris, theme, deep: r.deep || 0, or: r.gold || 0, items: (r.items || {})[hh.id] || [], gems: (r.gems || {})[hh.id] || {}, pi }, uid);
+    if (res.crown) stats.crown.push('jour ' + (Math.floor((v.t - T0) / D) + 1) + ' : ' + res.crown.name + (res.crown.done ? ' → rang ' + res.crown.done.rank : ''));
     stats.gold.donjons += (res.got && res.got.or) || 0; stats.gold.sacPlein += res.autoGold || 0;
-    if (DETAIL) console.log(`   ${hh.name} niv. ${hh.lvl} : ${theme} niv. ${lvl} ${r.win ? 'gagné' : 'perdu'} (${Math.round(r.secs / 60)} min, +${res.xp} xp, +${r.gold || 0} or, ${((r.items || {})[hh.id] || []).length} objets)`);
+    if (DETAIL) console.log(`   ${hh.name} niv. ${hh.lvl} : ${theme}${theme === 'prof' ? ' (' + (r.deep || 0) + ' étages)' : ''} niv. ${lvl} ${r.win ? 'gagné' : 'perdu'} (${Math.round(r.secs / 60)} min, +${res.xp} xp, +${r.gold || 0} or, ${((r.items || {})[hh.id] || []).length} objets)`);
     S.simulateVillage(v, v.t + Math.max(60000, r.secs * 1000));
     /* s'équiper du mieux, vendre les objets communs */
     const bag = S.bagOf(v, uid);
@@ -159,6 +192,9 @@ function visit(v, uid, t, k) {
   jobs(v, uid);
   if (v.b.some(b => S.repairCostOf(b))) act(v, { type: 'repair' }, uid);
   if (v.b.some(b => b.type === 'taverne' && b.lvl > 0) && v.feastCd <= v.t && S.foodOf(v) > 400) act(v, { type: 'feast' }, uid);
+  /* le caprice du jour de Lilou (et le gros de la semaine s'il reste de quoi) */
+  if (v.lilou && v.lilou.d && !v.lilou.d.ok && act(v, { type: 'lilouCap', w: 0 }, uid).ok) stats.caps++;
+  if (v.lilou && v.lilou.w && !v.lilou.w.ok) { const c = S.capCost(v, v.lilou.w.k, true); if (!S.missingTxt(v, Object.fromEntries(Object.entries(c).map(([r, n]) => [r, n * 2])))) act(v, { type: 'lilouCap', w: 1 }, uid); }
   heroTurn(v, uid, k * 7919 + (uid === 'u1' ? 1 : 2));
   garrison(v, uid);
   for (const hh of S.heroesOf(v, uid)) { const tgt = S.sites(v).length ? 'bat' : (v.b.find(b => S.BLD[b.type].spec === (hh.race === 'nain' ? 'mine' : 'chasse') && b.lvl > 0) || {}).id; if (tgt != null && hh.at !== tgt) act(v, { type: 'heroAt', hid: hh.id, to: tgt }, uid); }
@@ -170,8 +206,10 @@ if (!SOLO) v.members.u2 = { name: 'Léa', t: T0, hi: 1 };
 act(v, { type: 'hero', name: 'Brokk', race: 'nain', cls: 'guerrier', sex: 'm' }, 'u1');
 if (!SOLO) act(v, { type: 'hero', name: 'Aelith', race: 'elfe', cls: 'rodeur', sex: 'f' }, 'u2');
 const PLAYERS = SOLO ? ['u1'] : ['u1', 'u2'];
+/* la mission d'intro tout de suite : Lilou arrive, la quête de la couronne commence dix minutes plus tard */
+act(v, { type: 'djEnd', hid: Object.values(v.heroes)[0].id, lvl: 1, win: true, xp: 120, theme: 'source' }, 'u1');
 const fmt = n => String(Math.round(n));
-console.log('jour | halle | habitants | moral | bois pierre pain viande fer or | héros | soldats | repas/j | raids (volé, vaincus)');
+console.log('jour | halle | habitants | moral | bois pierre pain viande fer or | héros | soldats | repas/j | couronne | Lilou | raids (volé, vaincus)');
 let lastRaidT = 0, k = 0;
 for (let day = 0; day < DAYS; day++) {
   for (const hour of [0, 12]) {
@@ -182,9 +220,10 @@ for (let day = 0; day < DAYS; day++) {
   S.simulateVillage(v, T0 + (day + 1) * D - 60000);
   const hs = Object.values(v.heroes).map(h => h.lvl).join('/'), sol = S.solList(v), rt = S.ratesOf(v, v.t);
   const raidsDay = stats.raids.filter(r => r.d === day).map(r => `-${r.lost} (${r.k}/${r.f}${r.G ? ', ' + r.G + ' soldats' : ''})`).join(' ');
-  console.log(`${String(day + 1).padStart(4)} | ${S.hallLvl(v)} | ${v.vil.length}/${S.housingOf(v)} | ${S.moraleOf(v, v.t)} | ${[v.r.bois, v.r.pierre, v.r.pain, v.r.viande, v.r.fer, v.r.or].map(fmt).join(' ')} | ${hs} | ${sol.length ? sol.length + ' (niv. ' + sol.map(s => s.lvl).join(',') + ')' : '-'} | ${fmt((rt.food) * 24)} | ${raidsDay}`);
+  console.log(`${String(day + 1).padStart(4)} | ${S.hallLvl(v)} | ${v.vil.length}/${S.housingOf(v)} | ${S.moraleOf(v, v.t)} | ${[v.r.bois, v.r.pierre, v.r.pain, v.r.viande, v.r.fer, v.r.or].map(fmt).join(' ')} | ${hs} | ${sol.length ? sol.length + ' (niv. ' + sol.map(s => s.lvl).join(',') + ')' : '-'} | ${fmt((rt.food) * 24)} | ${v.crown ? 'c' + v.crown.cy + ' ' + S.crownBits(v.crown.got) + '/4 r' + v.crown.rank : '-'} | ${v.lilou ? S.lilouMood(v.lilou).name : '-'} | ${raidsDay}`);
 }
 const leaves = v.log.filter(l => l.k === 'leave').length;
+console.log('couronne : ' + (stats.crown.join(' ; ') || 'rien') + ' · caprices fabriqués : ' + stats.caps + ' · chronique : ' + (v.chron || []).length + ' moments');
 console.log('or gagné : ' + JSON.stringify(stats.gold));
 console.log(`\ndonjons : ${stats.djWin} gagnés sur ${stats.dj} · recrues : ${stats.recruits} · promotions : ${stats.promotes} · départs (famine) : ${leaves}`);
 console.log('bâtiments : ' + v.b.filter(b => b.lvl > 0).map(b => b.type + (b.lvl > 1 ? b.lvl : '')).sort().join(' '));

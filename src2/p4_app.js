@@ -173,8 +173,8 @@ function onVillage(snap) {
   if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
   else { renderAll(); refreshScene(); }
 }
-const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def', 'sol', 'lilou']);
-const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch', 'portal']);
+const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def', 'sol', 'lilou', 'roi', 'crown']);
+const TOAST_KINDS = new Set(['built', 'cand', 'season', 'leave', 'join', 'feast', 'goal', 'merch', 'portal', 'roi', 'crown']);
 /* Nouvelles du journal pendant qu'on joue : une bulle pour la plus récente. */
 function newsCheck() {
   if (!me || !me.log.length) return;
@@ -193,7 +193,8 @@ function items(v, editable) {
   const out = v.b.map(b => {
     let gx = b.gx, gz = b.gz;
     if (editable && place && place.kind === 'move' && place.id === b.id) { gx = place.gx; gz = place.gz; }
-    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined, dead: isBroken(b), ban: b.type === 'poste' && banOk(b.ban) ? b.ban.r : undefined };
+    return { key: 'm' + b.id, id: b.id, type: b.type, lvl: b.lvl, gx, gz, up: b.up ? { frac: Math.min(1, b.up.done / b.up.need) } : null, col: safeColor(v.c), crop: b.type === 'champ' ? cropOf(b) : undefined, dead: isBroken(b), ban: b.type === 'poste' && banOk(b.ban) ? b.ban.r : undefined,
+      crown: b.type === 'halle' ? crownCode(v.crown) || undefined : undefined };
   });
   if (editable && place && place.kind === 'new') out.push({ key: 'ghost', id: 0, type: place.type, lvl: 1, gx: place.gx, gz: place.gz, up: null, col: safeColor(v.c) });
   /* Le marchand ambulant : sa charrette, près de la halle, les jours où il est là */
@@ -309,7 +310,7 @@ function topHTML() {
   const ri = raidInfo(v, t);
   if (ri.st !== 'calm') chips += `<button class="glass chipb${ri.st === 'ready' ? ' alert' : ''}" data-act="sheet" data-s="defense">${ico('flame', '')}${ri.st === 'ready' ? 'Portail chargé !' : 'Portail · ' + fmtDur(ri.ready - t)}</button>`;
   const head = `<div class="idrow"><button class="glass me" data-act="sheet" data-s="village"><span class="crest" style="background:${safeColor(v.c)}">${esc(initial(v.name))}</span>
-    <span class="idtxt"><b>${esc(v.name)}</b><small>${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</small></span></button>
+    <span class="idtxt"><b>${v.crown && v.crown.rank ? '<span class="kingmark" aria-label="Rois de la Montagne">' + ico('crown', 'c-gold') + '</span>' : ''}${esc(v.name)}</b><small>${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</small></span></button>
     <div class="chips">${chips}</div></div>`;
   const cap = capOf(v), food = foodOf(v), mor = moraleOf(v, t), pop = v.vil.length, house = housingOf(v);
   const pill = (k, icon, val, sub, frac, cls, act) => `<button class="glass pill c-${icon}${cls ? ' ' + cls : ''}" data-act="sheet" data-s="${act}"><div class="v">${ico(icon)}<span>${val}${sub ? '<small>' + sub + '</small>' : ''}</span></div>${frac == null ? '<div class="fill none"></div>' : `<div class="fill"><i style="width:${Math.max(0, Math.min(100, frac * 100)).toFixed(0)}%"></i></div>`}</button>`;
@@ -457,7 +458,7 @@ function openSheet(s, arg) {
   sheet = s; sheetArg = arg == null ? null : arg; place = null;
   if (s === 'journal') LS.set('mk2.read.' + vid, now());
   if (s === 'lilou') lilouOpened();
-  renderAll(); els.sheetBody.scrollTop = 0;
+  renderAll(); els.sheetBody.scrollTop = s === 'chron' ? els.sheetBody.scrollHeight : 0;     // la chronique s'ouvre sur les derniers moments
 }
 function closeSheet(silent) { sheet = null; sheetArg = null; if (!silent) renderAll(); }
 function sheetBuild() {
@@ -598,7 +599,7 @@ function sheetHero() {
   if (ph.length) h += `<div class="sec"><h4>Les héros de ${esc(v.members[pk].name)}</h4>${ph.map(x => heroCard(v, x, x === sel)).join('')}</div>`;
   return h;
 }
-const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield', sol: 'shield', lilou: 'heart' };
+const LOG_ICON = { built: 'hammer', site: 'hammer', cand: 'people', arrive: 'people', leave: 'people', season: 's0', join: 'link', hero: 'crown', feast: 'mug', skill: 'star', found: 'house', demolish: 'hammer', goal: 'star', crop: 'ble', dj: 'crown', merch: 'or', forge: 's_anvil', raid: 'shield', portal: 'flame', def: 'shield', sol: 'shield', lilou: 'heart', roi: 'scroll', crown: 'crown' };
 function sheetJournal() {
   const v = me;
   if (!v.log.length) return '<p class="note">Rien pour l’instant.</p>';
@@ -613,6 +614,9 @@ function sheetVillage() {
     <input type="text" readonly value="${esc(inviteLink())}" class="linkbox" aria-label="Lien d’invitation">
     <div class="row"><button class="btn small primary" data-act="copyLink">Copier le lien</button>${navigator.share ? '<button class="btn small" data-act="shareLink">Partager</button>' : ''}</div></div>`;
   h += '</div>';
+  const C = v.crown;
+  h += `<div class="sec"><h4>L’histoire du village</h4><div class="item">${C && C.rank ? `<b class="row">${ico('crown', 'c-gold')}Rois de la Montagne</b><p class="note">La couronne au rang ${C.rank} : +${Math.min(10, C.rank)} de moral pour toujours.</p>` : ''}
+    <p>La chronique garde les grands moments du village (${(v.chron || []).length}).</p><button class="btn small primary" data-act="sheet" data-s="chron">${ico('scroll', '')}Lire la chronique</button></div></div>`;
   const next = nextSeasonAt(v, t);
   h += `<div class="sec"><h4>Saison</h4><div class="item"><b class="row">${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</b><p>${SEASONS[(si + 1) % 4].name} dans <b>${fmtDur(next - t)}</b>. ${si === 2 ? 'L’hiver approche : faites des réserves de nourriture.' : si === 3 ? 'Les champs dorment : le village vit sur ses réserves.' : ''}</p></div></div>`;
   if (v.b.some(b => b.type === 'taverne' && b.lvl > 0)) {
@@ -652,15 +656,16 @@ function sheetHelp() {
     + sec('L’équipement', ['Chaque héros porte une arme, un casque, une armure, des bottes et, dès le niveau 8, un bijou (menu Héros). Chaque classe manie sa famille d’armes : lames, arcs ou bâtons.', 'Les objets ont 5 raretés : commun (gris), peu commun (vert), rare (bleu), épique (violet), légendaire (orange, avec un pouvoir). Les objets d’ensemble (turquoise) donnent un bonus à 2 et à 4 pièces portées.', 'On les trouve en donjon : dans les coffres, sur les boss, parfois sur un monstre ; mieux dans les donjons plus hauts. À deux, chacun trouve ses propres objets.', 'Dans le sac, les flèches comparent avec l’objet porté : ▲ mieux, ▼ moins bien. Vendre un objet rapporte de l’or (la bourse commune) ; le fondre à la forge rend du fer.', 'La forge (avec le fer de la mine) fabrique un objet au choix, l’améliore jusqu’à +5 et sertit les pierres précieuses : trois pierres pareilles se fusionnent en une plus belle.', 'Un jour sur deux, un marchand ambulant s’installe près de la halle avec quelques objets à vendre.', 'Au niveau 6, un familier accompagne le héros : loup, faucon, sanglier ou chouette, chacun avec son petit bonus.'])
     + sec('Les raids et la défense', ['À partir du 3e jour, un portail démoniaque s’ouvre au bord de la vallée (au plus un raid par jour). Il se charge pendant 3 heures : vous voyez de quel côté viendront les gobelins.', 'Le raid ne part que quand personne n’a joué depuis 2 heures. Il se joue tout seul ; au retour, un bilan s’affiche et vous pouvez revoir le combat.', 'Les gobelins foncent piller la halle, les voleurs filent vers l’entrepôt, les trolls cassent ce qui bloque (bien plus fort sur les palissades et les portes). Tous prennent le chemin le plus court, en comptant ce qu’il faudrait casser.', 'Ce qu’ils emportent est perdu s’ils regagnent le portail ; abattus avant, ils lâchent tout. Si la halle est pillée, le moral baisse pendant un jour.', 'Menu Défense : palissades (posées en ligne), portes (vos héros et villageois passent), tours d’archers, pièges à pointes et filets cachés. Vos héros défendent la halle et gagnent de l’expérience ; chaque ennemi abattu rapporte de l’or.', 'Refermez un portail avec votre héros (seul ou à deux) : un petit donjon et son gardien. Tous les portails refermés : pas de raid cette fois.', 'Après un raid, réparez les défenses abîmées (menu Défense).'])
     + sec('La garnison', ['La caserne (halle niveau 2) loge 3 soldats par niveau, 12 au plus, et donne un poste de garde par niveau. On y recrute contre de l’or : fantassin, archer, lancier ou mage de guerre.', 'Pendant un raid, chaque soldat garde le cercle de son poste sans jamais en sortir : fantassins et lanciers devant, du côté du portail, archers et mages derrière. Améliorer un poste agrandit son cercle. « Répartir » met un peu de chaque type partout.', 'Les soldats qui tiennent gagnent de l’expérience ; vous les faites monter de niveau (jusqu’au 15) contre de l’or, de la viande et, plus tard, du fer. Ils mangent, un peu plus à chaque niveau.', 'Un soldat abattu se repose 8 heures à la caserne, sans rien perdre sauf sa série : 5 raids de suite sans tomber font un Vétéran, 10 un Briscard, 20 un Héros de la garde.', 'À la forge, chaque soldat reçoit une arme et une armure complète (avec son bonus d’ensemble). Orbes (3 emplacements, aux niveaux 4, 8 et 12) et bannières (une par poste) se gagnent en défense réussie, en donjon et sur le gardien du portail.'])
+    + sec('La Couronne de la Montagne', ['Dix minutes après l’arrivée de Lilou, le Roi Déchu réclame la Source : il faut retrouver les quatre morceaux de la Couronne de la Montagne, chapitre après chapitre (l’objectif est en tête du menu Donjon). Le chef troll de la mine au niveau 3, le roi squelette au niveau 4, le gardien d’un portail (ou celui de la faille, quand aucun portail n’est ouvert), puis l’étage 5 des Profondeurs.', 'Chaque morceau rapporte de l’or et un objet. Les quatre réunis : la couronne brille sur la halle, vous êtes les Rois de la Montagne, et un coffre vous attend (or, orbe, un objet pour le héros actif de chacun).', 'Puis le Roi Déchu maudit la couronne : ses quatre joyaux s’éteignent. Les rallumer (dans l’ordre que vous voulez) fait un nouveau cycle, plus dur à chaque fois : mine 6, crypte 7, un portail, étage 10, puis mine 9, crypte 10, étage 15… Chaque cycle terminé donne un rang à la couronne : +1 de moral pour toujours (10 au plus).', 'Dès le chapitre 3, la moitié des gobelins des raids vise la chambre de Lilou : s’ils l’atteignent, ils volent davantage et Lilou a très peur (−15 d’humeur). Palissades, pièges et postes de garde la protègent.', 'De temps en temps, une lettre du Roi Déchu arrive au journal. La chronique du village (menu Village) garde tous vos grands moments.'])
     + sec('Lilou et Sukhoï', ['Sukhoï, vieille guerrière (et chatte grise), vous guide et vous donne des conseils au bon moment.', 'La mission « La Source du Mal » (menu Donjon) ramène Lilou au village, une fois pour toutes. Elle s’installe dans sa chambre, près de la halle : touchez-la pour la voir.', 'Chaque jour, Lilou a un caprice à fabriquer ; chaque semaine, un gros caprice qui fait la fête dans toute la vallée (+10 de moral pendant un jour). Satisfaite, elle est plus contente ; oubliée, elle boude.', 'Son humeur compte en donjon et pendant les raids : ravie, les monstres frappent 10 % moins fort, contente 5 % ; grognon 5 % plus fort, en colère 10 %.'])
     + sec('Les donjons', ['Menu Donjon : ton héros actif part dans la mine des gobelins. Chaque victoire ouvre le niveau suivant. La crypte des rois s’ouvre après une victoire au niveau 2, les Profondeurs après une victoire au niveau 4.', 'Pose le pouce sur la gauche de l’écran pour bouger (flèches ou ZQSD sur ordinateur). Ton héros attaque tout seul ; à droite, tes compétences et ta potion (touches 1, 2, 3 et 4), et la roulade (barre d’espace ou touche 5) : un bond dans la direction du pouce, intouchable un instant, toutes les 4 secondes.', 'Les grilles d’une salle se ferment jusqu’à la dernière vague. Entre deux salles, on reprend son souffle. Les boss préviennent avant leurs coups : sors des cercles rouges.', 'Au retour : de l’expérience pour le héros, de l’or, de la pierre et du bois pour le village, des objets et des pierres précieuses dans ton sac, parfois un prisonnier délivré qui voudrait s’installer. Défaite ou fuite : la moitié (on garde les meilleurs objets).', 'Les Profondeurs : des étages sans fin, de plus en plus durs, avec un boss tous les 5 étages. À la fin de chaque étage, on choisit : descendre (avec la vie et les potions qui restent) ou remonter avec tout le butin. Si l’on tombe, on ne garde que la moitié de toute la descente.', 'À deux : quand ta partenaire a le jeu ouvert, invite-la depuis le menu Donjon. Les monstres sont plus solides, chacun gagne toute l’expérience, et un héros tombé se relève si l’autre reste 3 secondes à côté de lui.', 'Combos à deux : une compétence marque le monstre touché pendant 3 secondes ; si l’autre héros le frappe, +50 % de dégâts. Pareil sur un monstre étourdi, gelé ou enraciné par l’autre.']);
 }
 function renderSheet() {
   if (!sheet || !me || mode !== 'home') { els.sheet.hidden = true; return; }
-  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense', caserne: 'La caserne', lilou: 'La chambre de Lilou' };
+  const titles = { build: 'Construire', people: 'Villageois', job: 'Choisir un métier', workers: 'Ajouter un travailleur', hero: 'Héros', journal: 'Journal du village', village: me.name, stock: 'Réserves', help: 'Aide', goals: 'Objectifs', donjon: 'Donjons', bag: 'Mon sac', forge: 'La forge', merch: 'Le marchand ambulant', defense: 'Défense', caserne: 'La caserne', lilou: 'La chambre de Lilou', chron: 'La chronique du village' };
   els.sheet.hidden = false;
   els.sheetTitle.textContent = titles[sheet] || '';
-  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense, caserne: sheetCaserne, lilou: sheetLilou }[sheet];
+  const f = { build: sheetBuild, people: sheetPeople, job: sheetJob, workers: sheetWorkers, hero: sheetHero, journal: sheetJournal, village: sheetVillage, stock: sheetStock, help: sheetHelp, goals: sheetGoals, donjon: sheetDonjon, bag: sheetBag, forge: sheetForge, merch: sheetMerch, defense: sheetDefense, caserne: sheetCaserne, lilou: sheetLilou, chron: sheetChron }[sheet];
   setHTML(els.sheetBody, f ? f() : '');
   if (sheet === 'village' && sheetArg === 'feast' && !renderSheet.scrolled) { renderSheet.scrolled = true; const el = $('#feastSec'); if (el) els.sheetBody.scrollTop = el.offsetTop - 8; }
 }
@@ -736,6 +741,7 @@ function renderModal() {
   else if (M && M.kind === 'djres' && dj) h = djResHTML();
   else if (M && M.kind === 'raid' && me) h = raidModalHTML();
   else if (M && M.kind === 'lilou' && me) h = lilouArriveHTML();
+  else if (M && M.kind === 'crown' && me) h = crownSceneHTML(M.key);
   else if (M && M.kind === 'djfloor' && dj && dj.run) h = djFloorHTML();
   else if (M && M.kind === 'djfloorwait' && dj && dj.run && dj.duo) h = djFloorWaitHTML();
   else if (M && M.kind === 'djinv' && me) h = djInvHTML();
@@ -895,7 +901,7 @@ function tick() {
   if (vsim) {
     simulateVillage(vsim, now()); recompute(); if (mode !== 'donjon') newsCheck(); goalCheck();
     if (!pending.length && !committing && vraw && now() - Math.max(vraw.t, lastSync) > 20 * 60000) { pending.push({ type: 'sync' }); scheduleCommit(50); }
-    candCheck(); raidCheck(); tipCheck();
+    candCheck(); raidCheck(); crownSceneCheck(); tipCheck();
   }
   renderAll(); refreshScene();
 }
