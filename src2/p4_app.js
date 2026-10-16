@@ -89,7 +89,7 @@ let vid = null, vref = null, unsubV = null, unsubP = null, vraw = null, vsim = n
 let pending = [], committing = false, commitTimer = null, retries = 0, lastSync = 0;
 let online = {};
 let mode = 'loading', sel = null, selP = null, place = null, sheet = null, sheetArg = null, modal = null;
-let modelLoad = null, pressing = null, installEvt = null, joinVid = null, joinInfo = null, needJoinLog = false, busy = false;
+let modelLoad = null, pressing = null, installEvt = null, joinVid = null, joinInfo = null, needJoinLog = false, busy = false, proJoin = false, proWelcome = '';
 let lastLogT = 0;
 const demoVillage = (() => { const t = Date.UTC(2026, 6, 1, 9); const v = newVillage('demo', 'Démo', COLORS[0], t, 'demo', 'Démo'); return v; })();
 
@@ -165,12 +165,17 @@ function onVillage(snap) {
   if (first) {
     lastLogT = Math.max(LS.get('mk2.log.' + vid) || 0, 0);
     const away = me.log.filter(l => l.t > lastLogT && AWAY_KINDS.has(l.k));
-    if (lastLogT && away.length) modal = { kind: 'away', list: away.slice(-8) };
+    if (lastLogT && away.length && !(modal && modal.kind === 'switch')) modal = { kind: 'away', list: away.slice(-8) };
     lastLogT = me.log.length ? me.log[me.log.length - 1].t : now();
     LS.set('mk2.log.' + vid, lastLogT);
   }
   if (needJoinLog && me && me.members[uid] && !me.members[uid].hi) { needJoinLog = false; act({ type: 'join' }, { quiet: true }); }
-  if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') setMode(me && heroesOf(me, uid).length ? 'home' : 'hero');
+  if (proJoin && me && me.members[uid] && !heroesOf(me, uid).length) { proJoin = false; if (proJoined()) proWelcome = 'join'; }
+  if (mode === 'loading' || mode === 'join' || mode === 'gate' || mode === 'hero') {
+    const hh = me && activeHero(me, uid);
+    setMode(hh ? 'home' : 'hero');
+    if (hh && proWelcome) { modal = { kind: 'welcome', name: hh.name, pro: proWelcome }; proWelcome = ''; renderAll(); }
+  }
   else { renderAll(); refreshScene(); }
 }
 const AWAY_KINDS = new Set(['built', 'cand', 'arrive', 'season', 'leave', 'join', 'hero', 'feast', 'site', 'goal', 'dj', 'merch', 'forge', 'raid', 'portal', 'def', 'sol', 'lilou', 'roi', 'crown']);
@@ -634,7 +639,8 @@ function sheetVillage() {
     <div class="item"><div class="row split"><b class="row">${ico('sound', 'c-tro')}Musique</b>${tg('music', S.music)}</div><input class="range" type="range" min="0" max="100" value="${Math.round(S.mv * 100)}" data-snd="mv" aria-label="Volume de la musique"></div>
     <div class="item"><div class="row split"><b class="row">${ico('hammer', 'c-tro')}Bruitages</b>${tg('sfx', S.sfx)}</div><input class="range" type="range" min="0" max="100" value="${Math.round(S.sv * 100)}" data-snd="sv" aria-label="Volume des bruitages"></div></div>`;
   h += `<div class="sec"><h4>Compte</h4><p class="note">Connecté${fbUser && fbUser.name ? ' : <b>' + esc(fbUser.name) + '</b>' : ''}. Le village est sauvegardé en ligne, pour vous deux.</p>
-    <div class="row">${installEvt ? '<button class="btn small primary" data-act="install">Installer l’appli</button>' : ''}<button class="btn small" data-act="sheet" data-s="help">${ico('help', '')}Aide</button><button class="btn small" data-act="logout">Se déconnecter</button></div></div>`;
+    <div class="row">${installEvt ? '<button class="btn small primary" data-act="install">Installer l’appli</button>' : ''}<button class="btn small" data-act="sheet" data-s="help">${ico('help', '')}Aide</button><button class="btn small" data-act="logout">Se déconnecter</button></div>
+    <div class="item"><div class="row split"><b>Nouvelle partie</b><button class="btn small" data-act="newGame">Recommencer</button></div><p class="note">Repartir du début (introduction, héros, donjon d’intro, nouveau village). Ce village reste archivé dans la base, rien n’est effacé.</p></div></div>`;
   return h;
 }
 function sheetStock() {
@@ -676,21 +682,25 @@ function swatches(name, pick) {
 }
 function gateHTML() {
   const saved = LS.get('mk2.me') || {};
+  const P = PRO_ON ? proGet() : null;
   return `<form id="foundForm" novalidate style="display:grid;gap:12px">
-    <p class="eyebrow">Nouvelle partie</p><h2>Fondez votre village</h2>
-    <p>Un seul village pour vous deux, des villageois à loger et à nourrir, et chacun son héros. Ta partenaire te rejoindra avec un lien d’invitation, à retrouver dans le menu Village.</p>
+    ${P && P.h ? `<p class="eyebrow">Le prologue</p><h2>Un toit pour Lilou</h2>${P.won ? sukBubble(PRO_TXT.found) : ''}<p class="note">${esc(P.h.name)} (${esc(raceName(P.h.race, P.h.sex).toLowerCase())} ${esc(className(P.h.cls, P.h.sex).toLowerCase())})${P.won ? ' et Lilou vous attendent' : ' vous attend'}. Un seul village pour vous deux : ta partenaire vous rejoindra avec un lien d’invitation (menu Village).</p>`
+      : `<p class="eyebrow">Nouvelle partie</p><h2>Fondez votre village</h2>
+    <p>Un seul village pour vous deux, des villageois à loger et à nourrir, et chacun son héros. Ta partenaire te rejoindra avec un lien d’invitation, à retrouver dans le menu Village.</p>`}
     <label>Nom du village<input type="text" id="fVname" maxlength="24" value="${esc(saved.vname || '')}" placeholder="Ex. Val-Brume" autocomplete="off"></label>
     <label>Ton prénom<input type="text" id="fPname" maxlength="20" value="${esc(saved.pname || (fbUser && fbUser.name ? fbUser.name.split(' ')[0] : ''))}" placeholder="Ton prénom" autocomplete="given-name"></label>
     <fieldset class="fs"><legend>Couleur du village</legend>${swatches('fColor', saved.c || COLORS[0])}</fieldset>
     <p class="err" id="fErr" hidden></p>
     <button class="btn primary" type="submit"${busy ? ' disabled' : ''}>${busy ? 'Fondation…' : 'Fonder le village'}</button>
-    <p class="note">Ta partenaire a déjà fondé le village ? Demande-lui le lien d’invitation et ouvre-le sur ce téléphone.</p></form>`;
+    ${P && P.h ? '' : '<p class="note">Ta partenaire a déjà fondé le village ? Demande-lui le lien d’invitation et ouvre-le sur ce téléphone.</p>'}</form>`;
 }
 function joinHTML() {
   const saved = LS.get('mk2.me') || {};
+  const P = PRO_ON ? proGet() : null;
   return `<form id="joinForm" novalidate style="display:grid;gap:12px">
     <p class="eyebrow">Invitation</p><h2>Rejoindre ${esc(joinInfo.name)}</h2>
-    <p>${esc(joinInfo.by)} t’invite à vivre dans son village. Vous le gérerez ensemble, et chacun aura son héros.</p>
+    ${P && P.won ? sukBubble(PRO_TXT.join(joinInfo.by, joinInfo.name)) : ''}
+    <p>${esc(joinInfo.by)} t’invite à vivre dans son village. Vous le gérerez ensemble, et chacun aura son héros${P && P.h ? ' : ' + esc(P.h.name) + ' est prêt' + (P.h.sex === 'f' ? 'e' : '') : ''}.</p>
     <label>Ton prénom<input type="text" id="jPname" maxlength="20" value="${esc(saved.pname || (fbUser && fbUser.name ? fbUser.name.split(' ')[0] : ''))}" placeholder="Ton prénom" autocomplete="given-name"></label>
     <p class="err" id="jErr" hidden></p>
     <button class="btn primary" type="submit"${busy ? ' disabled' : ''}>${busy ? 'Arrivée…' : 'Rejoindre le village'}</button></form>`;
@@ -701,24 +711,25 @@ function heroSummary(race, cls, sex) {
   return `<b>${esc(raceName(race, sex))}</b> : ${esc(R.desc)} Au village : +25 % en ${esc(SPEC_LABEL[R.spec].toLowerCase())}. En combat : ${esc(R.passive)}<br>
     <b>${esc(className(cls, sex))}</b> (${esc(C.role.toLowerCase())}) : ${esc(C.desc)} Compétences : ${C.skills.map(s => esc(s[0])).join(', ')}.`;
 }
-function heroHTML(extra) {
+function heroHTML(extra, pro) {
   const used = me ? heroesOf(me, uid).map(h => h.col) : [];
-  const pick = COLORS.find(c => !used.includes(c)) || COLORS[1];
+  const ph = pro && PRO_ON && proGet() ? proGet().h : null;              // prologue repris : le héros déjà choisi
+  const pick = ph && COLORS.includes(ph.col) ? ph.col : COLORS.find(c => !used.includes(c)) || COLORS[1];
   const card = (name, val, title, txt, checked) => `<label class="optc"><input type="radio" name="${name}" value="${val}"${checked ? ' checked' : ''}><span><b>${esc(title)}</b><small>${esc(txt)}</small></span></label>`;
   return `<form id="heroForm" novalidate style="display:grid;gap:12px">
-    <p class="eyebrow">${esc(me ? me.name : '')}</p><h2>${extra ? 'Un nouveau héros' : 'Crée ton héros'}</h2>
-    <p class="note">${extra ? 'Il rejoint ta compagnie. À la taverne, tu choisis quel héros part en donjon ; les autres travaillent au village.' : 'Ton héros partira en donjon et deviendra plus fort. Au village, il se promène et donne un coup de main. Plus tard, la taverne t’en fera recruter d’autres.'}</p>
+    <p class="eyebrow">${pro ? 'Le prologue' : esc(me ? me.name : '')}</p><h2>${extra ? 'Un nouveau héros' : 'Crée ton héros'}</h2>
+    <p class="note">${pro ? 'Ton héros va descendre dans la vieille mine, avec Sukhoï. Ensuite, vous aurez un village à fonder.' : extra ? 'Il rejoint ta compagnie. À la taverne, tu choisis quel héros part en donjon ; les autres travaillent au village.' : 'Ton héros partira en donjon et deviendra plus fort. Au village, il se promène et donne un coup de main. Plus tard, la taverne t’en fera recruter d’autres.'}</p>
     <div class="hf2"><div class="col">
-      <label>Nom du héros<input type="text" id="hName" maxlength="18" placeholder="Ex. Brokk" autocomplete="off"></label>
-      <fieldset class="fs"><legend>Homme ou femme</legend><div class="optrow">${card('hSex', 'm', 'Homme', '', true)}${card('hSex', 'f', 'Femme', '', false)}</div></fieldset>
+      <label>Nom du héros<input type="text" id="hName" maxlength="18" placeholder="Ex. Brokk" autocomplete="off" value="${pro && proGet() && proGet().h ? esc(proGet().h.name) : ''}"></label>
+      <fieldset class="fs"><legend>Homme ou femme</legend><div class="optrow">${card('hSex', 'm', 'Homme', '', !ph || ph.sex !== 'f')}${card('hSex', 'f', 'Femme', '', !!ph && ph.sex === 'f')}</div></fieldset>
       <fieldset class="fs"><legend>Couleur</legend>${swatches('hCol', pick)}</fieldset>
-      <p class="note hsum" id="hSum">${heroSummary(RACE_KEYS[0], CLASS_KEYS[0], 'm')}</p>
+      <p class="note hsum" id="hSum">${ph ? heroSummary(ph.race, ph.cls, ph.sex) : heroSummary(RACE_KEYS[0], CLASS_KEYS[0], 'm')}</p>
     </div><div class="col">
-      <fieldset class="fs"><legend>Race</legend><div class="optgrid hk">${RACE_KEYS.map((k, i) => card('hRace', k, RACES[k].name, SPEC_LABEL[RACES[k].spec], i === 0)).join('')}</div></fieldset>
-      <fieldset class="fs"><legend>Classe</legend><div class="optgrid hk c4">${CLASS_KEYS.map((k, i) => card('hCls', k, CLASSES[k].name, CLASSES[k].role, i === 0)).join('')}</div></fieldset>
+      <fieldset class="fs"><legend>Race</legend><div class="optgrid hk">${RACE_KEYS.map((k, i) => card('hRace', k, RACES[k].name, SPEC_LABEL[RACES[k].spec], ph && RACES[ph.race] ? k === ph.race : i === 0)).join('')}</div></fieldset>
+      <fieldset class="fs"><legend>Classe</legend><div class="optgrid hk c4">${CLASS_KEYS.map((k, i) => card('hCls', k, CLASSES[k].name, CLASSES[k].role, ph && CLASSES[ph.cls] ? k === ph.cls : i === 0)).join('')}</div></fieldset>
     </div></div>
     <p class="err" id="hErr" hidden></p>
-    <div class="row">${extra ? '<button class="btn grow" type="button" data-act="closeModal">Annuler</button>' : ''}<button class="btn primary grow" type="submit">${extra ? 'Recruter' : 'Entrer au village'}</button></div></form>`;
+    <div class="row">${extra ? '<button class="btn grow" type="button" data-act="closeModal">Annuler</button>' : ''}<button class="btn primary grow" type="submit">${pro ? 'Entrer dans la mine' : extra ? 'Recruter' : 'Entrer au village'}</button></div></form>`;
 }
 document.addEventListener('change', e => {
   if (!e.target.closest || !e.target.closest('#heroForm')) return;
@@ -753,17 +764,29 @@ function renderModal() {
     else h = `<p class="eyebrow">Un voyageur se présente</p><h2>${esc(c.name)} voudrait s’installer</h2>${candCard(c, true)}<button class="btn" data-act="closeModal">Plus tard</button>`;
   } else if (M && M.kind === 'away' && me) {
     h = `<p class="eyebrow">Pendant votre absence</p><h2>Des nouvelles du village</h2><ol class="log">${M.list.map(e => `<li><time>${fmtAgo(e.t)}</time><span>${esc(e.m)}</span></li>`).join('')}</ol><button class="btn primary" data-act="closeModal">Au travail !</button>`;
+  } else if (M && M.kind === 'newgame') {
+    h = `<p class="eyebrow">Nouvelle partie</p><h2>Tout recommencer ?</h2>
+      <p>Tu repars du début : l’introduction, ton héros, le donjon d’intro, puis un nouveau village. ${esc(me ? me.name : 'Ton village actuel')} est archivé : il reste gardé dans la base (rien n’est effacé), mais tu ne le verras plus.</p>
+      ${me && partnerId(me) ? `<p class="why">${esc(me.members[partnerId(me)].name)} reste dans l’ancien village : envoie-lui ensuite le lien d’invitation du nouveau.</p>` : ''}
+      <div class="row"><button class="btn grow" data-act="closeModal">Annuler</button><button class="btn primary grow" data-act="newGameOk"${busy ? ' disabled' : ''}>Nouvelle partie</button></div>`;
+  } else if (M && M.kind === 'switch' && joinInfo) {
+    h = `<p class="eyebrow">Invitation</p><h2>Rejoindre ${esc(joinInfo.name)} ?</h2>
+      <p>${esc(joinInfo.by)} t’invite dans son village. Tu es encore dans ton ancien village : si tu le quittes, il reste archivé dans la base (rien n’est effacé).</p>
+      <div class="row"><button class="btn grow" data-act="switchStay">Rester</button><button class="btn primary grow" data-act="switchGo"${busy ? ' disabled' : ''}>Rejoindre ${esc(joinInfo.name)}</button></div>`;
   } else if (M && M.kind === 'welcome') {
     h = `<p class="eyebrow">Bienvenue, ${esc(M.name)}</p><h2>Votre village commence ici</h2>
-      ${me && !me.lilou ? sukBubble(SUK.hello) : ''}
+      ${me && !me.lilou ? sukBubble(SUK.hello) : M.pro === 'found' ? sukBubble(SUK.arrive) : M.pro === 'join' && me ? sukBubble(PRO_TXT.welcomeJoin(me.name)) : ''}
       <ul class="news">
         <li>${ico('star', 'c-tro')}<span>Suivez les <b>objectifs</b> en haut à gauche : ils rapportent des ressources.</span></li>
         <li>${ico('house', 'c-tro')}<span>Touchez un <b>bâtiment</b> pour le voir, l’agrandir ou y envoyer des travailleurs.</span></li>
         <li>${ico('people', '')}<span>Touchez un <b>villageois</b> pour voir ses notes sur 10 et changer son métier.</span></li>
         <li>${ico('pain', '')}<span>Chacun mange une ration par heure. En <b>hiver</b>, les champs dorment : faites des réserves.</span></li>
         <li>${ico('link', 'c-tro')}<span>Invitez votre partenaire depuis le menu <b>Village</b>.</span></li>
-      </ul>${me && !me.lilou ? `<div class="row"><button class="btn grow" data-act="closeModal">Plus tard</button><button class="btn primary grow" data-act="sukGo">${djIco('sword')}Aller voir la Source du Mal</button></div>` : '<button class="btn primary" data-act="closeModal">C’est parti</button>'}`;
-  } else if (!M && mode === 'gate') h = gateHTML();
+      </ul>${me && !me.lilou ? `<div class="row sceneact"><button class="btn grow" data-act="closeModal">Plus tard</button><button class="btn primary grow" data-act="sukGo">${djIco('sword')}Aller voir la Source du Mal</button></div>`
+        : M.pro && me && me.b.some(b => b.type === 'chambre') ? '<div class="row sceneact"><button class="btn grow" data-act="closeModal">C’est parti</button><button class="btn primary grow" data-act="lilouSee">Voir la chambre de Lilou</button></div>' : '<div class="row sceneact"><button class="btn primary grow" data-act="closeModal">C’est parti</button></div>'}`;
+  } else if (!M && mode === 'intro') h = introHTML();
+  else if (!M && mode === 'prohero') h = heroHTML(false, true);
+  else if (!M && mode === 'gate') h = gateHTML();
   else if (!M && mode === 'join' && joinInfo) h = joinHTML();
   else if (!M && mode === 'hero' && me) h = heroHTML();
   els.modal.hidden = !h;
@@ -853,6 +876,10 @@ const ACT = {
   login: () => doLogin(),
   logout: () => { if (!confirm('Se déconnecter de Mountain Kings sur cet appareil ?')) return; FB.logout().finally(() => location.reload()); },
   reload: () => location.reload(),
+  newGame: () => { closeSheet(true); modal = { kind: 'newgame' }; renderAll(); },
+  newGameOk: () => leaveVillage(),
+  switchStay: () => { modal = null; joinVid = null; joinInfo = null; renderAll(); },
+  switchGo: () => leaveVillage(true),
   install: () => { const e = installEvt; if (!e) return; installEvt = null; e.prompt(); (e.userChoice || Promise.resolve()).finally(() => renderAll()); },
 };
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEvt = e; renderAll(); });
@@ -882,6 +909,10 @@ document.addEventListener('submit', e => {
   } else {
     const name = cleanName($('#hName').value, 18);
     if (!name) { formErr('#hErr', 'Donne un nom à ton héros.'); return; }
+    if (mode === 'prohero') {             // le prologue : le héros n'existe encore que sur ce téléphone, il entre dans la mine
+      LS.set(proKey(), { h: { name, race: radio('hRace'), cls: radio('hCls'), sex: radio('hSex') === 'f' ? 'f' : 'm', col: safeColor(radio('hCol')) } });
+      proBegin(); return;
+    }
     const extra = !!(modal && modal.kind === 'newhero');
     const r = act({ type: 'hero', name, race: radio('hRace'), cls: radio('hCls'), sex: radio('hSex'), col: safeColor(radio('hCol')) });
     if (r && extra) { modal = null; toast(name + ' rejoint ta compagnie !'); openSheet('hero', r.id); }
@@ -954,16 +985,21 @@ async function start(user) {
     const s = await db.doc(ROOT + 'users/' + uid).get();
     const u = s.exists ? s.data() : null;
     if (u && u.vid && (!joinVid || joinVid === u.vid)) { watchVillage(u.vid); clearTimeout(guard); return; }
-    if (u && u.vid && joinVid && joinVid !== u.vid) toast('Tu as déjà un village : le lien d’invitation est ignoré.');
+    if (u && u.vid && joinVid && joinVid !== u.vid) {
+      /* invitée dans un autre village : on propose de le rejoindre (l'ancien reste archivé) */
+      const sj = await db.doc(ROOT + 'invites/' + joinVid).get().catch(() => null);
+      joinInfo = sj && sj.exists ? sj.data() : null;
+      if (joinInfo) modal = { kind: 'switch', old: u.vid }; else toast('Ce lien d’invitation ne marche pas : demande-en un nouveau.');
+    }
     if (u && u.vid) { watchVillage(u.vid); clearTimeout(guard); return; }
     clearTimeout(guard);
     if (joinVid) {
       const sj = await db.doc(ROOT + 'invites/' + joinVid).get();
       joinInfo = sj.exists ? sj.data() : null;
-      if (joinInfo) { setMode('join'); return; }
+      if (joinInfo) { proStart('join'); return; }
       toast('Ce lien d’invitation ne marche pas : demande-en un nouveau.');
     }
-    setMode('gate');
+    proStart('found');
   } catch (e) { clearTimeout(guard); console.error('démarrage', e); modal = { kind: e && e.code === 'not_granted' ? 'rules' : 'dberr' }; renderAll(); }
 }
 function watchVillage(id) {
@@ -976,7 +1012,7 @@ function watchVillage(id) {
   presence.set(id, { name: myName() });
   unsubP = presence.watch(id, val => { online = val || {}; renderAll(); });
   djLiveWatch(id);
-  if (/[?&]join=/.test(location.search)) history.replaceState(null, '', location.pathname);
+  if (/[?&]join=/.test(location.search)) { const q = new URLSearchParams(location.search); q.delete('join'); history.replaceState(null, '', location.pathname + (q.toString() ? '?' + q : '')); }
 }
 async function foundVillage(vname, col, pname) {
   if (busy) return;
@@ -984,13 +1020,26 @@ async function foundVillage(vname, col, pname) {
   try {
     const id = newId(), t = now();
     const v = newVillage(id, vname, col, t, uid, pname);
+    const pro = PRO_ON && proGet() && proApplyTo(v, { uid, name: pname });      // le héros du prologue, et Lilou s'il a réussi
     await db.doc(ROOT + 'villages/' + id).set(v);
+    if (pro) { proWelcome = 'found'; try { localStorage.removeItem(proKey()); } catch (e) { /* rien */ } }
     await db.doc(ROOT + 'invites/' + id).set({ name: vname, by: pname, t });
     await db.doc(ROOT + 'users/' + uid).set({ vid: id });
     LS.set('mk2.log.' + id, t);
     watchVillage(id);
   } catch (e) { formErr('#fErr', e && e.code === 'not_granted' ? 'Le serveur refuse : les règles de la base ne sont pas encore à jour.' : 'La fondation a échoué. Réessaie.'); }
   busy = false; renderAll();
+}
+/* Nouvelle partie (ou rejoindre un autre village) : on détache ce joueur de son village, qui reste archivé dans la base. */
+async function leaveVillage(toJoin) {
+  if (busy) return;
+  busy = true; renderAll();
+  try {
+    await db.doc(ROOT + 'users/' + uid).delete();
+    try { localStorage.removeItem(proKey()); } catch (e) { /* rien */ }
+    const q = new URLSearchParams(location.search); q.delete('join'); if (toJoin && joinVid) q.set('join', joinVid);
+    location.href = location.pathname + (q.toString() ? '?' + q : '');
+  } catch (e) { busy = false; toast('Ça n’a pas marché. Réessaie.'); renderAll(); }
 }
 async function joinVillage(pname) {
   if (busy || !joinVid) return;
@@ -1001,6 +1050,7 @@ async function joinVillage(pname) {
     await db.doc(ROOT + 'users/' + uid).set({ vid: joinVid });
     LS.set('mk2.log.' + joinVid, now());
     needJoinLog = true;
+    if (PRO_ON && proGet()) proJoin = true;          // le héros du prologue la suivra dans le village
     watchVillage(joinVid);
   } catch (e) { formErr('#jErr', e && e.code === 'not_granted' ? 'Impossible de rejoindre : ce village a peut-être déjà ses deux habitants.' : 'Ça n’a pas marché. Réessaie.'); }
   busy = false; renderAll();

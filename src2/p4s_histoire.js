@@ -241,7 +241,80 @@ function sheetChron() {
   return h + '</div>';
 }
 
+/* ===================== LE PROLOGUE : pour qui n'a pas encore de village =====================
+   Une courte introduction racontée par Sukhoï (qu'on peut passer), la création du héros, puis « La Source du Mal » avec ce héros,
+   avant même que le village existe ; ensuite seulement, on nomme le village (ou on rejoint celui de sa partenaire).
+   Tant que le village n'existe pas, le héros et la réussite du prologue sont gardés sur le téléphone : mk2.pro.<uid> = { h, won, xp }. */
+const proKey = () => 'mk2.pro.' + uid;
+const proGet = () => LS.get(proKey());
+const proDone = () => { const P = proGet(); return !!(P && P.h && P.won); };
+/* Les essais navigateur gardent l'ancien chemin (fonder, puis le héros), sauf avec ?pro=1 */
+const PRO_ON = !window.MK_TEST || /[?&]pro=1/.test(location.search);
+let introStep = 0, proKind = 'found';
+const INTRO = [
+  { e: 'Mountain Kings', t: 'Il était une fois…', p: 'Il y a bien longtemps, les Rois de la Montagne régnaient sur cette vallée. Leur couronne commandait aux pierres, aux rivières, et même aux gobelins (enfin, presque).',
+    s: 'Moi, c’est Sukhoï. On m’appelait Sukhoï la Terrible, avant la Grande Bataille contre le Monstre de Fer. Laisse-moi te raconter.' },
+  { e: 'Mountain Kings', t: 'Le pacte', p: 'Puis le dernier roi a voulu plus. Il a fait un pacte avec un démon des Profondeurs : la couronne s’est brisée, le royaume s’est éteint, et la vallée est tombée dans l’oubli.',
+    s: 'Une bien triste histoire. Et les gobelins la racontent très mal.' },
+  { e: 'Mountain Kings', t: 'La lueur', p: 'Aujourd’hui, une lueur maléfique monte de la vieille mine, et des cris terribles en sortent chaque nuit. Il faut quelqu’un pour aller voir.',
+    s: 'Toi, peut-être ? Je viens avec toi. De loin.' },
+];
+function introHTML() {
+  const I = INTRO[Math.max(0, Math.min(INTRO.length - 1, introStep))], last = introStep >= INTRO.length - 1;
+  const join = proKind === 'join' && joinInfo ? `<p class="note">${esc(joinInfo.by)} t’attend au village de ${esc(joinInfo.name)}. Mais d’abord, un petit détour par la mine.</p>` : '';
+  return `<p class="eyebrow">${esc(I.e)}</p><h2>${esc(I.t)}</h2><p class="tale">${esc(I.p)}</p>${sukBubble(I.s)}${last ? join : ''}
+    <div class="row introdots">${INTRO.map((x, i) => `<i class="${i === introStep ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="row">${last ? '' : '<button class="btn grow" data-act="introSkip">Passer</button>'}<button class="btn primary grow" data-act="introNext">${last ? 'Créer mon héros' : 'Suite'}</button></div>`;
+}
+/* Sans village : le prologue (ou, déjà fait, le nom du village / l'invitation) */
+function proStart(kind) {
+  proKind = kind; introStep = 0;
+  const P = proGet();
+  if (!PRO_ON) { setMode(kind === 'join' ? 'join' : 'gate'); return; }
+  if (P && P.h && (P.won || P.skip)) { setMode(kind === 'join' ? 'join' : 'gate'); return; }
+  setMode(P && P.h ? 'prohero' : 'intro');
+}
+/* Le héros du prologue entre dans la mine (il n'existe encore que sur ce téléphone) */
+function proBegin() {
+  const P = proGet(); if (!P || !P.h) { setMode('prohero'); return; }
+  if (!gl) { LS.set(proKey(), Object.assign(P, { skip: 1 })); setMode(proKind === 'join' ? 'join' : 'gate'); return; }   // sans 3D, pas de donjon : on passe au village
+  const hh = { id: 'hpro', n: 1, own: uid, name: P.h.name, race: P.h.race, cls: P.h.cls, sex: P.h.sex, col: P.h.col, lvl: 1, xp: 0, sp: 0, sk: {}, spec: null, at: null, dj: 1, eq: {} };
+  const seed = hash((Math.floor(now()) ^ hashStr(uid + 'prologue')) >>> 0) || 1, d = genDungeon(seed, 1, 'source');
+  djRun(djStart(d, [hh], { seed }), 1, seed, hh.id, null);
+  if (dj) dj.pro = { kind: proKind };
+}
+/* Retour du prologue (bouton du bilan) : gagné, on nomme le village (ou on rejoint) ; enfui, on recommence */
+function proBack(r) {
+  const P = proGet() || {}, kind = dj.pro.kind;
+  if (r.win) LS.set(proKey(), Object.assign(P, { won: 1, xp: r.xp | 0 }));
+  djLeave();
+  if (!r.win) { setMode('prohero'); toast('Sukhoï : « On réessaie ? Je suis restée cachée derrière toi. »'); return; }
+  setMode(kind === 'join' ? 'join' : 'gate');
+}
+/* Le village existe (fondé, ou rejoint) : le héros du prologue y entre, avec son expérience (et Lilou, si c'est la fondation) */
+function proApplyTo(v, w) {
+  const P = proGet(); if (!P || !P.h) return null;
+  const r = applyV(v, { type: 'hero', name: P.h.name, race: P.h.race, cls: P.h.cls, sex: P.h.sex, col: P.h.col }, w);
+  if (r.ok && P.won) applyV(v, { type: 'djEnd', hid: r.id, lvl: 1, win: true, xp: P.xp | 0, theme: 'source' }, w);
+  return r.ok ? r.id : null;
+}
+function proJoined() {
+  const P = proGet(); if (!P || !P.h) return false;
+  const r = act({ type: 'hero', name: P.h.name, race: P.h.race, cls: P.h.cls, sex: P.h.sex, col: P.h.col }, { quiet: true }); if (!r) return false;
+  if (P.won) act({ type: 'djEnd', hid: r.id, lvl: 1, win: true, xp: P.xp | 0, theme: 'source' }, { quiet: true });
+  try { localStorage.removeItem(proKey()); } catch (e) { /* rien */ }
+  return true;
+}
+const PRO_TXT = {
+  found: 'Lilou a besoin d’un toit, et toi d’un village. Donne-lui un nom : ce sera le vôtre, à toi et à ta partenaire.',
+  join: (by, name) => 'Lilou est sauvée. Allons rejoindre ' + by + ' au village de ' + name + ' : on nous y attend.',
+  foundJoin: (by, name) => 'Par mes moustaches… un bébé ?! Mais… c’est Lilou ! ' + by + ' m’avait prévenue : elle s’est encore sauvée. Bon. On la ramène au village de ' + name + '.',
+  welcomeJoin: name => 'Bienvenue à ' + name + ' ! Lilou a retrouvé sa chambre, près de la halle. Moi, je retourne dormir près du berceau. Le village est à vous deux, maintenant.',
+};
+
 const ACT_STORY = {
+  introNext: () => { if (introStep < INTRO.length - 1) { introStep++; renderAll(); } else setMode('prohero'); },
+  introSkip: () => setMode('prohero'),
   lilouCap: b => {
     const big = b.dataset.w === '1', r = act({ type: 'lilouCap', w: big ? 1 : 0 });   // en cas de refus, act dit pourquoi (ressources, taverne…)
     if (!r) return;
