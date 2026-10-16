@@ -12,15 +12,15 @@ TEST = '--test' in sys.argv
 SITE = ROOT + ('.test/' if TEST else 'docs/')
 os.makedirs(SITE + 'v2', exist_ok=True)
 if TEST:
-    for d in ('lib', 'models', 'icons', 'thumbs'):
+    for d in ('lib', 'models', 'icons', 'thumbs', 'fonts'):
         if not os.path.lexists(SITE + d): os.symlink(DOCS + d, SITE + d)
     if not os.path.lexists(SITE + 'v2/models'): os.symlink(DOCS + 'v2/models', SITE + 'v2/models')
 sys.path.insert(0, ROOT + 'tools'); import rules as RULES
 
 rd = lambda p: open(p, encoding='utf-8').read()
 head = rd(D + 'p1_head.html')
-# ordre : Firebase, règles du village, équipement, garnison, raids, donjons, rendu 3D, sons, interfaces (donjons, équipement, raids, garnison, conseils), application
-PARTS = ['p0_fb.js', 'p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2s_histoire.js', 'p2d_donjon.js', 'p3_render.js', 'p5_audio.js',
+# ordre : Firebase, règles du village, équipement, garnison, raids, histoire, donjons, rendu 3D, sons, icônes peintes, interfaces (donjons, équipement, raids, garnison, conseils), application
+PARTS = ['p0_fb.js', 'p2_rules.js', 'p2e_equip.js', 'p2g_garnison.js', 'p2r_raid.js', 'p2s_histoire.js', 'p2d_donjon.js', 'p3_render.js', 'p5_audio.js', 'p4i_icones.js',
          'p4d_donjon.js', 'p4e_equip.js', 'p4r_raid.js', 'p4g_garnison.js', 'p4c_conseils.js', 'p4s_histoire.js', 'p4_app.js']
 js = "(() => {\n'use strict';\n" + "\n".join(rd(D + f) for f in PARTS) + "\n})();\n"
 build = hashlib.sha1(js.encode()).hexdigest()[:10]
@@ -52,7 +52,7 @@ index = f'''<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#16201C">
+<meta name="theme-color" content="#3e2716">
 <meta name="description" content="Mountain Kings : un village commun, un héros chacun.">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -103,7 +103,7 @@ shared_models = sorted('models/' + f for f in os.listdir(DOCS + 'models') if not
 m2_names = re.findall(r"'([a-z_]+)'", re.search(r'const M2_NAMES = \[([^\]]*)\]', rd(D + 'p3_render.js')).group(1))
 own_models = sorted('v2/models/' + n + '.glb' for n in m2_names if os.path.exists(DOCS + 'v2/models/' + n + '.glb'))
 core = ['./', 'game.js?v=' + build, 'manifest.json', 'lib/three.min.js', 'lib/GLTFLoader.js', 'lib/SkeletonUtils.js',
-        'icons/icon-192.png', 'icons/favicon.png']
+        'icons/icon-192.png', 'icons/favicon.png'] + sorted('fonts/' + f for f in os.listdir(DOCS + 'fonts') if f.endswith('.woff'))
 models = shared_models + own_models
 mhash = hashlib.sha1(b''.join(open(DOCS + m, 'rb').read() for m in models)).hexdigest()[:10]
 sw = f'''/* Mountain Kings : mise en cache pour un démarrage rapide et des mises à jour automatiques. */

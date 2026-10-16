@@ -1,35 +1,25 @@
 <title>Mountain Kings</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=Grenze+Gotisch:wght@600;700&display=swap">
 <style>
 /* Layout: full-screen 3D valley; a thin game HUD floats on top (identity + stock at the top, actions at the bottom), menus rise as bottom sheets. */
+/* Identité « Taverne » (choisie le 16 oct.) : parchemin clair, bois foncé, dorures, bordeaux ; titres en lettres de vieux livre.
+   Polices livrées avec le jeu (docs/fonts, licence OFL) : IM Fell English SC (titres) et Alegreya Sans (texte). */
+@font-face{font-family:"IM Fell English SC";src:url(fonts/imfell-sc.woff) format("woff");font-display:swap}
+@font-face{font-family:"Alegreya Sans";font-weight:400 500;src:url(fonts/alegreya-400.woff) format("woff");font-display:swap}
+@font-face{font-family:"Alegreya Sans";font-weight:600 700;src:url(fonts/alegreya-700.woff) format("woff");font-display:swap}
+@font-face{font-family:"Alegreya Sans";font-weight:800 900;src:url(fonts/alegreya-800.woff) format("woff");font-display:swap}
 :root{
-  --bg:#E8EDE9; --surface:#F6F8F5; --surface-2:#DCE4DE; --fg:#17231E; --muted:#55645C; --line:#C3CEC6;
-  --accent:#2A684B; --accent-fg:#F3FAF6; --lantern:#AD6210; --lantern-soft:#F4E2C6; --danger:#A63D2C; --ok:#2B7449;
-  --wood:#8B5A2B; --stone:#5F6E7B; --food:#9C7112; --shadow:rgba(23,35,30,.18);
-  --gold:#A8750C; --iron:#5A6773; --r0:#69727D; --r1:#2D8649; --r2:#2A64C4; --r3:#8243C6; --r4:#BC5C16; --rs:#0F8670;
-  --hud:rgba(246,248,245,.9);
-  --font-display:"Grenze Gotisch","Palatino Linotype","Book Antiqua",Georgia,serif;
-  --font-body:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-}
-@media (prefers-color-scheme: dark){
-  :root:not([data-theme="light"]){
-    --bg:#0F1613; --surface:#16201C; --surface-2:#22302A; --fg:#E2EAE5; --muted:#93A49A; --line:#2E3D36;
-    --accent:#6CBB91; --accent-fg:#0B1712; --lantern:#F0A548; --lantern-soft:#3A2B16; --danger:#EE8A75; --ok:#73C597;
-    --wood:#D49C63; --stone:#A8B6C2; --food:#E3BC5C; --shadow:rgba(0,0,0,.5); --hud:rgba(22,32,28,.9); color-scheme:dark;
-    --gold:#F2C14E; --iron:#AEBBC7; --r0:#B4BCC6; --r1:#6FD38C; --r2:#86B7FF; --r3:#C9A0FF; --r4:#FFAD5C; --rs:#4FD8BF;
-  }
-}
-:root[data-theme="dark"]{
-  --bg:#0F1613; --surface:#16201C; --surface-2:#22302A; --fg:#E2EAE5; --muted:#93A49A; --line:#2E3D36;
-  --accent:#6CBB91; --accent-fg:#0B1712; --lantern:#F0A548; --lantern-soft:#3A2B16; --danger:#EE8A75; --ok:#73C597;
-  --wood:#D49C63; --stone:#A8B6C2; --food:#E3BC5C; --shadow:rgba(0,0,0,.5); --hud:rgba(22,32,28,.9); color-scheme:dark;
-  --gold:#F2C14E; --iron:#AEBBC7; --r0:#B4BCC6; --r1:#6FD38C; --r2:#86B7FF; --r3:#C9A0FF; --r4:#FFAD5C; --rs:#4FD8BF;
+  --bg:#e6d6b0; --surface:#f3e8cc; --surface-2:#e6d4aa; --fg:#3b2a18; --muted:#6e5536; --line:#cbb083;
+  --accent:#8e2a3e; --accent-fg:#f8ecd2; --lantern:#a3600c; --lantern-soft:#f1dcae; --danger:#a8352a; --ok:#3d7a37;
+  --wood:#8b5a2b; --stone:#6b6f72; --food:#9c7112; --shadow:rgba(59,36,20,.28);
+  --gold:#a8750c; --iron:#5a6773; --r0:#6f767e; --r1:#3d8a47; --r2:#2f63b8; --r3:#7d3fb8; --r4:#c47a10; --rs:#0f8670;
+  --hud:#f3e8cc; --wd:#5a3a22; --wdd:#3e2716; --wl:#7a5230; --gilt:#c9922e; --parch:#efe2c4; --ink:#3b2a18; --pfg:#f4e2c6;
+  --font-display:"IM Fell English SC","Palatino Linotype","Book Antiqua",Georgia,serif;
+  --font-body:"Alegreya Sans","Trebuchet MS",system-ui,sans-serif;
+  color-scheme:light;
 }
 *{box-sizing:border-box}
 html,body{height:100%}
-body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:14px;line-height:1.4;overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
+body{background:#2a1c12;color:var(--fg);font-family:var(--font-body);font-size:14px;font-size-adjust:.5;line-height:1.4;overflow:hidden;overscroll-behavior:none;-webkit-tap-highlight-color:transparent;-webkit-user-select:none;user-select:none}
 h1,h2,h3,p{margin:0}
 #app{position:fixed;left:0;top:0;width:100%;height:100%;overflow:hidden}
 #gl{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;background:#9cc6e8}
@@ -235,14 +225,7 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 @media (prefers-reduced-motion: reduce){ .btn,.bar i,.toast{transition:none} }
 /* Paysage : barre d'infos en haut sur une ligne, actions en bas à droite, menus en panneau à droite */
 .land .hud{max-width:none;padding-inline:14px}
-.land .hud.top{display:flex;flex-wrap:wrap;align-items:flex-start;gap:6px;padding-top:8px}
-.land .idrow{display:contents}
-.land .me{order:1;max-width:250px;padding:4px 10px 4px 4px}
-.land .crest{width:32px;height:32px}
-.land .idtxt b{font-size:19px}
-.land .stock{order:2;flex:1 1 420px;max-width:560px;grid-template-columns:repeat(6,minmax(0,1fr))}
-.land .pill{padding:5px 8px 6px}
-.land .chips{order:3;flex:1 1 auto;max-width:none}
+.land .hud.top{gap:7px;padding-top:8px}
 .land .invite{order:4;flex-basis:100%;max-width:420px;margin-left:auto}
 .land .hud.top > .bt-top{flex:1 1 100%;max-width:560px;margin:0 auto;padding:5px 11px}
 .land .bt-top .nm b{font-size:17px}
@@ -252,8 +235,7 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 .land .hud.bottom > .card{flex:0 1 400px;margin-right:auto;min-width:0;max-height:calc(100vmin - 96px);overflow-y:auto;overscroll-behavior:contain}
 .land .hud.bottom > .card:only-child{margin-right:0;flex-basis:520px}
 .land .hud.bottom > .card.tip{flex-basis:380px}
-.land .nav{flex:0 0 auto;width:500px;padding:4px}
-.land .nav button{min-height:48px;padding:5px 2px 4px}
+.land .nav{flex:0 0 auto;width:504px}
 /* En paysage, la barre de combat se range en bas à gauche, hors du terrain de jeu. */
 .land .hud.bottom > .fightwrap{flex:1 1 auto;justify-items:start}
 .land .sheet{left:auto;right:0;top:0;bottom:0;transform:none;width:min(440px,60%);max-height:none;height:100%;border-radius:18px 0 0 18px;border:1px solid var(--line);border-right:0;padding-bottom:0}
@@ -398,7 +380,6 @@ details.help ul{margin:6px 0 0;padding-left:18px;display:grid;gap:5px}
 .stockrow{padding:6px 0;border-top:1px solid var(--line)} .stockrow:first-child{border-top:0}
 ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:var(--muted)}
 .item.cand{border-color:color-mix(in srgb,var(--lantern) 55%,var(--line))}
-.land .stock{flex:1 1 420px;max-width:560px}
 @media (max-width:420px){ .optgrid{grid-template-columns:1fr} .sbr{grid-template-columns:minmax(0,8em) minmax(0,1fr) 1.6em} }
 .hf2{display:grid;gap:12px} .hf2 .col{display:grid;gap:12px;align-content:start}
 .land .mcard:has(#heroForm){width:min(800px,100%)}
@@ -424,7 +405,6 @@ ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:v
 .gbar b{display:block;height:100%;background:var(--lantern);border-radius:3px}
 .grow2.done .gbar b{background:var(--ok)}
 .btn.gclaim{min-height:30px;padding:4px 9px;font-size:12px;flex:none}
-.land .hud.top > .goalrow{order:5;flex-basis:100%}
 .item .head b.row .ic{width:17px;height:17px}
 /* Création de héros : 6 races, 8 classes en petites cartes, résumé du choix */
 .optgrid.hk .optc span{padding:7px 9px;gap:1px}
@@ -465,7 +445,6 @@ ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:v
 .bagf .ic.sl{width:15px;height:15px;color:inherit}
 /* ---------- défense et raids ---------- */
 .nav{grid-template-columns:repeat(7,minmax(0,1fr))}
-.land .nav{width:570px}
 .nav button{white-space:nowrap;overflow:hidden}
 @media (max-width:420px){ .nav{gap:2px;padding:4px} .nav button{font-size:10px;letter-spacing:-.02em} .nav button .ic{width:22px;height:22px} }
 .bar.hp i{background:var(--ok)}
@@ -477,6 +456,166 @@ ul.help{margin:0;padding-left:18px;display:grid;gap:6px;font-size:13.5px;color:v
 .rpend{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(400px,92%);max-height:80%;overflow:auto;padding:16px;display:grid;gap:10px}
 .rpend h3{font-family:var(--font-display);font-size:28px;line-height:1.05}
 .rphud .djinfo{max-width:520px}
+
+/* ===================== Taverne : les matières (parchemin, bois, dorures, bordeaux) ===================== */
+.glass{background:var(--parch);-webkit-backdrop-filter:none;backdrop-filter:none;border:2px solid var(--wd);border-radius:7px;box-shadow:inset 0 0 10px rgba(120,80,30,.22),0 2px 0 var(--wdd),0 4px 12px rgba(30,18,8,.22)}
+.btn{border:2px solid var(--wdd);background:#6b4426;color:var(--pfg);border-radius:6px;box-shadow:0 3px 0 var(--wdd);transition:transform .08s ease,box-shadow .08s ease}
+.btn:active:not(.off){transform:translateY(2px);box-shadow:0 1px 0 var(--wdd)}
+.btn.primary{background:var(--accent);border-color:#4a1520;color:var(--accent-fg);box-shadow:0 3px 0 #4a1520}
+.btn.primary:active:not(.off){box-shadow:0 1px 0 #4a1520}
+.btn.warn{background:var(--gilt);border-color:#6b4a12;color:#2b1a0c;box-shadow:0 3px 0 #6b4a12}
+.btn.off{opacity:1;background:#e3d5b4;color:#857055;border-color:#b9a27a;box-shadow:0 3px 0 #b9a27a}
+.btn:focus-visible,.nav button:focus-visible,.medal:focus-visible,.sb:focus-visible,.ribbon:focus-visible,.me:focus-visible{outline:3px solid var(--gilt);outline-offset:2px}
+.x{background:var(--wdd);color:var(--pfg);border:1px solid var(--gilt);border-radius:5px;width:32px;height:32px;font-size:17px}
+.xs{background:rgba(59,36,20,.14)}
+.chip{background:#e8d8b2;border:1px solid #c4ab7d}
+.chip.short{background:#f3d6cf;border-color:#c47a6a}
+.chip.hero{background:#f6e3b4;color:var(--wd);border-color:var(--gilt)}
+.bar{background:#dccaa0;box-shadow:inset 0 1px 1px rgba(59,36,20,.25)}
+.bar i{background:linear-gradient(180deg,#dcaa48,var(--gilt))}
+.toast{background:var(--wd);color:var(--pfg);border:2px solid var(--gilt);border-radius:7px;box-shadow:0 3px 0 var(--wdd),0 10px 30px rgba(20,10,4,.35)}
+.loading{color:var(--fg)}
+/* les fiches (menus) : parchemin, en-tête de bois */
+.sheet{background:var(--parch);border:0;border-top:3px solid var(--wd);box-shadow:0 -8px 30px rgba(30,18,8,.35),inset 0 0 30px rgba(120,80,30,.16)}
+.land .sheet{border:0;border-left:3px solid var(--wd);border-radius:10px 0 0 10px;box-shadow:-8px 0 30px rgba(30,18,8,.35),inset 0 0 30px rgba(120,80,30,.16)}
+.sheet-head{background:var(--wd);color:var(--pfg);padding:7px 9px 7px 16px;border-radius:7px 0 0 0;box-shadow:inset 0 -2px 0 var(--wdd),0 2px 0 var(--gilt)}
+.sheet-head h2,.land .sheet-head h2{font-weight:400;color:var(--pfg);font-size:23px;letter-spacing:.01em;font-size-adjust:none}
+.sheet-body{padding-top:12px}
+.sec > h4{font-family:var(--font-display);font-weight:400;text-transform:none;letter-spacing:.02em;font-size:16px;color:var(--wd);padding-bottom:3px;background:linear-gradient(90deg,var(--gilt),rgba(201,146,46,0)) left bottom/100% 1px no-repeat;font-size-adjust:none}
+.item{background:#f8efd9;border:1px solid var(--line);border-radius:6px;box-shadow:0 1px 0 rgba(59,36,20,.12)}
+.item.feature{border-color:var(--gilt);background:linear-gradient(180deg,#f6e3b4,#f8efd9 75%)}
+.item.opt.on{border-color:var(--gilt);background:#f6e3b4;box-shadow:inset 0 0 0 1px var(--gilt)}
+.item.crown{box-shadow:inset 0 0 0 1.5px var(--gilt)}
+.crowngoal{background:#fbf5e6}
+.chron .ce{background:#fbf5e6}
+.optc span{background:#f8efd9;border-color:var(--line);border-radius:6px}
+.optc input:checked + span{border-color:var(--gilt);background:#f6e3b4}
+.hsum{background:#e8d8b2;border-radius:6px}
+.mcard input[type=text],.linkbox{background:#fbf5e6;border:2px solid var(--line);border-radius:6px}
+/* les fenêtres : parchemin cerné de bois, double liseré doré */
+.modal{background:rgba(30,18,8,.55)}
+.mcard{background:var(--parch);border:3px solid var(--wd);border-radius:8px;box-shadow:inset 0 0 0 3px var(--parch),inset 0 0 0 4px var(--gilt),inset 0 0 30px rgba(120,80,30,.2),0 24px 60px rgba(20,10,4,.5)}
+.mcard h2,.rpend h3,.tuto-card h3{font-weight:400;font-size-adjust:none}
+.eyebrow{color:var(--accent);letter-spacing:.12em}
+.sceneact{background:var(--parch);border-top-color:var(--line)}
+.tuto-card{background:var(--parch);border:2px solid var(--wd);border-radius:8px}
+/* les cartes du bas (bâtiment, villageois, défense) : en-tête de bois */
+.card > h3:first-child{margin:-12px -14px 2px;padding:4px 5px 4px 12px;background:var(--wd);color:var(--pfg);border-radius:4px 4px 0 0;font-family:var(--font-display);font-weight:400;font-size:19px;align-items:center;font-size-adjust:none}
+.card > h3:first-child small{color:#e3cfa0;font-family:var(--font-body);font-size-adjust:.5}
+.card > h3:first-child .x{width:28px;height:28px}
+.land .hud.bottom > .card:not(.tip):has(> h3:first-child){position:fixed;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 56px);width:min(300px,42vw);max-height:calc(100% - 126px);margin:0;overflow-y:auto}
+/* ---------- le haut de l'écran : une seule rangée ---------- */
+.hud.top > .topbar{display:flex;align-items:flex-start;gap:8px;width:100%;pointer-events:none}
+.topbar > *{pointer-events:auto}
+.land .hud.top{display:grid;justify-items:start}
+.me{height:40px;max-width:210px;padding:3px 10px 3px 6px;gap:8px;flex:none}
+svg.crest{width:24px;height:28px;flex:none;border-radius:0;box-shadow:none;display:block}
+svg.crest text{font-family:var(--font-display);font-size:15px;fill:#fbf1da}
+.idtxt b{font-size:18px;font-weight:400;font-size-adjust:none}
+.idtxt small{font-size:11px;font-weight:700;gap:3px}
+.idtxt small .ic{width:12px;height:12px}
+.kingmark .ic{width:14px;height:14px}
+.stockband{display:flex;height:40px;padding:0;overflow:hidden;flex:0 1 auto;min-width:0}
+.sb{appearance:none;border:0;background:transparent;font:inherit;color:var(--fg);position:relative;display:flex;align-items:center;justify-content:center;gap:4px;padding:0 9px;border-left:1px solid #d3bd92;cursor:pointer;font-weight:800;font-size:15px;font-variant-numeric:tabular-nums;white-space:nowrap;min-width:0}
+.sb:first-child{border-left:0}
+.sb .ic{width:19px;height:19px}
+.sv small{font-size:10.5px;font-weight:700;color:var(--muted);margin-left:1px}
+.sbar{position:absolute;left:9px;right:9px;bottom:4px;height:2px;border-radius:1px;background:#dccaa0;overflow:hidden}
+.sbar b{display:block;height:100%;background:var(--wood)}
+.sb.mor .sbar b{background:#b8323d}
+.sb.full .sv{color:var(--lantern)} .sb.full .sbar b{background:var(--gilt)}
+.sb.warn .sv{color:var(--danger)} .sb.warn .sbar b{background:var(--danger)}
+.medals{margin-left:auto;display:flex;gap:8px;flex:none;padding-bottom:9px}
+.medal{appearance:none;font:inherit;position:relative;width:36px;height:36px;border-radius:50%;border:2px solid var(--wd);background:var(--parch);box-shadow:0 2px 0 var(--wdd),0 3px 8px rgba(20,10,4,.25);display:grid;place-items:center;padding:0;cursor:pointer;flex:none;color:var(--fg)}
+.medal:active{transform:translateY(1px)}
+.medal .ic{width:21px;height:21px}
+.medal .lilface{width:27px;height:27px}
+.medal .mt{position:absolute;left:50%;bottom:-9px;transform:translateX(-50%);padding:0 5px;height:15px;line-height:15px;border-radius:8px;background:var(--wd);color:var(--pfg);font-size:10px;font-weight:800;white-space:nowrap}
+.medal.red{border-color:#a32b2b;box-shadow:0 2px 0 var(--wdd),0 0 0 3px rgba(214,80,40,.35)}
+.medal.red .mt{background:#a32b2b}
+.medal.pulse{animation:medalp 1.1s ease-in-out infinite}
+@keyframes medalp{50%{box-shadow:0 2px 0 var(--wdd),0 0 0 7px rgba(214,80,40,.45)}}
+.medal.hot{border-color:#a8750c} .medal.hot .mt{background:var(--gilt);color:#2b1a0c}
+.medal.dot::after,.medal.live::after{content:"";position:absolute;right:-2px;top:-2px;width:10px;height:10px;border-radius:50%;background:var(--accent);border:2px solid var(--parch)}
+.medal.live::after{top:auto;bottom:-1px;right:-1px;background:#3ccf73}
+.pini{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;color:#fff;font-family:var(--font-display);font-size:15px;border:1.5px solid var(--wdd);font-size-adjust:none}
+.medal.away .pini{filter:grayscale(.6);opacity:.75}
+@media (prefers-reduced-motion: reduce){ .medal.pulse{animation:none} }
+.hud.top > .notes{display:flex;gap:6px;flex-wrap:wrap;justify-self:end}
+.chipb{border-radius:6px}
+.chipb.alert{background:var(--accent);color:var(--accent-fg);border-color:#4a1520}
+/* le ruban d'objectif */
+.hud.top > .ribbonrow{display:flex;pointer-events:none}
+.ribbon{appearance:none;font:inherit;color:var(--fg);pointer-events:auto;position:relative;display:flex;align-items:center;gap:6px;height:30px;min-width:176px;max-width:300px;padding:0 9px 0 7px;cursor:pointer;text-align:left}
+.ribbon .ic{width:17px;height:17px;flex:none}
+.ribbon .rn{flex:1;min-width:0;font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ribbon small{font-size:12.5px;font-weight:800;color:var(--muted);font-variant-numeric:tabular-nums}
+.ribbon .rmore{font-style:normal;font-size:10.5px;font-weight:800;color:var(--muted);background:#e3cf9f;border-radius:8px;padding:0 5px;line-height:15px}
+.rbar{position:absolute;left:30px;right:9px;bottom:4px;height:2px;background:#dccaa0;border-radius:1px;overflow:hidden}
+.rbar b{display:block;height:100%;background:var(--gilt)}
+.ribbon.ready{background:linear-gradient(180deg,#f9e5ae,#efcd78);border-color:#8a6212;padding-right:3px;cursor:default;box-shadow:inset 0 0 8px rgba(255,255,255,.4),0 2px 0 var(--wdd),0 0 0 3px rgba(240,180,60,.35)}
+.ribbon .rtxt{appearance:none;border:0;background:transparent;font:inherit;color:inherit;display:flex;align-items:center;gap:6px;flex:1;min-width:0;cursor:pointer;padding:0;text-align:left}
+.ribbon .gclaim{min-height:24px;padding:1px 9px;font-size:12px;box-shadow:0 2px 0 #4a1520;border-width:1.5px}
+/* ---------- la barre du bas : une planche de bois, fine et centrée ---------- */
+.nav{background:var(--wd);border:2px solid var(--wdd);border-radius:9px;box-shadow:inset 0 2px 0 var(--wl),0 3px 0 rgba(0,0,0,.25),0 6px 14px rgba(20,10,4,.3);padding:3px 4px;gap:2px}
+.nav button{color:var(--pfg);font-weight:700;font-size:11px;min-height:40px;padding:3px 2px 2px;gap:1px;border-radius:6px}
+.nav button .ic{width:22px;height:22px}
+.nav button:active{background:rgba(255,255,255,.08)}
+.nav .dot{background:#e0602a;box-shadow:0 0 0 1.5px var(--wdd);top:3px;right:calc(50% - 17px)}
+.land .hud.bottom{justify-content:center;padding-bottom:6px}
+/* le conseil de Sukhoï : une ligne au-dessus de la barre ; on touche le texte pour le lire en entier */
+.card.tip.tipline{display:flex;align-items:center;gap:8px;padding:4px 5px 4px 5px;border-left-width:2px}
+.tipline .sukface{width:30px;height:30px;border-width:1.5px}
+.tipline .sukface svg{width:29px;height:29px}
+.tiptx{appearance:none;border:0;background:transparent;font:inherit;color:var(--fg);text-align:left;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13.5px;cursor:pointer;padding:4px 2px}
+.tiptx b{color:var(--accent)}
+.tipline.open .tiptx{white-space:normal;line-height:1.35}
+.tipline .btn.small{min-height:30px;padding:3px 10px;flex:none}
+.land .hud.bottom > .card.tip{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom,0px) + 62px);width:min(560px,calc(100% - 24px));margin:0;max-height:none}
+/* le journal : l'icône à gauche, le texte à côté (même long) */
+.log li > .row{flex-wrap:nowrap;align-items:flex-start;gap:7px}
+.log li > .row > .ic{margin-top:1px}
+/* ---------- Sukhoï et Lilou ---------- */
+.sukface{background:radial-gradient(circle at 50% 35%,#5a4636,#2c2019);border:2px solid var(--gilt)}
+.sukbub b{color:var(--accent)}
+/* ---------- les objets : cadres enluminés à la couleur de leur rareté ---------- */
+.item.irow{display:flex;gap:10px;align-items:center}
+.irb{display:grid;gap:3px;flex:1;min-width:0}
+.irb .head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ifr{--ek:7px;position:relative;flex:none;width:46px;height:46px;display:grid;place-items:center;border-radius:7px;border:3px solid var(--fc);background:radial-gradient(circle at 50% 42%,#fffaf0 0%,var(--fb) 72%);box-shadow:inset 0 0 0 1px rgba(255,255,255,.6),0 2px 0 rgba(59,36,20,.3)}
+.ifr > svg{width:30px;height:30px}
+.ifr.sm{--ek:5px;width:34px;height:34px;border-width:2px;border-radius:6px}
+.ifr.sm > svg{width:22px;height:22px}
+.fr0{--fc:#80878f;--fb:#ebe5d8} .fr1{--fc:#3d8a47;--fb:#e2ebd3} .fr2{--fc:#2f63b8;--fb:#dbe4f1} .fr3{--fc:#7d3fb8;--fb:#e9def3;--fk:#b48ad8} .fr4{--fc:#c47a10;--fb:#f8e7bf;--fk:#e9b43c} .frs{--fc:#0f8670;--fb:#d6efe8;--fk:#5cc7ad}
+.fre{--fc:#c9b083;--fb:#efe2c4;border-style:dashed;opacity:.6}
+.fr3::before,.fr4::before,.frs::before{content:"";position:absolute;inset:2px;pointer-events:none;background:linear-gradient(var(--fk),var(--fk)) left top/var(--ek) 2px,linear-gradient(var(--fk),var(--fk)) left top/2px var(--ek),linear-gradient(var(--fk),var(--fk)) right top/var(--ek) 2px,linear-gradient(var(--fk),var(--fk)) right top/2px var(--ek),linear-gradient(var(--fk),var(--fk)) left bottom/var(--ek) 2px,linear-gradient(var(--fk),var(--fk)) left bottom/2px var(--ek),linear-gradient(var(--fk),var(--fk)) right bottom/var(--ek) 2px,linear-gradient(var(--fk),var(--fk)) right bottom/2px var(--ek);background-repeat:no-repeat}
+.fr4{box-shadow:inset 0 0 0 1px rgba(255,255,255,.6),0 2px 0 rgba(59,36,20,.3),0 0 10px 2px rgba(240,170,40,.6)}
+.ifu{position:absolute;right:-7px;top:-7px;min-width:19px;height:16px;padding:0 3px;border-radius:8px;background:var(--fc);border:1.5px solid var(--wdd);color:#fff8e6;font-size:10.5px;font-weight:800;line-height:13px;text-align:center}
+.ifc{position:absolute;left:-6px;bottom:-6px;width:17px;height:17px;border-radius:50%;border:1.5px solid var(--wdd);display:grid;place-items:center}
+.ifc.up{background:#2f8a45} .ifc.down{background:#b24130}
+.ifc svg{width:9px;height:9px;fill:#fff8e6}
+.ifg{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);display:flex;gap:2px}
+.ifg i{width:6px;height:6px;border-radius:50%;border:1px solid var(--wdd)}
+.ifr.sm .ifu{right:-6px;top:-6px;min-width:16px;height:14px;font-size:9.5px;line-height:11px}
+.ifr.sm .ifc{width:14px;height:14px;left:-5px;bottom:-5px}
+.ifr.sm .ifg{display:none}
+.slotrow .ifr{margin-right:2px}
+.irow2 .row{gap:8px}
+/* ---------- le donjon : boutons de bois et de métal ---------- */
+.djsk{border:3px solid var(--gilt);background:radial-gradient(circle at 50% 30%,#8a5a34,#4a2c18 70%);color:var(--pfg);box-shadow:0 4px 0 #2a1a0e,0 6px 14px rgba(0,0,0,.45),inset 0 2px 0 rgba(255,255,255,.15)}
+.djsk.roll{background:radial-gradient(circle at 50% 30%,#8d99a5,#4a545e 70%);border-color:#c7d1da;color:#fff}
+.djsk.pot{background:radial-gradient(circle at 50% 30%,#a8475a,#5a1c2a 70%);border-color:var(--gilt);color:#fff}
+.djsk .djico .ic{width:32px;height:32px}
+.djsk.roll .djico .ic,.djsk.pot .djico .ic{width:28px;height:28px}
+.djsk .djn{background:var(--parch);color:var(--ink);box-shadow:0 0 0 1.5px var(--wdd)}
+.djbase{background:rgba(239,226,196,.12);border:2px solid rgba(239,226,196,.45)}
+.djknob{background:radial-gradient(circle at 50% 35%,#f3e8cc,#c9b083);border:2px solid var(--wd)}
+.djtuto{background:var(--parch);color:var(--ink);border:2px solid var(--wd);border-radius:8px;box-shadow:inset 0 0 10px rgba(120,80,30,.2),0 3px 0 var(--wdd),0 8px 24px rgba(0,0,0,.4)}
+.djhp{background:rgba(42,28,18,.55);box-shadow:inset 0 0 0 1.5px var(--wdd)}
+/* en portrait : la plaque et les pastilles en haut, les réserves sur toute la largeur en dessous */
+:root:not(.land) .topbar{flex-wrap:wrap}
+:root:not(.land) .stockband{order:3;flex:1 1 100%}
+:root:not(.land) .sb{flex:1;padding:0 4px}
 </style>
 
 <div id="app">

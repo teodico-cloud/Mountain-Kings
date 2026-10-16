@@ -3,22 +3,66 @@
    l'arrivée de Lilou, sa chambre (humeur, caprices, berceuse) et ses petits mots. Ce fichier ne fait que définir :
    p4_app et p4d_donjon appellent ces fonctions. */
 /* Sukhoï : une chatte grise, la tache blanche sur la poitrine, une vieille cicatrice de guerre au-dessus de l'œil. */
-const SUK_SVG = '<svg viewBox="0 0 48 48" aria-hidden="true"><path d="M9 21 7 6l12 8M39 21l2-15-12 8" fill="#7d838b"/><path d="M10.5 18 9.6 9.5l6.4 4.4M37.5 18l.9-8.5-6.4 4.4" fill="#e9b7b9"/>'
-  + '<ellipse cx="24" cy="25" rx="16" ry="14" fill="#8b9097"/><path d="M15 36c3 7 15 7 18 0-5 2-13 2-18 0z" fill="#f4f1ea"/>'
-  + '<ellipse cx="17.5" cy="24" rx="3.2" ry="3.6" fill="#d6e36a"/><ellipse cx="30.5" cy="24" rx="3.2" ry="3.6" fill="#d6e36a"/>'
-  + '<ellipse cx="17.5" cy="24.4" rx="1.1" ry="3" fill="#2a2a2a"/><ellipse cx="30.5" cy="24.4" rx="1.1" ry="3" fill="#2a2a2a"/>'
-  + '<path d="M26.5 15.5 33 22" stroke="#5c5f64" stroke-width="1.4" stroke-linecap="round"/><path d="M22.4 29.2h3.2L24 31z" fill="#e58a95"/>'
-  + '<path d="M24 31v1.6M24 32.6c-1.2 1.4-3 1.4-4 .3M24 32.6c1.2 1.4 3 1.4 4 .3" stroke="#4a4d52" stroke-width="1" fill="none" stroke-linecap="round"/>'
-  + '<path d="M13 29.5 4.5 28M13 31.5 5 33M35 29.5l8.5-1.5M35 31.5l8 1.5" stroke="#e8e8e8" stroke-width=".8" stroke-linecap="round"/></svg>';
+/* Sukhoï, peinte : chatte grise, tache blanche en haut de la poitrine, yeux jaune-vert, une oreille entaillée
+   et une cicatrice sur l'œil (souvenirs de la Grande Bataille contre le Monstre de Fer). */
+const SUK_SVG = (() => {
+  const O = '#2a1d16', P = (d, f, w) => `<path d="${d}" fill="${f}"${w ? ` stroke="${O}" stroke-width="${w}" stroke-linejoin="round"` : ''}/>`;
+  const L = (d, c, w) => `<path d="${d}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const eye = m => { const X = x => (m ? 48 - x : x).toFixed(1), path = pts => pts.replace(/(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g, (_, x, y) => X(+x) + ' ' + y);
+    return P(path('M13.4,23.8C14.6,21.8 16.4,20.8 18.4,20.8S21.8,21.8 22.4,23.4C21.6,25.6 19.8,27 17.6,27 15.6,27 14.2,25.8 13.4,23.8Z'), '#cfdc5a', 1)
+      + P(path('M14.4,23.4C15.6,22 17,21.4 18.4,21.4S21,22 21.6,23.2C20,22.6 18.2,22.6 16.4,22.9Z'), '#e9f19a')
+      + P(path('M18.2,21.5C17.5,22.8 17.5,25.4 18.2,26.6 18.9,25.4 18.9,22.8 18.2,21.5Z'), '#1d1a17')
+      + `<circle cx="${X(16.9)}" cy="22.9" r=".9" fill="#fff"/>`
+      + P(path('M13.1,23.7C14.5,21.5 16.4,20.6 18.4,20.6S21.9,21.6 22.7,23.1L22.4,23.8C21,22.7 19.6,22.2 18.2,22.2 16.4,22.2 14.8,22.8 13.1,23.7Z'), '#6b7179');
+  };
+  return '<svg viewBox="-3 -3 54 54" aria-hidden="true" focusable="false">'
+    + P('M9.6 52c.6-7.6 6-13.4 14.4-13.4S37.8 44.4 38.4 52z', '#7a8088', 1.1)
+    + P('M19 40.6c1.5 3 3.2 4.8 5 4.8s3.5-1.8 5-4.8c-1.6.5-3.3.7-5 .7s-3.4-.2-5-.7z', '#f4f0e8')
+    + P('M8.6 22 8 15l2.3-1.5L7.7 12 7.3 6.9c-.1-1 1-1.6 1.8-1L20.4 14z', '#858b93', 1.1) + P('M10.7 18.4 10 13.6l.9-.6-1.2-1.4-.1-1.8 6.9 5.1z', '#e7aab0')
+    + P('M39.4 22l1.3-15.1c.1-1-1-1.6-1.8-1L27.6 14z', '#858b93', 1.1) + P('M37.4 18.4l.8-8.8-7 5.2z', '#e7aab0') + P('M38.2 9.6l-.8 8.8-2.2-2.3z', '#c98d94')
+    + P('M24 11c-9.6 0-17 6.4-17 15.2 0 3.6 1.2 6.6 3.2 9l-2.4 1.6 3.8.2c3.2 2.8 7.6 4.4 12.4 4.4s9.2-1.6 12.4-4.4l3.8-.2-2.4-1.6c2-2.4 3.2-5.4 3.2-9C41 17.4 33.6 11 24 11z', '#8d939b')
+    + P('M32.4 15.4c4.2 2.4 7 6.2 7 10.8 0 3.4-1.2 6.2-3 8.4l1.6 1.2-3.2.2c-3 2.6-7.2 4-11.6 4 6.6-2.4 11.2-8.6 11.2-15.6 0-3.6-.8-6.6-2-9z', '#757b83')
+    + '<ellipse cx="20" cy="16.8" rx="6" ry="2.6" fill="#b3b9c0" opacity=".85"/>'
+    + L('M24 12.4v4.4M20.4 13.2l.9 3.6M27.6 13.2l-.9 3.6', '#5d636b', 1.4)
+    + P('M24 11c-9.6 0-17 6.4-17 15.2 0 3.6 1.2 6.6 3.2 9l-2.4 1.6 3.8.2c3.2 2.8 7.6 4.4 12.4 4.4s9.2-1.6 12.4-4.4l3.8-.2-2.4-1.6c2-2.4 3.2-5.4 3.2-9C41 17.4 33.6 11 24 11z', 'none', 1.2)
+    + eye(false) + eye(true)
+    + L('M27 15.6l7.6 10.6', '#c98587', 1.4) + L('M29.3 18.2l1.5-1M31.1 20.7l1.5-1M32.9 23.2l1.5-1', '#c98587', .9)
+    + P('M24 27.4c-2.4 0-4.6 1-5.8 2.8-1.4 2-.8 4.8 1.6 5.8 1.6.7 3 .2 4.2-.6 1.2.8 2.6 1.3 4.2.6 2.4-1 3-3.8 1.6-5.8-1.2-1.8-3.4-2.8-5.8-2.8z', '#f2eee6')
+    + P('M22.2 28.4h3.6c.4 0 .6.4.4.7L24.4 31c-.2.3-.6.3-.8 0l-1.8-1.9c-.2-.3 0-.7.4-.7z', '#e58a95', .8)
+    + L('M24 31.2v1.4M24 32.6c-.9 1.2-2.6 1.4-3.6.4M24 32.6c.9 1.2 2.6 1.4 3.6.4', O, .9)
+    + L('M17.2 31.2 5.8 29.4M17.4 33 6.2 34.8M30.8 31.2l11.4-1.8M30.6 33l11.2 1.8', '#f6f3ec', .8)
+    + '</svg>';
+})();
 const sukFace = cls => `<span class="sukface${cls ? ' ' + cls : ''}">${SUK_SVG}</span>`;
 const sukBubble = (txt, extra) => `<div class="sukbub">${sukFace()}<div><b>Sukhoï</b><p>${esc(txt)}</p>${extra || ''}</div></div>`;
-/* Les visages de Lilou selon son humeur (très simples) */
-const LILOU_FACE = { colere: ['#e98a7a', 'M17 31q7-5 14 0', 'M14 19l6 3M34 19l-6 3'], grognon: ['#f0b39a', 'M18 31q6-3 12 0', 'M15 20h5M28 20h5'], calme: ['#f3cdb6', 'M18 30h12', ''], contente: ['#f3cdb6', 'M17 28q7 5 14 0', ''], ravie: ['#f6c9b0', 'M16 27q8 8 16 0z', ''] };
+/* Lilou, peinte : bébé blond aux yeux bleus ; le visage change avec son humeur */
+const LILOU_FACE = {
+  colere: { skin: '#f6bcaa', mouth: ['M19.6 36.6c2.6-2.4 6.2-2.4 8.8 0', 1.7], brow: 'M14.6 21.4l5.4 2M33.4 21.4 28 23.4', tear: 1 },
+  grognon: { skin: '#f6cbb4', mouth: ['M20.6 36.2c2.2-1.3 4.6-1.3 6.8 0', 1.5], brow: 'M15 22.6h4.8M28.2 22.6H33' },
+  calme: { skin: '#f7d5bf', mouth: ['M21.4 35.6h5.2', 1.5], brow: 'M15.4 21.6c1.4-.8 3-.9 4.4-.3M32.6 21.6c-1.4-.8-3-.9-4.4-.3' },
+  contente: { skin: '#f7d5bf', mouth: ['M19.6 34.4c2.4 2.8 6.4 2.8 8.8 0', 1.7], brow: 'M15.4 21.2c1.4-.9 3-1 4.4-.4M32.6 21.2c-1.4-.9-3-1-4.4-.4' },
+  ravie: { skin: '#f8d2b9', open: 1, brow: 'M15.4 20.8c1.4-.9 3-1 4.4-.4M32.6 20.8c-1.4-.9-3-1-4.4-.4', happy: 1 },
+};
 function lilouFace(k) {
-  const F = LILOU_FACE[k] || LILOU_FACE.calme;
-  return `<span class="lilface" aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="24" cy="26" r="16" fill="${F[0]}"/><path d="M14 16c2-9 18-11 21-2-4-3-6-1-8-4-3 3-8 1-13 6z" fill="#f2d27a"/>`
-    + `<circle cx="18" cy="24" r="2.2" fill="#3f6fd0"/><circle cx="30" cy="24" r="2.2" fill="#3f6fd0"/><path d="${F[1]}" stroke="#a5523f" stroke-width="2" fill="${k === 'ravie' ? '#a5523f' : 'none'}" stroke-linecap="round"/>`
-    + (F[2] ? `<path d="${F[2]}" stroke="#7a5a3a" stroke-width="1.8" stroke-linecap="round"/>` : '') + `</svg></span>`;
+  const F = LILOU_FACE[k] || LILOU_FACE.calme, O = '#3b2414';
+  const P = (d, f, w) => `<path d="${d}" fill="${f}"${w ? ` stroke="${O}" stroke-width="${w}" stroke-linejoin="round"` : ''}/>`;
+  const L = (d, c, w) => `<path d="${d}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="round"/>`;
+  const eyeO = x => `<ellipse cx="${x}" cy="26.2" rx="2.9" ry="3.3" fill="#2f5fbf" stroke="${O}" stroke-width=".9"/><ellipse cx="${x}" cy="26.8" rx="1.9" ry="2.2" fill="#5a90e6"/><circle cx="${x}" cy="26.6" r="1.1" fill="#1a1410"/><circle cx="${x - 1}" cy="25.1" r=".95" fill="#fff"/><circle cx="${x + .9}" cy="27.6" r=".45" fill="#fff"/>`;
+  return `<span class="lilface" aria-hidden="true"><svg viewBox="0 0 48 48" focusable="false">`
+    + `<circle cx="9.6" cy="27.4" r="3.2" fill="${F.skin}" stroke="${O}" stroke-width="1.1"/><circle cx="38.4" cy="27.4" r="3.2" fill="${F.skin}" stroke="${O}" stroke-width="1.1"/>`
+    + `<circle cx="24" cy="27" r="15.4" fill="${F.skin}"/>`
+    + P('M33 15.8c3.6 2.8 5.8 6.8 5.8 11.2 0 8.4-6.6 15.2-14.8 15.2-4.4 0-8.2-1.8-11-4.8 2.6 1.4 5.4 2.2 8.4 2.2 8.4 0 15-6.8 15-15.2 0-3.2-1.2-6.2-3.4-8.6z', '#e9b597')
+    + `<circle cx="24" cy="27" r="15.4" fill="none" stroke="${O}" stroke-width="1.2"/>`
+    + `<ellipse cx="15.4" cy="31.8" rx="3.2" ry="2.2" fill="#f29a95" opacity=".6"/><ellipse cx="32.6" cy="31.8" rx="3.2" ry="2.2" fill="#f29a95" opacity=".6"/>`
+    + P('M10.4 23c.2-8 6.2-13.6 13.6-13.6S37.4 15 37.6 23c-1.4-2.6-3.6-4.4-6.2-5 .5 1 .7 2 .6 3.2-2-2.6-5-3.8-8-3.6-3 .2-5.6 1.6-7.2 3.6.1-1.2.5-2.4 1.1-3.2-2.8.8-5.2 2.6-7.5 5z', '#f2d27a', 1)
+    + P('M14.6 17.4c2-3.4 5.4-5.4 9.4-5.4 1.4 0 2.8.2 4 .8-4.6-.4-9 1.2-12.4 5.2z', '#fbe7a6')
+    + L('M23.4 9.8c-.9-2.8.7-5 3-5 1.9 0 3 1.8 2.2 3.2-.7 1.1-2.3 1-2.6-.2', '#d9ad4a', 1.5)
+    + L(F.brow, '#c9974a', 1.3)
+    + (F.happy ? L('M15.2 26.8c1.6-2.6 4.2-2.6 5.8 0M27 26.8c1.6-2.6 4.2-2.6 5.8 0', O, 1.7) : eyeO(18.2) + eyeO(29.8))
+    + L('M23.2 30.6c.5.4 1.1.4 1.6 0', '#d48f78', .9)
+    + (F.open ? P('M19 33.6c1.2 4.6 8.8 4.6 10 0z', '#9a3f32', 1) + P('M21.6 36.6c1.4-1.2 3.4-1.2 4.8 0-1.4.9-3.4.9-4.8 0z', '#f08a8a') : L(F.mouth[0], '#9a3f32', F.mouth[1]))
+    + (F.tear ? '<path d="M13.8 29.4c-.8 1.2-1.2 2-1.2 2.6a1.2 1.2 0 0 0 2.4 0c0-.6-.4-1.4-1.2-2.6z" fill="#8fd0f2" stroke="#3b6f9a" stroke-width=".6"/>' : '')
+    + '</svg></span>';
 }
 /* Les répliques de Sukhoï */
 const SUK = {

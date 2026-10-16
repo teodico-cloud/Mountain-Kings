@@ -33,50 +33,7 @@ function fmtAgo(t) {
   return days === 1 ? 'hier' : 'il y a ' + days + ' j';
 }
 
-/* ---------- icônes ---------- */
-const IC = {
-  bois: '<svg viewBox="0 0 20 20"><rect x="1.5" y="10" width="14" height="5.4" rx="2.7" fill="currentColor" opacity=".6"/><circle cx="15.3" cy="12.7" r="2.7" fill="currentColor"/><rect x="3.5" y="4.4" width="12" height="5.4" rx="2.7" fill="currentColor" opacity=".8"/><circle cx="15.3" cy="7.1" r="2.7" fill="currentColor"/></svg>',
-  pierre: '<svg viewBox="0 0 20 20"><path d="M2.5 15.5 5 8.3l5-3.3 5.2 2.4 2.3 7-4.2 2.6H6.2z" fill="currentColor"/><path d="m5 8.3 4.6 2.6 5.6-3.5M9.6 10.9l-.6 6.7" stroke="#fff" stroke-opacity=".35" stroke-width="1" fill="none"/></svg>',
-  ble: '<svg viewBox="0 0 20 20"><path d="M10 18.5V6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><g fill="currentColor"><ellipse cx="10" cy="3.6" rx="1.6" ry="2.5"/><ellipse cx="7.5" cy="7.3" rx="1.5" ry="2.6" transform="rotate(-32 7.5 7.3)"/><ellipse cx="12.5" cy="7.3" rx="1.5" ry="2.6" transform="rotate(32 12.5 7.3)"/><ellipse cx="7.5" cy="11.6" rx="1.5" ry="2.6" transform="rotate(-32 7.5 11.6)"/><ellipse cx="12.5" cy="11.6" rx="1.5" ry="2.6" transform="rotate(32 12.5 11.6)"/></g></svg>',
-  orge: '<svg viewBox="0 0 20 20"><path d="M9 18.5c.4-4 .8-7.5 1.6-11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/><g fill="currentColor"><ellipse cx="10.9" cy="6.2" rx="1.3" ry="2.1" transform="rotate(14 10.9 6.2)"/><ellipse cx="9.2" cy="8.6" rx="1.2" ry="2" transform="rotate(-24 9.2 8.6)"/><ellipse cx="11.9" cy="9.4" rx="1.2" ry="2" transform="rotate(34 11.9 9.4)"/><ellipse cx="8.9" cy="12" rx="1.2" ry="2" transform="rotate(-26 8.9 12)"/><ellipse cx="11.4" cy="12.6" rx="1.2" ry="2" transform="rotate(30 11.4 12.6)"/></g><path d="M11.3 4.2 12.6 1M8 7 5.4 4.4M13.3 8 16.2 5.8M7.6 10.6 4.6 8.8M12.8 11.5l3 -1.6" stroke="currentColor" stroke-width=".9" stroke-linecap="round"/></svg>',
-  farine: '<svg viewBox="0 0 20 20"><path d="M6 4.5h8l-1 2c2.6 1.5 3.6 4.4 3.2 7.6-.3 2-2 3.4-4 3.4H7.8c-2 0-3.7-1.4-4-3.4C3.4 10.9 4.4 8 7 6.5z" fill="currentColor"/><path d="M6.5 6.6h7" stroke="#fff" stroke-opacity=".5" stroke-width="1.2"/></svg>',
-  pain: '<svg viewBox="0 0 20 20"><path d="M2.5 12c0-4 3.4-6.5 7.5-6.5S17.5 8 17.5 12c0 1.6-1.2 2.5-2.6 2.5H5.1C3.7 14.5 2.5 13.6 2.5 12z" fill="currentColor"/><path d="M6.5 8.5l1.4 2.4M10 7.8l1.2 2.6M13.4 8.6l1 2.2" stroke="#fff" stroke-opacity=".45" stroke-width="1.2" stroke-linecap="round"/></svg>',
-  viande: '<svg viewBox="0 0 20 20"><path d="M12.6 2.8c3 0 4.7 2.4 4.4 5.2-.4 3.6-4 6-7.4 5.6l-2.3 2.3a1.9 1.9 0 1 1-2.6-.6 1.9 1.9 0 1 1-.6-2.6L6.4 10.4C6 7 8.5 2.8 12.6 2.8z" fill="currentColor"/><circle cx="12.4" cy="7.4" r="1.6" fill="#fff" opacity=".35"/></svg>',
-  people: '<svg viewBox="0 0 20 20"><circle cx="7" cy="6.5" r="3" fill="currentColor"/><path d="M1.5 17c0-3.3 2.4-5.5 5.5-5.5s5.5 2.2 5.5 5.5z" fill="currentColor"/><circle cx="14" cy="7.5" r="2.4" fill="currentColor" opacity=".65"/><path d="M12.7 12.1c.4-.1.9-.1 1.3-.1 2.6 0 4.5 1.8 4.5 4.6v.4h-4.6c0-2-.4-3.6-1.2-4.9z" fill="currentColor" opacity=".65"/></svg>',
-  heart: '<svg viewBox="0 0 20 20"><path d="M10 17.2S2.5 12.6 2.5 7.4C2.5 5 4.3 3.2 6.6 3.2c1.5 0 2.7.8 3.4 2 .7-1.2 1.9-2 3.4-2 2.3 0 4.1 1.8 4.1 4.2 0 5.2-7.5 9.8-7.5 9.8z" fill="currentColor"/></svg>',
-  hammer: '<svg viewBox="0 0 24 24"><path d="M12.5 2.5h6.5l2.5 2.5-2.5 2.5-1-1-2 2-3.5-3.5 1.5-1.5z" fill="currentColor"/><path d="m11 8.5 3.5 3.5-8.8 8.8a2.47 2.47 0 0 1-3.5-3.5z" fill="currentColor" opacity=".85"/></svg>',
-  house: '<svg viewBox="0 0 24 24"><path d="M12 2.5 2 10.5h3V21h5v-6h4v6h5V10.5h3z" fill="currentColor"/></svg>',
-  crown: '<svg viewBox="0 0 24 24"><path d="M3 8l4.6 4L12 5l4.4 7L21 8l-2 11H5z" fill="currentColor"/><rect x="5" y="19.5" width="14" height="2" rx="1" fill="currentColor"/></svg>',
-  scroll: '<svg viewBox="0 0 24 24"><path d="M6 3h11a3 3 0 0 1 3 3v1h-3v11a3 3 0 0 1-3 3H5a3 3 0 0 1-3-3v-1h3V6a3 3 0 0 1 1-3z" fill="currentColor"/><path d="M8 8h6M8 11.5h6M8 15h4" stroke="#fff" stroke-opacity=".5" stroke-width="1.5" stroke-linecap="round"/></svg>',
-  help: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"/><path d="M9.3 9.2a2.8 2.8 0 1 1 3.9 2.6c-.8.4-1.2.9-1.2 1.8v.6" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="17.2" r="1.2" fill="#fff"/></svg>',
-  sound: '<svg viewBox="0 0 24 24"><path d="M3 9h4l5-4v14l-5-4H3z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18 6a8.5 8.5 0 0 1 0 12" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>',
-  clock: '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7.3" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M10 5.6V10l3 2" stroke="currentColor" stroke-width="1.7" fill="none" stroke-linecap="round"/></svg>',
-  link: '<svg viewBox="0 0 24 24"><path d="M10 14a4 4 0 0 0 5.7 0l3.6-3.6a4 4 0 0 0-5.7-5.7l-1.2 1.2M14 10a4 4 0 0 0-5.7 0l-3.6 3.6a4 4 0 0 0 5.7 5.7l1.2-1.2" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>',
-  star: '<svg viewBox="0 0 24 24"><path d="m12 2.8 2.8 5.8 6.3.9-4.6 4.4 1.1 6.3L12 17.2l-5.6 3 1.1-6.3-4.6-4.4 6.3-.9z" fill="currentColor"/></svg>',
-  mug: '<svg viewBox="0 0 24 24"><path d="M4 6h11v12a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z" fill="currentColor"/><path d="M15 9h2.5a2.5 2.5 0 0 1 0 5H15" stroke="currentColor" stroke-width="2" fill="none"/><path d="M4 6c0-2 1.6-3 3.4-2.5C8.2 2 10 1.6 11.6 2.6 13.4 2 15 3.4 15 6z" fill="#fff" opacity=".75"/></svg>',
-  s0: '<svg viewBox="0 0 24 24"><g fill="currentColor"><circle cx="12" cy="6.5" r="3.2"/><circle cx="17.2" cy="10.3" r="3.2"/><circle cx="15.2" cy="16.4" r="3.2"/><circle cx="8.8" cy="16.4" r="3.2"/><circle cx="6.8" cy="10.3" r="3.2"/></g><circle cx="12" cy="12" r="2.6" fill="#fff" opacity=".8"/></svg>',
-  s1: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="5" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></g></svg>',
-  s2: '<svg viewBox="0 0 24 24"><path d="M20 3C9 3 4 8.5 4 15c0 2 .6 3.7 1.4 5L9 16.4C12.3 13 15 11 18 9.6 14.6 12 12 14.4 9.6 18c1 .5 2.1.8 3.4.8C19 18.8 21 12 20 3z" fill="currentColor"/></svg>',
-  s3: '<svg viewBox="0 0 24 24"><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2v20M3.3 7l17.4 10M3.3 17 20.7 7M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/></g></svg>',
-};
-IC.biere = IC.mug;
-/* Équipement : or, fer, emplacements, sac, enclume, patte */
-Object.assign(IC, {
-  or: '<svg viewBox="0 0 20 20"><ellipse cx="10" cy="13.2" rx="7" ry="3" fill="currentColor" opacity=".7"/><rect x="3" y="9.4" width="14" height="3.8" fill="currentColor" opacity=".7"/><ellipse cx="10" cy="9.4" rx="7" ry="3" fill="currentColor"/><ellipse cx="10" cy="9.4" rx="4" ry="1.4" fill="#fff" opacity=".4"/></svg>',
-  fer: '<svg viewBox="0 0 20 20"><path d="M5 7.5h10l2.6 6.5H2.4z" fill="currentColor"/><path d="M5 7.5h10l-1 2.2H6z" fill="#fff" opacity=".35"/></svg>',
-  s_arme: '<svg viewBox="0 0 24 24"><path d="M14.5 3H21v6.5L10.7 19.8l-2.1-2.1L18.4 8V5.6H16L6.3 15.4l-2.1-2.1z" fill="currentColor"/><path d="m3 17.6 3.4 3.4M6.6 14.6l2.8 2.8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>',
-  s_casque: '<svg viewBox="0 0 24 24"><path d="M4 15a8 8 0 0 1 16 0v2H4z" fill="currentColor"/><path d="M12 7v10M4 17h16v3H4z" stroke="currentColor" stroke-width="2"/><path d="M8.5 13h2.5v3H8.5z" fill="#fff" opacity=".45"/></svg>',
-  s_armure: '<svg viewBox="0 0 24 24"><path d="M8 3 4 5.5 5.5 11 7 10v10h10V10l1.5 1L20 5.5 16 3l-1.5 2h-5z" fill="currentColor"/><path d="M12 6v13" stroke="#fff" stroke-opacity=".4" stroke-width="1.5"/></svg>',
-  s_bottes: '<svg viewBox="0 0 24 24"><path d="M7 2.5h6V14l6.5 2.5c1 .4 1.5 1.3 1.5 2.3V21H4v-3l3-2z" fill="currentColor"/><path d="M7 7h6" stroke="#fff" stroke-opacity=".4" stroke-width="1.5"/></svg>',
-  s_bijou: '<svg viewBox="0 0 24 24"><path d="M5 3c0 4 3 7 7 7s7-3 7-7" stroke="currentColor" stroke-width="1.8" fill="none"/><path d="M12 9.5 16.5 14 12 21l-4.5-7z" fill="currentColor"/><path d="M12 9.5 14 14l-2 5" fill="#fff" opacity=".35"/></svg>',
-  s_bag: '<svg viewBox="0 0 24 24"><path d="M8 7a4 4 0 0 1 8 0" stroke="currentColor" stroke-width="2" fill="none"/><path d="M5 8h14l1.5 12.5H3.5z" fill="currentColor"/><path d="M9 12h6" stroke="#fff" stroke-opacity=".45" stroke-width="1.6" stroke-linecap="round"/></svg>',
-  s_anvil: '<svg viewBox="0 0 24 24"><path d="M3 7h13c0 3 2 4.5 5 5v1h-6l-1 3h3v3H7v-3h3l-1-3H8C5 13 3 11 3 7z" fill="currentColor"/></svg>',
-  s_paw: '<svg viewBox="0 0 24 24"><g fill="currentColor"><ellipse cx="12" cy="16" rx="5" ry="4.2"/><ellipse cx="6" cy="10" rx="2" ry="2.6"/><ellipse cx="18" cy="10" rx="2" ry="2.6"/><ellipse cx="9.3" cy="6.3" rx="2" ry="2.6"/><ellipse cx="14.7" cy="6.3" rx="2" ry="2.6"/></g></svg>',
-});
-/* Raids : bouclier, flamme (les mêmes que dans les donjons) */
-Object.assign(IC, { shield: DJ_IC.shield, flame: DJ_IC.flame, sword: DJ_IC.sword });
-/* Garnison : drapeau (postes de garde, bannières) */
-IC.flag = '<svg viewBox="0 0 24 24"><path d="M5 2.5v19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M6 4h12l-3 4 3 4H6z" fill="currentColor"/></svg>';
+/* ---------- icônes : peintes, dans p4i_icones.js (IC) ---------- */
 const ico = (k, cls) => `<span class="ic ${cls == null ? 'c-' + k : cls}">${IC[k] || ''}</span>`;
 const RES_SHOW = ['bois', 'pierre', 'ble', 'farine', 'pain', 'viande', 'orge', 'biere', 'fer', 'or'];
 function chipsRes(c, have, cls) { return RES.filter(k => c[k]).map(k => `<span class="chip${have && (have[k] || 0) < c[k] ? ' short' : ''}${cls ? ' ' + cls : ''}">${ico(k)}${fmtN(c[k])}</span>`).join(''); }
@@ -298,49 +255,57 @@ function confirmPlace() {
   if (r) { place = null; if (p.kind === 'new') { toast(r.inst ? BLD[p.type].name + ' en place.' : 'Chantier lancé : les bâtisseurs s’y mettent.'); sel = r.inst ? null : r.id || null; } refreshScene(); renderAll(); }
 }
 
-/* ---------- HUD du haut ---------- */
-function topHTML() {
-  const v = me, t = now(), si = seasonIdx(v, t), pk = partnerId(v);
-  let chips = '';
-  if (modelLoad && modelLoad.d < modelLoad.n) chips += `<span class="glass chipb">Modèles 3D ${Math.round(modelLoad.d / modelLoad.n * 100)} %</span>`;
-  chips += `<button class="glass chipb helpb" data-act="sheet" data-s="help" aria-label="Aide">${ico('help', 'c-tro')}</button>`;
-  if (window.__mkUpdate) chips += `<button class="glass chipb alert" data-act="reload">Nouvelle version : toucher ici</button>`;
-  if (installEvt) chips += `<button class="glass chipb" data-act="install">Installer l’appli</button>`;
-  if (v.cands.length) chips += `<button class="glass chipb alert" data-act="sheet" data-s="people">${ico('people', '')}${v.cands.length === 1 ? 'Une arrivée' : v.cands.length + ' arrivées'}</button>`;
-  if (pk) chips += `<button class="glass chipb${isOnline(pk) ? ' live' : ''}" data-act="sheet" data-s="village">${isOnline(pk) ? '<span class="dot"></span>' : ''}${esc(v.members[pk].name)}${isOnline(pk) ? '' : ' (absent·e)'}</button>`;
-  else chips += `<button class="glass chipb" data-act="sheet" data-s="village">${ico('link', 'c-tro')}Inviter</button>`;
-  if (v.feast > t) chips += `<span class="glass chipb">${ico('mug', 'c-tro')}Fête · ${fmtDur(v.feast - t)}</span>`;
-  if (merchHere(v, t)) chips += `<button class="glass chipb live" data-act="sheet" data-s="merch">${ico('or')}Marchand · ${fmtDur(merchLeaves(v, t) - t)}</button>`;
-  if (v.lilou && v.lilou.d && !v.lilou.d.ok) chips += `<button class="glass chipb" data-act="sheet" data-s="lilou">${lilouFace(lilouMood(v.lilou).k)}Caprice de Lilou</button>`;
-  const ri = raidInfo(v, t);
-  if (ri.st !== 'calm') chips += `<button class="glass chipb${ri.st === 'ready' ? ' alert' : ''}" data-act="sheet" data-s="defense">${ico('flame', '')}${ri.st === 'ready' ? 'Portail chargé !' : 'Portail · ' + fmtDur(ri.ready - t)}</button>`;
-  const head = `<div class="idrow"><button class="glass me" data-act="sheet" data-s="village"><span class="crest" style="background:${safeColor(v.c)}">${esc(initial(v.name))}</span>
-    <span class="idtxt"><b>${v.crown && v.crown.rank ? '<span class="kingmark" aria-label="Rois de la Montagne">' + ico('crown', 'c-gold') + '</span>' : ''}${esc(v.name)}</b><small>${ico('s' + si, 'c-tro')}${SEASONS[si].name}, jour ${seasonDay(v, t)} sur 2</small></span></button>
-    <div class="chips">${chips}</div></div>`;
-  const cap = capOf(v), food = foodOf(v), mor = moraleOf(v, t), pop = v.vil.length, house = housingOf(v);
-  const pill = (k, icon, val, sub, frac, cls, act) => `<button class="glass pill c-${icon}${cls ? ' ' + cls : ''}" data-act="sheet" data-s="${act}"><div class="v">${ico(icon)}<span>${val}${sub ? '<small>' + sub + '</small>' : ''}</span></div>${frac == null ? '<div class="fill none"></div>' : `<div class="fill"><i style="width:${Math.max(0, Math.min(100, frac * 100)).toFixed(0)}%"></i></div>`}</button>`;
-  const stock = `<div class="stock">
-    ${pill('bois', 'bois', fmtN(v.r.bois), '', v.r.bois / cap, v.r.bois >= cap ? 'full' : '', 'stock')}
-    ${pill('pierre', 'pierre', fmtN(v.r.pierre), '', v.r.pierre / cap, v.r.pierre >= cap ? 'full' : '', 'stock')}
-    ${pill('food', 'pain', fmtN(food), '', food / (2 * cap), food < 1 ? 'warn' : '', 'stock')}
-    ${pill('pop', 'people', pop, '/' + house, house ? pop / house : 0, '', 'people')}
-    ${pill('mor', 'heart', mor, ' %', mor / 100, mor < 35 ? 'warn' : '', 'people')}
-    ${pill('or', 'or', fmtN(v.r.or || 0), '', null, '', 'stock')}</div>`;
-  return head + stock + goalsHTML();
+/* ---------- HUD du haut : une seule rangée (plaque du village, bande des réserves, pastilles), puis le ruban d'objectif ---------- */
+/* L'écusson du village, à sa couleur, avec son initiale */
+const crestSVG = (c, n) => `<svg class="crest" viewBox="0 0 26 30" aria-hidden="true"><path d="M2 2h22v12c0 7-5 11.5-11 14C7 25.5 2 21 2 14z" fill="${safeColor(c)}" stroke="#3e2716" stroke-width="2.2"/><path d="M4.6 4.6h8.4v20.4C8 23 4.6 19.4 4.6 14z" fill="#fff" opacity=".18"/><text x="13" y="19.5" text-anchor="middle">${esc(initial(n))}</text></svg>`;
+/* Un minuteur court pour une pastille : « 14 h », « 25 min » */
+const durTag = ms => { const m = Math.max(1, Math.ceil(Math.max(0, ms) / 60000)); return m < 60 ? m + ' min' : m < 48 * 60 ? Math.floor(m / 60) + ' h' : Math.floor(m / 1440) + ' j'; };
+/* Une pastille : ce qui se passe au village ; on la touche pour ouvrir la fiche qui va avec */
+const medal = (attrs, inner, label, tag, cls) => `<button class="medal${cls ? ' ' + cls : ''}" ${attrs} aria-label="${esc(label)}" title="${esc(label)}">${inner}${tag ? `<span class="mt">${esc(tag)}</span>` : ''}</button>`;
+function medalsHTML(v, t) {
+  const pk = partnerId(v), ri = raidInfo(v, t);
+  let h = '';
+  if (pk) {
+    const on = isOnline(pk), ph = activeHero(v, pk), nm = v.members[pk].name;
+    h += medal('data-act="sheet" data-s="village"', `<span class="pini" style="background:${safeColor(ph && ph.col)}">${esc(initial(nm))}</span>`, nm + (on ? ' est là' : ' est absent·e'), '', on ? 'live' : 'away');
+  } else h += medal('data-act="sheet" data-s="village"', ico('link', ''), 'Inviter quelqu’un', '');
+  if (v.feast > t) h += medal('data-act="sheet" data-s="village" data-k="feast"', ico('mug', ''), 'Fête à la taverne, encore ' + fmtDur(v.feast - t), durTag(v.feast - t));
+  if (merchHere(v, t)) h += medal('data-act="sheet" data-s="merch"', ico('or', ''), 'Marchand ambulant, encore ' + fmtDur(merchLeaves(v, t) - t), durTag(merchLeaves(v, t) - t));
+  if (v.cands.length) h += medal('data-act="sheet" data-s="people"', ico('people', ''), v.cands.length === 1 ? 'Une arrivée au village' : v.cands.length + ' arrivées au village', String(v.cands.length), 'hot');
+  if (ri.st !== 'calm') h += medal('data-act="sheet" data-s="defense"', ico('flame', ''), ri.st === 'ready' ? 'Portail chargé !' : 'Portail, chargé dans ' + fmtDur(ri.ready - t), ri.st === 'ready' ? '!' : durTag(ri.ready - t), 'red' + (ri.st === 'ready' ? ' pulse' : ''));
+  if (v.lilou && v.lilou.d && !v.lilou.d.ok) h += medal('data-act="sheet" data-s="lilou"', lilouFace(lilouMood(v.lilou).k), 'Caprice de Lilou', '', 'dot');
+  return h;
 }
-/* Objectifs : trois à la fois, sous la barre du haut. Repliés quand un panneau est ouvert en bas. */
+function topHTML() {
+  const v = me, t = now(), si = seasonIdx(v, t);
+  let notes = '';     /* les messages rares restent en toutes lettres, seulement quand il le faut */
+  if (modelLoad && modelLoad.d < modelLoad.n) notes += `<span class="glass chipb">Modèles 3D ${Math.round(modelLoad.d / modelLoad.n * 100)} %</span>`;
+  if (window.__mkUpdate) notes += `<button class="glass chipb alert" data-act="reload">Nouvelle version : toucher ici</button>`;
+  if (installEvt) notes += `<button class="glass chipb" data-act="install">Installer l’appli</button>`;
+  const head = `<button class="glass me" data-act="sheet" data-s="village">${crestSVG(v.c, v.name)}
+    <span class="idtxt"><b>${v.crown && v.crown.rank ? '<span class="kingmark" aria-label="Rois de la Montagne">' + ico('crown', '') + '</span>' : ''}${esc(v.name)}</b><small>${ico('s' + si, '')}${SEASONS[si].name} · jour ${seasonDay(v, t)} sur 2</small></span></button>`;
+  const cap = capOf(v), food = foodOf(v), mor = moraleOf(v, t), pop = v.vil.length, house = housingOf(v);
+  const cell = (icon, val, sub, frac, cls, act, label) => `<button class="sb${cls ? ' ' + cls : ''}" data-act="sheet" data-s="${act}" aria-label="${esc(label)}">${ico(icon, '')}<span class="sv">${val}${sub ? '<small>' + sub + '</small>' : ''}</span>${frac == null ? '' : `<i class="sbar"><b style="width:${Math.max(0, Math.min(100, frac * 100)).toFixed(0)}%"></b></i>`}</button>`;
+  const stock = `<div class="glass stockband">
+    ${cell('bois', fmtN(v.r.bois), '', v.r.bois / cap, v.r.bois >= cap ? 'full' : '', 'stock', 'Bois : ' + fmtN(v.r.bois))}
+    ${cell('pierre', fmtN(v.r.pierre), '', v.r.pierre / cap, v.r.pierre >= cap ? 'full' : '', 'stock', 'Pierre : ' + fmtN(v.r.pierre))}
+    ${cell('pain', fmtN(food), '', food / (2 * cap), food < 1 ? 'warn' : '', 'stock', 'Nourriture : ' + fmtN(food))}
+    ${cell('people', pop, '/' + house, house ? pop / house : 0, '', 'people', 'Villageois : ' + pop + ' sur ' + house)}
+    ${cell('heart', mor, '%', mor / 100, mor < 35 ? 'warn' : 'mor', 'people', 'Moral : ' + mor + ' %')}
+    ${cell('or', fmtN(v.r.or || 0), '', null, '', 'stock', 'Or : ' + fmtN(v.r.or || 0))}</div>`;
+  return `<div class="topbar">${head}${stock}<div class="medals">${medalsHTML(v, t)}</div></div>${notes ? `<div class="notes">${notes}</div>` : ''}` + goalsHTML();
+}
+/* Les objectifs tiennent sur un seul ruban : celui qui est le plus près du but, ou celui dont la récompense attend (doré).
+   Le toucher ouvre la liste complète. Caché quand un panneau (bâtiment, villageois) est ouvert. */
 const rewChips = r => Object.keys(r).map(k => `<span class="chip plus">${ico(k)}+${fmtN(r[k])}</span>`).join('');
 const goalsForcedMin = () => sel != null || !!selP || !!place;
 function goalsHTML() {
-  const v = me, list = goalsOf(v); if (!list.length) return '';
-  const ready = list.filter(g => goalDone(v, g)).length, min = !!LS.get('mk2.goalsMin') || goalsForcedMin();
-  let h = `<div class="goalrow"><div class="glass goals${min ? ' min' : ''}">
-    <button class="ghead" data-act="goalsToggle" aria-expanded="${!min}">${ico('star', 'c-tro')}<b>Objectifs</b>${ready ? `<span class="gready">${ready === 1 ? '1 à récupérer' : ready + ' à récupérer'}</span>` : ''}<span class="chev" aria-hidden="true">${min ? '▸' : '▾'}</span></button>`;
-  if (!min) h += list.map(g => {
-    const [c, n] = goalProg(v, g), done = c >= n;
-    return `<div class="grow2${done ? ' done' : ''}"><button class="gtxt" data-act="sheet" data-s="goals"><span>${esc(g.name)}</span><small>${done ? 'Atteint !' : fmtN(c) + ' / ' + fmtN(n)}</small><i class="gbar"><b style="width:${(c / n * 100).toFixed(0)}%"></b></i></button>${done ? `<button class="btn small primary gclaim" data-act="claim" data-id="${g.id}">Récupérer</button>` : ''}</div>`;
-  }).join('');
-  return h + '</div></div>';
+  const v = me, list = goalsOf(v); if (!list.length || goalsForcedMin()) return '';
+  const more = list.length > 1 ? `<em class="rmore">+${list.length - 1}</em>` : '';
+  const ready = list.find(g => goalDone(v, g));
+  if (ready) return `<div class="ribbonrow"><div class="glass ribbon ready"><button class="rtxt" data-act="sheet" data-s="goals" aria-label="Objectif atteint : ${esc(ready.name)}">${ico('star', '')}<span class="rn">${esc(ready.name)}</span></button><button class="btn small primary gclaim" data-act="claim" data-id="${ready.id}">Récupérer</button></div></div>`;
+  const best = list.map(g => ({ g, p: goalProg(v, g) })).sort((a, b) => b.p[0] / b.p[1] - a.p[0] / a.p[1])[0], [c, n] = best.p;
+  return `<div class="ribbonrow"><button class="glass ribbon" data-act="sheet" data-s="goals" aria-label="Objectifs : ${esc(best.g.name)}, ${fmtN(c)} sur ${fmtN(n)}">${ico('star', '')}<span class="rn">${esc(best.g.name)}</span><small>${fmtN(c)}/${fmtN(n)}</small>${more}<i class="rbar"><b style="width:${(c / n * 100).toFixed(0)}%"></b></i></button></div>`;
 }
 function renderTop() {
   if (mode === 'home' && me) setHTML(els.top, topHTML());
@@ -613,7 +578,7 @@ function sheetJournal() {
 function inviteLink() { return location.origin + location.pathname + '?join=' + encodeURIComponent(vid); }
 function sheetVillage() {
   const v = me, t = now(), si = seasonIdx(v, t), pk = partnerId(v);
-  let h = '';
+  let h = `<div class="row"><button class="btn small" data-act="sheet" data-s="help">${ico('help', '')}Aide du jeu</button></div>`;     /* l'aide a quitté le haut de l'écran : elle est ici, en tête */
   h += `<div class="sec"><h4>Habitants</h4><div class="item">${Object.entries(v.members).map(([k, m]) => `<div class="row split"><b class="row">${isOnline(k) || k === uid ? '<span class="dotx on"></span>' : '<span class="dotx"></span>'}${esc(m.name)}${k === uid ? ' (toi)' : ''}</b><small class="note">${heroesOf(v, k).length ? esc(heroesOf(v, k).map(x => x.name).join(', ')) : 'pas encore de héros'}</small></div>`).join('')}</div>`;
   if (!pk) h += `<div class="item feature"><b class="row">${ico('link', 'c-tro')}Inviter ta partenaire</b><p>Envoie-lui ce lien : en l’ouvrant, elle rejoindra ce village et créera son héros.</p>
     <input type="text" readonly value="${esc(inviteLink())}" class="linkbox" aria-label="Lien d’invitation">

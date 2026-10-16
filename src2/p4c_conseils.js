@@ -79,7 +79,7 @@ const TIPS = [
     txt: 'Le village a sa chronique : tous vos grands moments y sont écrits (menu Village). J’y suis citée au moins trois fois. Au moins.' },
 ];
 function tipTest(T) { try { return !!T.when(me); } catch (e) { return false; } }
-function tipClose(seen) { if (tipCur && seen) tipMark(tipCur.id); tipCur = null; tipNext = Date.now() + TIP_GAP; }
+function tipClose(seen) { if (tipCur && seen) tipMark(tipCur.id); tipCur = null; tipOpen = false; tipNext = Date.now() + TIP_GAP; }
 /* Appelé à chaque seconde. */
 function tipCheck() {
   if (!me || !tipOn()) { tipCur = null; return; }
@@ -90,12 +90,15 @@ function tipCheck() {
   const T = TIPS.find(x => !seen.includes(x.id) && tipTest(x));
   if (T) { tipCur = T; SND.sfx('tip'); }
 }
+/* Le conseil tient sur une ligne au-dessus de la barre du bas ; on touche le texte pour le lire en entier. */
+let tipOpen = false;
 function tipHTML() {
   const T = tipCur; if (!T || !tipOn()) return '';
-  return `<div class="glass card tip" role="status" aria-label="Conseil de Sukhoï"><p class="tiptxt">${sukFace()}<span><b>Sukhoï&nbsp;:</b> ${esc(T.txt)}</span></p>
-    <div class="row">${T.go ? `<button class="btn small primary grow" data-act="tipGo">${esc(T.btn)}</button>` : ''}<button class="btn small grow" data-act="tipOk">Compris</button></div></div>`;
+  return `<div class="glass card tip tipline${tipOpen ? ' open' : ''}" role="status" aria-label="Conseil de Sukhoï">${sukFace()}<button class="tiptx" data-act="tipMore" aria-expanded="${tipOpen}"><b>Sukhoï&nbsp;:</b> ${esc(T.txt)}</button>
+    ${T.go ? `<button class="btn small primary" data-act="tipGo">${esc(T.btn)}</button>` : ''}<button class="btn small" data-act="tipOk">Compris</button></div>`;
 }
 const ACT_TIP = {
+  tipMore: () => { tipOpen = !tipOpen; renderAll(); },
   tipOk: () => { tipClose(true); renderAll(); },
   tipGo: () => {
     const T = tipCur; tipClose(true); if (!T || !T.go) { renderAll(); return; }

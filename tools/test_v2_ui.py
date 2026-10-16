@@ -122,12 +122,12 @@ async def main():
         print('after 2 days, next modal:', (await text(A, '#mcard'))[:200] if await A.is_visible('#modal') else 'none')
         # objectifs : après deux jours, la 3e maison est finie, « Trois maisons » est atteint
         await close_modal(A)
-        print('goals:', (await text(A, '.goals'))[:220])
+        print('goals:', (await text(A, '.ribbon'))[:220])
         await A.screenshot(path=S + 'v2_goals.png')
-        if await A.is_visible('.goals [data-act="claim"]'):
-            await A.click('.goals [data-act="claim"]'); await A.wait_for_timeout(2500)
-            print('after claim:', (await text(A, '.goals'))[:220], '| log:', await A.evaluate('window.__mk.me.log.slice(-1)[0].m'))
-        await A.click('.goals [data-act="sheet"]'); await A.wait_for_timeout(900)
+        if await A.is_visible('.ribbon [data-act="claim"]'):
+            await A.click('.ribbon [data-act="claim"]'); await A.wait_for_timeout(2500)
+            print('after claim:', (await text(A, '.ribbon'))[:220], '| log:', await A.evaluate('window.__mk.me.log.slice(-1)[0].m'))
+        await A.click('.ribbon[data-act="sheet"], .ribbon [data-act="sheet"]'); await A.wait_for_timeout(900)
         print('goals sheet:', (await text(A, '#sheetBody'))[:220])
         await A.screenshot(path=S + 'v2_sheet_goals.png')
         await A.click('[data-act="closeSheet"]'); await A.wait_for_timeout(400)

@@ -7,6 +7,15 @@ const myBag = () => (me && me.bag && me.bag[uid]) || { it: {}, gm: {}, n: 1 };
 const rcls = it => it.set ? 'rcs' : 'rc' + (it.r | 0);
 const rarTag = it => `<span class="rtag ${rcls(it)}">${it.set ? 'Ensemble' : RARITY[it.r | 0].name}</span>`;
 const slotIco = sl => `<span class="ic sl">${IC['s_' + sl] || ''}</span>`;
+/* Cadre enluminé d'un objet : à la couleur de sa rareté (équerres pour épique, légendaire et ensemble, lueur pour le légendaire),
+   pastille +N (forge), flèche verte ou rouge (comparé à l'objet porté), pierres serties. */
+const KIND_ICO = { arc: 'bow', arbalete: 'bow', baton: 'staff', sceptre: 'staff', grimoire: 'book' };
+const itemIco = it => IC[(it.sl === 'arme' && KIND_ICO[it.k]) || 's_' + it.sl] || '';
+function itemFrame(it, cmp, cls) {
+  const I = itemInfo(it), gm = I.so ? `<span class="ifg">${I.gems.map(g => `<i${g && gemOf(g) ? ` style="background:${gemOf(g).col}"` : ''}></i>`).join('')}</span>` : '';
+  return `<span class="ifr fr${it.set ? 's' : it.r | 0}${cls ? ' ' + cls : ''}">${itemIco(it)}${it.up ? `<span class="ifu">+${it.up}</span>` : ''}${cmp === 1 || cmp === -1 ? `<span class="ifc ${cmp === 1 ? 'up' : 'down'}" role="img" aria-label="${cmp === 1 ? 'mieux que l’objet porté' : 'moins bien que l’objet porté'}"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="${cmp === 1 ? 'M5 1.5 9 8H1z' : 'M5 8.5 9 2H1z'}"/></svg></span>` : ''}${gm}</span>`;
+}
+const emptyFrame = sl => `<span class="ifr fre" aria-hidden="true">${IC['s_' + sl] || ''}</span>`;
 const itemNameH = it => `<b class="iname ${rcls(it)}">${esc(itemInfo(it).name)}</b>`;
 const arrowH = c => c === 1 ? '<span class="arr up" aria-label="mieux que l’objet porté">▲</span>' : c === -1 ? '<span class="arr down" aria-label="moins bien que l’objet porté">▼</span>' : c === 0 ? '<span class="arr eq" aria-label="pareil que l’objet porté">=</span>' : '';
 const statsTxt = o => Object.keys(o).map(k => STATS[k].t(o[k])).join(' · ');
@@ -20,12 +29,12 @@ function gearSummary(G) {
 function itemRow(it, hh, act, data, on) {
   const I = itemInfo(it), cmp = hh ? compareItem(hh, it) : null, cw = hh ? canWear(hh, it) : { ok: true };
   return `<button class="item opt irow${on ? ' on' : ''}" data-act="${act}" ${data}>
-    <div class="head"><span class="row">${slotIco(it.sl)}${itemNameH(it)}${arrowH(cmp)}</span><small>${rarTag(it)} niv. ${it.il}</small></div>
-    <p>${esc(statsTxt(I.main))}${Object.keys(I.af).length ? ' · ' + esc(statsTxt(I.af)) : ''}${hh && !cw.ok ? ' · <span class="why">' + esc(cw.why) + '</span>' : ''}</p></button>`;
+    ${itemFrame(it, cmp)}<span class="irb"><span class="head"><span class="row">${itemNameH(it)}${cmp === 0 ? arrowH(0) : ''}</span><small>${rarTag(it)} niv. ${it.il}</small></span>
+    <p>${esc(statsTxt(I.main))}${Object.keys(I.af).length ? ' · ' + esc(statsTxt(I.af)) : ''}${hh && !cw.ok ? ' · <span class="why">' + esc(cw.why) + '</span>' : ''}</p></span></button>`;
 }
 /* Liste courte, sans bouton (bilan de donjon). */
 function itemListHTML(list, hh) {
-  return list.slice().sort((a, b) => b.r - a.r || b.il - a.il).map(it => { const I = itemInfo(it); return `<div class="irow2"><span class="row">${slotIco(it.sl)}${itemNameH(it)}${arrowH(hh ? compareItem(hh, it) : null)}</span><small>${rarTag(it)} ${esc(statsTxt(I.main))}</small></div>`; }).join('');
+  return list.slice().sort((a, b) => b.r - a.r || b.il - a.il).map(it => { const I = itemInfo(it); return `<div class="irow2"><span class="row">${itemFrame(it, hh ? compareItem(hh, it) : null, 'sm')}${itemNameH(it)}</span><small>${rarTag(it)} ${esc(statsTxt(I.main))}</small></div>`; }).join('');
 }
 /* Tout sur un objet, avec ce qu'on peut en faire. where : { id } (sac) ou { hid, sl } (porté). */
 function itemDetail(it, hh, where) {
@@ -72,7 +81,7 @@ function heroGearHTML(v, hh, own) {
     const it = hh.eq && hh.eq[sl], lock = sl === 'bijou' && hh.lvl < BIJOU_LVL, cw = it ? canWear(hh, it) : null;
     const nBetter = own && !lock ? Object.values(B.it).filter(x => x.sl === sl && compareItem(hh, x) === 1).length : 0;
     h += `<button class="slotrow${lock ? ' off' : ''}" data-act="${own && !lock ? 'gearSlot' : 'noop'}" data-id="${hh.id}" data-sl="${sl}"${own && !lock ? '' : ' disabled'}>
-      ${slotIco(sl)}<span class="sltxt"><small>${SLOT_LABEL[sl]}</small>${it ? itemNameH(it) : `<span class="note">${lock ? 'au niveau ' + BIJOU_LVL : 'rien'}</span>`}
+      ${it ? itemFrame(it, null, 'sm') : emptyFrame(sl)}<span class="sltxt"><small>${SLOT_LABEL[sl]}</small>${it ? itemNameH(it) : `<span class="note">${lock ? 'au niveau ' + BIJOU_LVL : 'rien'}</span>`}
       ${it ? `<em>${esc(statsTxt(itemInfo(it).main))}${cw && !cw.ok ? ' · ' + esc(cw.why) : ''}</em>` : ''}</span>${nBetter ? `<span class="chip plus">▲ ${nBetter}</span>` : ''}</button>`;
   }
   if (sum) h += `<p class="note">Avec son équipement : ${esc(sum)}.</p>`;
@@ -140,7 +149,7 @@ function sheetForge() {
   if (!worn.length) h += '<p class="note">Il ne porte encore rien. On peut aussi améliorer un objet du sac : touche-le dans le sac.</p>';
   for (const sl of worn) {
     const it = hh.eq[sl], up = it.up | 0, cc = improveCost(it), can = up < maxUpOf(f);
-    h += `<div class="item"><div class="head"><span class="row">${slotIco(sl)}${itemNameH(it)}</span><small>${rarTag(it)}</small></div>
+    h += `<div class="item"><div class="head"><span class="row">${itemFrame(it, null, 'sm')}${itemNameH(it)}</span><small>${rarTag(it)}</small></div>
       <div class="foot"><span class="chips2">${up >= 5 ? '<span class="note">au maximum</span>' : can ? chipsRes(cc, v.r) : '<span class="note">+' + (up + 1) + ' : forge plus grande</span>'}</span>${up < 5 && can ? `<button class="btn small${missingTxt(v, cc) ? ' off' : ' primary'}" data-act="improve" data-hid="${hh.id}" data-sl="${sl}">+${up + 1}</button>` : ''}</div></div>`;
   }
   h += '<p class="note">Chaque amélioration : +10 % sur les bonus principaux de l’objet.</p></div>';
@@ -163,7 +172,7 @@ function sheetMerch() {
   h += '<div class="sec"><h4>Objets</h4>';
   M.it.forEach((it, i) => {
     const done = sold.includes('i' + i + ';'), price = merchPrice(it), I = itemInfo(it);
-    h += `<div class="item${done ? ' off' : ''}"><div class="head"><span class="row">${slotIco(it.sl)}${itemNameH(it)}${done ? '' : arrowH(hh ? compareItem(hh, it) : null)}</span><small>${rarTag(it)} niv. ${it.il}</small></div>
+    h += `<div class="item${done ? ' off' : ''}"><div class="head"><span class="row">${itemFrame(it, done || !hh ? null : compareItem(hh, it), 'sm')}${itemNameH(it)}</span><small>${rarTag(it)} niv. ${it.il}</small></div>
       <p>${esc(statsTxt(I.main))}${Object.keys(I.af).length ? ' · ' + esc(statsTxt(I.af)) : ''}${it.pw ? ' · <b>' + esc(POWERS[it.pw].title) + '</b> : ' + esc(POWERS[it.pw].txt) : ''}${I.so ? ' · ' + I.so + ' emplacement' + (I.so > 1 ? 's' : '') + ' de pierre' : ''}${hh && !done && !canWear(hh, it).ok ? ' · <span class="why">' + esc(canWear(hh, it).why) + '</span>' : ''}</p>
       <div class="foot"><span class="chip${(v.r.or || 0) < price ? ' short' : ''}">${ico('or')}${fmtN(price)}</span>${done ? '<span class="note">vendu</span>' : `<button class="btn small${(v.r.or || 0) < price || full ? ' off' : ' primary'}" data-act="buy" data-i="${i}">Acheter</button>`}</div></div>`;
   });
