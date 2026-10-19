@@ -1,6 +1,8 @@
 (() => {
 'use strict';
 /* ===================== RÉSEAU FIREBASE (nouveau jeu : village commun) ===================== */
+/* Identifiant public du client Google du projet (ce n'est pas un secret). */
+const GSI_CLIENT = '206461415677-iejmgjf48hmjm39a47m2713vs7t7e1dj.apps.googleusercontent.com';
 const FB_CONFIG = {
   apiKey: 'AIzaSyCk2epufhsolA8Jt8xVKaKtsr8wJtJXs3w',
   authDomain: 'moutain-kings.firebaseapp.com',
@@ -165,13 +167,31 @@ const FB = {
       .then(() => auth.getRedirectResult().catch(e => { FB.lastError = e; return null; }))
       .then(() => new Promise(res => { const off = auth.onAuthStateChanged(u => { off(); res(u); }); }));
   },
+  /* Bouton Google officiel (Google Identity Services) : ni fenêtre bloquée ni redirection, donc rien à perdre entre deux sites.
+     Le jeton Google est échangé contre une connexion Firebase : même compte, même identifiant qu'avant. */
+  gsi: () => (typeof google !== 'undefined' && google.accounts && google.accounts.id) ? google.accounts.id : null,
+  gsiInit(onStart, onUser, onError) {
+    const g = FB.gsi(); if (!g) return false;
+    if (FB.gsiOn) return true;
+    g.initialize({
+      client_id: GSI_CLIENT, auto_select: false, cancel_on_tap_outside: true,
+      callback: r => {
+        if (!r || !r.credential) { onError({ code: 'auth/gsi-empty' }); return; }
+        onStart();
+        firebase.auth().signInWithCredential(firebase.auth.GoogleAuthProvider.credential(r.credential))
+          .then(c => onUser(c.user || c), onError);
+      },
+    });
+    FB.gsiOn = true; return true;
+  },
+  gsiButton(host) {
+    FB.gsi().renderButton(host, { type: 'standard', theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'pill', logo_alignment: 'left', locale: 'fr', width: 280 });
+  },
+  /* Secours si le script Google n'est pas là : la fenêtre Google. Plus de redirection (elle ne marche plus entre deux sites). */
   login() {
     const p = new firebase.auth.GoogleAuthProvider();
     p.setCustomParameters({ prompt: 'select_account' });
-    return firebase.auth().signInWithPopup(p).then(r => r.user).catch(e => {
-      if (e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment')) return firebase.auth().signInWithRedirect(p).then(() => null);
-      throw e;
-    });
+    return firebase.auth().signInWithPopup(p).then(r => r.user);
   },
   logout() { return firebase.auth().signOut(); },
   open(user) {
@@ -9745,13 +9765,22 @@ document.addEventListener('change', e => {
   if (!e.target.closest || !e.target.closest('#heroForm')) return;
   const el = $('#hSum'); if (el) el.innerHTML = heroSummary(radio('hRace'), radio('hCls'), radio('hSex'));
 });
+/* Bouton Google officiel : redessiné chaque fois que la fenêtre est refaite (l'emplacement est alors vide). */
+function gsiMount() {
+  const slot = document.getElementById('gsiSlot');
+  if (!slot || slot.firstChild || !FB.gsiInit(
+    () => { if (modal && modal.kind === 'login') { modal.busy = true; modal.err = ''; renderAll(); } },
+    user => { if (modal && modal.kind === 'login') { modal = null; start(user); } },
+    e => { modal = { kind: 'login', err: loginMsg(e) }; renderAll(); })) return;
+  FB.gsiButton(slot);
+}
 function renderModal() {
   let h = '';
   const M = modal;
   if (M && M.kind === 'login') {
     h = `<p class="eyebrow">Bienvenue dans la vallée</p><h2 class="title">Mountain Kings</h2>
       <p>Connecte-toi avec ton compte Google. Votre village est sauvegardé en ligne : vous le retrouvez sur tous vos appareils.</p>
-      <button class="btn primary" data-act="login"${M.busy ? ' disabled' : ''}>${M.busy ? 'Connexion…' : 'Se connecter avec Google'}</button>
+      ${FB.gsi() ? `<div id="gsiSlot" class="gsislot"></div>${M.busy ? '<p class="note">Connexion…</p>' : ''}` : `<button class="btn primary" data-act="login"${M.busy ? ' disabled' : ''}>${M.busy ? 'Connexion…' : 'Se connecter avec Google'}</button>`}
       ${M.err ? `<p class="err">${esc(M.err)}</p>` : ''}
       <p class="note" style="font-size:12.5px">La fenêtre Google ne s’ouvre pas ? Ouvre le lien du jeu directement dans Chrome ou Safari.</p>`;
   } else if (M && M.kind === 'dberr') h = `<h2>La vallée ne répond pas</h2><p>Impossible de joindre le serveur du jeu. Vérifie ta connexion internet, puis réessaie.</p><button class="btn primary" data-act="reload">Réessayer</button>`;
@@ -9802,6 +9831,7 @@ function renderModal() {
   els.modal.hidden = !h;
   if (h) {
     setHTML(els.mcard, h);
+    if (M && M.kind === 'login') gsiMount();
     /* Nouvelle fenêtre : on repart du haut (sinon elle garde le défilement de la précédente). */
     const k = M ? M.kind + (M.id || '') : mode;
     if (els.mcard._k !== k) { els.mcard._k = k; els.mcard.scrollTop = 0; }
@@ -9973,6 +10003,9 @@ const LOGIN_ERR = {
   'auth/unauthorized-domain': 'Ce site n’est pas encore autorisé dans Firebase (Authentication, Paramètres, Domaines autorisés).',
   'auth/operation-not-allowed': 'La connexion Google n’est pas encore activée dans Firebase.',
   'auth/network-request-failed': 'Pas de connexion internet. Réessaie dans un instant.',
+  'auth/popup-blocked': 'Le navigateur a bloqué la fenêtre Google. Autorise les fenêtres surgissantes pour ce site, ou ouvre le jeu directement dans Chrome.',
+  'auth/operation-not-supported-in-this-environment': 'Ce navigateur ne peut pas ouvrir la fenêtre Google. Ouvre le jeu directement dans Chrome ou Safari.',
+  'auth/gsi-empty': 'Google n’a rien renvoyé. Réessaie.',
   'auth/popup-closed-by-user': '', 'auth/cancelled-popup-request': '', 'auth/user-cancelled': '',
 };
 const loginMsg = e => { const c = e && e.code; return c in LOGIN_ERR ? LOGIN_ERR[c] : 'La connexion a échoué' + (c ? ' (' + c + ')' : '') + '. Réessaie.'; };
