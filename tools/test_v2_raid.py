@@ -132,7 +132,7 @@ async def main():
         put('v2/villages/' + vid, v)
         await A.wait_for_timeout(5000)
         await A.click('[data-act="closeSheet"]'); await A.wait_for_timeout(800)
-        chip = await A.inner_text('#hudTop')
+        chip = await A.evaluate("[...document.querySelectorAll('#hudTop .medal.red')].map(e => e.title).join(' | ')")
         check('Portail' in chip, 'puce du portail en haut : ' + txt(chip[:120]))
         await A.screenshot(path=S + 'raid_portal.png')
         await nav(A, 'defense')
