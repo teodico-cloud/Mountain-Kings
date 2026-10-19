@@ -1,4 +1,6 @@
 /* ===================== RÉSEAU FIREBASE (nouveau jeu : village commun) ===================== */
+/* Identifiant public du client Google du projet (ce n'est pas un secret). */
+const GSI_CLIENT = '206461415677-iejmgjf48hmjm39a47m2713vs7t7e1dj.apps.googleusercontent.com';
 const FB_CONFIG = {
   apiKey: 'AIzaSyCk2epufhsolA8Jt8xVKaKtsr8wJtJXs3w',
   authDomain: 'moutain-kings.firebaseapp.com',
@@ -163,13 +165,31 @@ const FB = {
       .then(() => auth.getRedirectResult().catch(e => { FB.lastError = e; return null; }))
       .then(() => new Promise(res => { const off = auth.onAuthStateChanged(u => { off(); res(u); }); }));
   },
+  /* Bouton Google officiel (Google Identity Services) : ni fenêtre bloquée ni redirection, donc rien à perdre entre deux sites.
+     Le jeton Google est échangé contre une connexion Firebase : même compte, même identifiant qu'avant. */
+  gsi: () => (typeof google !== 'undefined' && google.accounts && google.accounts.id) ? google.accounts.id : null,
+  gsiInit(onStart, onUser, onError) {
+    const g = FB.gsi(); if (!g) return false;
+    if (FB.gsiOn) return true;
+    g.initialize({
+      client_id: GSI_CLIENT, auto_select: false, cancel_on_tap_outside: true,
+      callback: r => {
+        if (!r || !r.credential) { onError({ code: 'auth/gsi-empty' }); return; }
+        onStart();
+        firebase.auth().signInWithCredential(firebase.auth.GoogleAuthProvider.credential(r.credential))
+          .then(c => onUser(c.user || c), onError);
+      },
+    });
+    FB.gsiOn = true; return true;
+  },
+  gsiButton(host) {
+    FB.gsi().renderButton(host, { type: 'standard', theme: 'filled_black', size: 'large', text: 'signin_with', shape: 'pill', logo_alignment: 'left', locale: 'fr', width: 280 });
+  },
+  /* Secours si le script Google n'est pas là : la fenêtre Google. Plus de redirection (elle ne marche plus entre deux sites). */
   login() {
     const p = new firebase.auth.GoogleAuthProvider();
     p.setCustomParameters({ prompt: 'select_account' });
-    return firebase.auth().signInWithPopup(p).then(r => r.user).catch(e => {
-      if (e && (e.code === 'auth/popup-blocked' || e.code === 'auth/operation-not-supported-in-this-environment')) return firebase.auth().signInWithRedirect(p).then(() => null);
-      throw e;
-    });
+    return firebase.auth().signInWithPopup(p).then(r => r.user);
   },
   logout() { return firebase.auth().signOut(); },
   open(user) {

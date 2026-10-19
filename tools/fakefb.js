@@ -124,11 +124,12 @@
     onAuthStateChanged(cb) { const n = sessionStorage.getItem('fakefb.user'); setTimeout(() => cb(n ? mkUser(n) : null), 50); return () => {}; },
     signInWithPopup() { if (!q) return Promise.reject({ code: 'auth/popup-closed-by-user' }); sessionStorage.setItem('fakefb.user', q); return new Promise(r => setTimeout(() => r({ user: mkUser(q) }), 200)); },
     signInWithRedirect: () => Promise.resolve(),
+    signInWithCredential(c) { sessionStorage.setItem('fakefb.user', c.t); return new Promise(r => setTimeout(() => r({ user: mkUser(c.t) }), 200)); },
     signOut() { sessionStorage.removeItem('fakefb.user'); return Promise.resolve(); },
   };
   window.firebase = {
     initializeApp: () => ({}),
-    auth: Object.assign(() => authObj, { Auth: { Persistence: { LOCAL: 'local' } }, GoogleAuthProvider: class { setCustomParameters() {} } }),
+    auth: Object.assign(() => authObj, { Auth: { Persistence: { LOCAL: 'local' } }, GoogleAuthProvider: class { setCustomParameters() {} static credential(t) { return { t }; } } }),
     database: Object.assign(() => ({ ref: p => makeRef(p) }), { ServerValue: { TIMESTAMP } }),
   };
 })();

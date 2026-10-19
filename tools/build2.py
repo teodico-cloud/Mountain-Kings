@@ -46,6 +46,7 @@ json.dump(manifest, open(SITE + 'manifest.json', 'w', encoding='utf-8'), ensure_
 FBV = '10.12.2'
 fb = ''.join(f'<script src="https://www.gstatic.com/firebasejs/{FBV}/firebase-{m}-compat.js"></script>\n' for m in ('app', 'auth', 'database'))
 if TEST: fb = '<script>window.MK_TEST = true;</script>\n<script src="fakefb.js"></script>\n'
+else: fb += '<script src="https://accounts.google.com/gsi/client" async defer></script>\n'
 i = head.index('</style>') + len('</style>')
 index = f'''<!doctype html>
 <html lang="fr">
